@@ -70,9 +70,11 @@ void main(){
   float n = mix(noise(fc - flow * p1 * 4.0), noise(fc - flow * p2 * 4.0), abs(p1 - 0.5) * 2.0);
   float shim = smoothstep(0.45, 0.95, n);
   vec3 col = base.rgb + water * shim * spd * 0.06 * vec3(0.6, 0.75, 0.92);
-  // Wolken: horizontal driftender UV-Versatz (fract -> nahtloses Wrappen)
-  float ca = texture2D(uClouds, vec2(fract(vUV.x + uCloudOffset), vUV.y)).a;
-  col = mix(col, vec3(1.0), clamp(ca * 1.35, 0.0, 1.0));
+  // Nur Wolken-SCHATTEN auf der Oberflaeche (die Wolken selbst liegen auf der separaten,
+  // etwas groesseren Kugel darueber -> sie setzen sich sichtbar ab / schweben).
+  vec2 cuv = vec2(fract(vUV.x + uCloudOffset), vUV.y);
+  float csh = texture2D(uClouds, cuv + vec2(0.012, 0.006)).a;
+  col *= 1.0 - 0.20 * csh;
   gl_FragColor = vec4(col, base.a);
 }`;
 
@@ -110,12 +112,30 @@ function drawGlobe(ent) {
   g.pop();
   if (oceanShader) g.resetShader();
 
-  // tatsaechlich projizierten Kugelradius einmal messen -> Halo/Schatten passen sich an
+  // projizierten OBERFLAECHEN-Radius messen (vor der groesseren Wolkenkugel) -> Halo/Schatten
   if (globeProjFrac === null) {
     const cx = GLOBE_BUF / 2, cy = GLOBE_BUF / 2;
     let r = GLOBE_BUF / 2;
     for (let x = cx; x < GLOBE_BUF; x++) { if (g.get(x, cy)[3] < 10) { r = x - cx; break; } }
     globeProjFrac = r / GLOBE_BUF;
+  }
+
+  // Wolken auf separater, etwas groesserer Kugel -> sie schweben sichtbar ueber der Oberflaeche.
+  // Textur ist ausser den Wolken komplett transparent. Backface-Culling (nur vordere Halbkugel)
+  // + Tiefentest -> keine durchscheinende Rueckseite ("2 Kugeln").
+  if (ent.cloudTex) {
+    gl.enable(gl.CULL_FACE);
+    gl.cullFace(gl.FRONT);
+    gl.depthMask(false);
+    g.push();
+    g.noStroke(); g.noLights();
+    g.texture(ent.cloudTex);
+    g.rotateX(ent.tilt);
+    g.rotateY(ent.spinAngle + ent.cloudDrift);   // eigener Drift relativ zur Oberflaeche
+    g.sphere(R * 1.075, 64, 48);                  // groesser -> Wolken schweben deutlich darueber
+    g.pop();
+    gl.depthMask(true);
+    gl.disable(gl.CULL_FACE);
   }
 }
 let duck = 0;             // 0..1 Audio-Ducking + Bewegungs-Verlangsamung bei offenem Panel
