@@ -47,7 +47,7 @@ float volumeDensity(vec3 p, float t){
   float c = cos(ang), s = sin(ang);
   vec3 d = vec3(p.x*c + p.z*s, p.y, -p.x*s + p.z*c);
   float n = fbm3(d * 4.6 + vec3(t*0.02, t*0.035, t*0.015));   // hoehere Frequenz -> feiner, wispy
-  return smoothstep(0.56, 0.95, n);                           // hoher Schwellwert -> sparsam
+  return smoothstep(0.55, 0.97, n);                           // Schwellwert -> Wolkenmenge
 }`;
 
 const OCEAN_VERT = `
@@ -106,7 +106,15 @@ attribute vec3 aPosition;
 uniform mat4 uModelViewMatrix;
 uniform mat4 uProjectionMatrix;
 varying vec3 vDir;
-void main(){ vDir = normalize(aPosition); gl_Position = uProjectionMatrix * uModelViewMatrix * vec4(aPosition,1.0); }`;
+varying vec3 vRayDir;
+void main(){
+  vDir = normalize(aPosition);
+  vec3 viewDir = normalize((uModelViewMatrix * vec4(aPosition, 1.0)).xyz);   // Kamera->Fragment
+  mat3 m = mat3(uModelViewMatrix);
+  mat3 mt = mat3(m[0][0], m[1][0], m[2][0], m[0][1], m[1][1], m[2][1], m[0][2], m[1][2], m[2][2]); // transpose = inverse Rotation
+  vRayDir = mt * viewDir;                                                     // Blickstrahl im Modellsystem
+  gl_Position = uProjectionMatrix * uModelViewMatrix * vec4(aPosition, 1.0);
+}`;
 
 // Wolkenkugel: VOLUMETRISCHER Nebel per Raymarching durch eine Schicht (Ri..Ro).
 // Pro Pixel die Dichte entlang des Strahls aufsummieren -> weicher, durchscheinender Nebel
@@ -114,30 +122,41 @@ void main(){ vDir = normalize(aPosition); gl_Position = uProjectionMatrix * uMod
 const CLOUD_FRAG = `
 precision highp float;
 varying vec3 vDir;
+varying vec3 vRayDir;
 uniform float uTime;
 uniform vec3 uLightModel;
 ` + CLOUD_GLSL + `
 void main(){
-  vec3 dir = normalize(vDir);
-  float Ro = 1.14, Ri = 1.0;
-  float dt = (Ro - Ri) / 9.0;
+  float Ro = 1.12, Ri = 1.0;
+  vec3 ro = vDir * Ro;                 // Eintritt auf der Aussenschale (Oberflaeche = 1.0)
+  vec3 rd = normalize(vRayDir);        // Blickstrahl ins Volumen
+  // Strahl-Kugel-Schnitt mit der Innenschale (Oberflaeche): Wegstrecke durch den Nebel
+  float b = dot(ro, rd);
+  float disc = b * b - (dot(ro, ro) - Ri * Ri);
+  float tEnd;
+  if (disc > 0.0) {
+    tEnd = -b - sqrt(disc);            // bis zur Oberflaeche
+  } else {
+    tEnd = -b + sqrt(b * b - (dot(ro, ro) - Ro * Ro));   // streift -> langer Weg am Rand
+  }
+  tEnd = clamp(tEnd, 0.0, 0.34);   // Randverdichtung begrenzen -> gleichmaessiger
+  float dt = tEnd / 10.0;
   float trans = 1.0, lum = 0.0;
-  for(int i = 0; i < 9; i++){
-    float r = Ro - (float(i) + 0.5) * dt;
-    vec3 pos = dir * r;
+  for (int i = 0; i < 10; i++) {
+    vec3 pos = ro + rd * ((float(i) + 0.5) * dt);
     float dens = volumeDensity(pos, uTime);
-    float a = clamp(dens * 0.55, 0.0, 1.0);          // pro Schritt schwach -> durchscheinend
-    if(a > 0.001){
-      float dl = volumeDensity(pos + uLightModel * 0.05, uTime);   // Dichte Richtung Licht
-      float lt = exp(-dl * 2.8);                                    // Selbstschatten
+    float a = clamp(dens * dt * 3.3, 0.0, 1.0);          // Weglaenge -> dicker am Rand (3D); halb so dick
+    if (a > 0.001) {
+      float dl = volumeDensity(pos + uLightModel * 0.05, uTime);
+      float lt = exp(-dl * 2.8);                          // Selbstschatten Richtung Licht
       lum += trans * a * (0.5 + 0.6 * lt);
       trans *= (1.0 - a);
     }
   }
   float alpha = 1.0 - trans;
-  if(alpha < 0.015) discard;
+  if (alpha < 0.015) discard;
   vec3 col = vec3(clamp(lum / max(alpha, 0.001), 0.0, 1.06));
-  gl_FragColor = vec4(col, alpha * 0.78);   // nie ganz deckend -> nebelartig durchscheinend
+  gl_FragColor = vec4(col, alpha * 0.82);   // leicht durchscheinend -> nebelig
 }`;
 
 function ensureGlobeBuffer() {
@@ -212,7 +231,7 @@ function drawGlobe(ent) {
     cloudShader.setUniform('uLightModel', Lm);
     g.rotateX(ent.tilt);
     g.rotateY(ent.spinAngle);
-    g.sphere(R * 1.075, 72, 54);                  // groesser -> Wolken schweben deutlich darueber
+    g.sphere(R * 1.12, 72, 54);                   // = Aussenschale Ro des Raymarch (Eintritt)
     g.pop();
     g.resetShader();
     gl.depthMask(true);
