@@ -44,6 +44,7 @@ precision highp float;
 varying vec2 vUV;
 uniform sampler2D uTex;
 uniform sampler2D uClouds;
+uniform sampler2D uFlow;
 uniform float uTime;
 uniform float uCloudOffset;
 float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
@@ -57,15 +58,19 @@ void main(){
   vec4 base = texture2D(uTex, vUV);
   // Wasser = blau dominant, nicht zu hell (kein Eis), nicht gruen (kein Land)
   float water = step(base.b, 0.62) * step(base.r, base.b - 0.04) * step(base.g, base.b);
-  // Meeresstroemung: domain-warped, fliessende Baender mit Wirbeln (lebendiger)
-  vec2 fc = vec2(vUV.x * 95.0, vUV.y * 46.0);
-  vec2 w = vec2(noise(fc*0.22 + uTime*0.08), noise(fc*0.22 + 7.0 - uTime*0.06));
-  fc += (w - 0.5) * 6.0;                                  // Verwirbelung -> geschwungene Stroemung
-  float f1 = noise(fc + vec2(uTime*0.45, 0.0));
-  float f2 = noise(fc*1.9 - vec2(uTime*0.3, uTime*0.08));
-  float fl = mix(f1, f2, 0.5);
-  float streak = smoothstep(0.52, 0.9, fl);
-  vec3 col = base.rgb + water * streak * 0.14 * vec3(0.55, 0.72, 0.95);
+  // Meeresstroemung folgt dem vorberechneten Feld -> fliesst um die Inseln herum
+  vec3 fdat = texture2D(uFlow, vUV).rgb;
+  vec2 flow = fdat.rg * 2.0 - 1.0;                 // Stroemungsrichtung
+  float spd = fdat.b;                              // Stroemungsstaerke (an Kuesten hoeher)
+  vec2 fc = vUV * vec2(90.0, 45.0);
+  // Flow-Map-Advektion: zwei phasenversetzte Lagen, entlang flow verschoben, ueberblendet
+  float t = uTime * 0.16;
+  float p1 = fract(t), p2 = fract(t + 0.5);
+  float n1 = noise(fc - flow * p1 * 9.0);
+  float n2 = noise(fc - flow * p2 * 9.0);
+  float fl = mix(n1, n2, abs(p1 - 0.5) * 2.0);
+  float streak = smoothstep(0.5, 0.9, fl);
+  vec3 col = base.rgb + water * streak * spd * 0.16 * vec3(0.55, 0.72, 0.95);
   // Wolken: horizontal driftender UV-Versatz (fract -> nahtloses Wrappen)
   float ca = texture2D(uClouds, vec2(fract(vUV.x + uCloudOffset), vUV.y)).a;
   col = mix(col, vec3(1.0), clamp(ca * 1.35, 0.0, 1.0));
@@ -94,6 +99,7 @@ function drawGlobe(ent) {
     g.shader(oceanShader);
     oceanShader.setUniform('uTex', ent.tex);
     if (ent.cloudTex) oceanShader.setUniform('uClouds', ent.cloudTex);
+    if (ent.flowTex) oceanShader.setUniform('uFlow', ent.flowTex);
     oceanShader.setUniform('uTime', millis() / 1000);
     oceanShader.setUniform('uCloudOffset', ent.cloudDrift / (2 * Math.PI));  // Drift in UV-Einheiten
   } else {
@@ -145,6 +151,7 @@ async function buildWorld() {
     if (def.globe) {
       ent.tex = await tryLoadImage(def.globe.texture);
       if (def.globe.clouds) ent.cloudTex = await tryLoadImage(def.globe.clouds);
+      if (def.globe.flow) ent.flowTex = await tryLoadImage(def.globe.flow);
       ensureGlobeBuffer();
     }
     allEntities.push(ent);
@@ -173,7 +180,7 @@ class Entity {
     // 3D-Kugel (WebGL): freie Drehung mit Schwung
     this.isGlobe = !!def.globe;
     if (this.isGlobe) {
-      this.tex = null; this.cloudTex = null;
+      this.tex = null; this.cloudTex = null; this.flowTex = null;
       this.baseVel = def.globe.baseVel != null ? def.globe.baseVel : 0.3;  // rad/s Normaltempo
       this.tilt = def.globe.tilt != null ? def.globe.tilt : 0.35;
       this.cloudVel = def.globe.cloudDrift != null ? def.globe.cloudDrift : 0.05;  // Wolken-Eigendrift

@@ -7,6 +7,7 @@ Inselplatzierung/Look wie gehabt (Metaballs, Aequatorguertel, fleckige Tiefe, Ei
 """
 import numpy as np
 from PIL import Image
+from scipy import ndimage
 import os
 
 # =================== KONFIG ===================
@@ -39,8 +40,10 @@ C_LOW   = np.array([ 72, 140,  74]) / 255
 C_HIGH  = np.array([122, 150,  92]) / 255
 C_ICE   = np.array([238, 244, 250]) / 255
 
+COAST_PX = 55          # Breite der Kuesten-Ablenkungszone (px) fuer die Stroemung
 OUTFILE = os.path.join(os.path.dirname(__file__), "..", "assets", "images", "entities", "scene1", "world.png")
 CLOUDFILE = os.path.join(os.path.dirname(__file__), "..", "assets", "images", "entities", "scene1", "clouds.png")
+FLOWFILE = os.path.join(os.path.dirname(__file__), "..", "assets", "images", "entities", "scene1", "flow.png")
 # ==============================================
 
 # equirectangulares Gitter -> 3D-Punkte auf der Einheitskugel
@@ -168,5 +171,27 @@ calpha = (cloud * CLOUD_ALPHA * 255).astype(np.uint8)
 white = np.full((H, W), 255, np.uint8)
 Image.fromarray(np.dstack([white, white, white, calpha]), "RGBA").save(CLOUDFILE)
 
-print("gespeichert:", os.path.normpath(OUTFILE), "+ clouds.png", (W, H),
+# --- Stroemungs-Flowmap: globale Stroemung, an Kuesten tangential um Inseln abgelenkt ---
+D = ndimage.distance_transform_edt(~land)              # Abstand zu Land (px, in Wasser)
+gy, gx = np.gradient(D)                                # Gradient zeigt von Land weg
+gn = np.sqrt(gx*gx + gy*gy) + 1e-6
+nx, ny = gx/gn, gy/gn                                  # Kuestennormale (von Land weg)
+# globale Grundstroemung: Baender entlang Breitengrad + sanfter Maeander
+gxf = np.cos(lat * 3.0)
+gyf = 0.35 * np.sin(lon * 4.0)
+gl = np.sqrt(gxf*gxf + gyf*gyf) + 1e-6
+gxf, gyf = gxf/gl, gyf/gl
+into = np.minimum(gxf*nx + gyf*ny, 0.0)                # Komponente, die ins Land zeigt
+defx, defy = gxf - into*nx, gyf - into*ny              # diese entfernen -> tangential zur Kueste
+w = np.clip(D / COAST_PX, 0, 1)
+fx = defx*(1-w) + gxf*w                                # nahe Kueste abgelenkt, weit weg global
+fy = defy*(1-w) + gyf*w
+fln = np.sqrt(fx*fx + fy*fy) + 1e-6
+fx, fy = fx/fln, fy/fln
+fx[land], fy[land] = 0, 0
+spd = np.clip(1.0 - w*0.4, 0.55, 1.0)                  # an Kueste (eng) etwas schneller
+flow = np.dstack([(fx*0.5+0.5)*255, (fy*0.5+0.5)*255, spd*255]).astype(np.uint8)
+Image.fromarray(flow, "RGB").save(FLOWFILE)
+
+print("gespeichert:", os.path.normpath(OUTFILE), "+ clouds.png + flow.png", (W, H),
       "| Inseln:", len(islands), "| Schollen:", len(floes))

@@ -8,6 +8,7 @@
       "globe": {
         "texture": "assets/images/entities/scene1/world.png",
         "clouds": "assets/images/entities/scene1/clouds.png",
+        "flow": "assets/images/entities/scene1/flow.png",
         "baseVel": -0.10,
         "tilt": 0.0,
         "cloudDrift": 0.09
