@@ -24,8 +24,9 @@ ISLAND_SPECS = [
     (3, 0.12, 0.16, 2),    # mittlere
     (8, 0.045, 0.075, 1),  # sehr kleine
 ]
-LAT_BAND = 0.50        # Inselzentren nur +-0.50 rad (~28.6 Grad) -> Guertel < 1/3 der Welt
-COAST_NOISE = 0.22     # Fransigkeit der Kuesten
+LAT_BAND = 0.31        # Inselzentren nur +-0.31 rad (~18 Grad) -> Guertel ~1/5 der Welt
+COAST_NOISE = 0.26     # Fransigkeit der Kuesten
+WARP = 0.13            # Domain-Warp: verbiegt die Inselformen organisch (0 = runde Kreise)
 LAND = 0.45            # Schwelle Land vs. Meer
 SHELF = 0.30           # Breite des hellen Flachwassersaums
 
@@ -37,7 +38,7 @@ FLOE_R = (0.03, 0.06)  # Schollen-Radius (<= kleinste Inseln)
 # Farben (RGB 0..255)
 C_SHOAL = np.array([ 66, 130, 162]) / 255
 C_SEA   = np.array([ 26,  78, 140]) / 255
-C_ABYSS = np.array([  5,  22,  62]) / 255   # Tiefsee (dunkel)
+C_ABYSS = np.array([ 28,  68, 118]) / 255   # Tiefsee (heller, nicht zu dunkel)
 C_BEACH = np.array([208, 198, 150]) / 255
 C_LOW   = np.array([ 72, 140,  74]) / 255
 C_HIGH  = np.array([122, 150,  92]) / 255
@@ -128,9 +129,18 @@ def render(theta):
     depthn = snoise3(xr, yr, zr, 70, 3, 1.7)
     polarn = snoise3(xr, yr, zr, 90, 4, 5.0)
 
+    # Domain-Warp: Sample-Position verbiegen -> organische statt runde Inseln.
+    # Niederfrequent -> grosse Inseln werden verformt, kleine nur leicht verschoben.
+    wx = snoise3(xr, yr, zr, 200, 3, 3.0)
+    wy = snoise3(xr, yr, zr, 210, 3, 3.0)
+    wz = snoise3(xr, yr, zr, 220, 3, 3.0)
+    xw = xr + WARP * wx; yw = yr + WARP * wy; zw = zr + WARP * wz
+    nrm = np.sqrt(xw * xw + yw * yw + zw * zw) + 1e-9
+    xw /= nrm; yw /= nrm; zw /= nrm
+
     shape = np.zeros((SS, SS))
     for (_, _, _, lobes) in islands:
-        shape = np.maximum(shape, metaballs(xr, yr, zr, lobes))
+        shape = np.maximum(shape, metaballs(xw, yw, zw, lobes))
     shape_c = shape + COAST_NOISE * coast
     land = shape_c > LAND
 
