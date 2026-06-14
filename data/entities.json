@@ -8,7 +8,7 @@
       "frames": {
         "dir": "assets/images/entities/scene1/globe/",
         "count": 48,
-        "fps": 12,
+        "fps": 6,
         "pad": 2
       },
       "label": "Weltkugel",

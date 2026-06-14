@@ -26,7 +26,7 @@ ISLAND_SPECS = [
 ]
 LAT_BAND = 0.31        # Inselzentren nur +-0.31 rad (~18 Grad) -> Guertel ~1/5 der Welt
 COAST_NOISE = 0.26     # Fransigkeit der Kuesten
-WARP = 0.13            # Domain-Warp: verbiegt die Inselformen organisch (0 = runde Kreise)
+WARP = 0.2            # Domain-Warp: verbiegt die Inselformen organisch (0 = runde Kreise)
 LAND = 0.45            # Schwelle Land vs. Meer
 SHELF = 0.30           # Breite des hellen Flachwassersaums
 
