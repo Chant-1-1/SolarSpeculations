@@ -291,8 +291,12 @@ function setDuck(on) {
 // =========================================================================
 //  p5 LIFECYCLE
 // =========================================================================
+// Viewport-Maße robust ermitteln (windowWidth ist in manchen Umgebungen 0)
+function vw() { return window.innerWidth || windowWidth || document.documentElement.clientWidth; }
+function vh() { return window.innerHeight || windowHeight || document.documentElement.clientHeight; }
+
 function setup() {
-  const c = createCanvas(windowWidth, windowHeight);
+  const c = createCanvas(vw(), vh());
   c.parent('canvas-holder');
   imageMode(CENTER);
   textFont('Georgia');
@@ -476,4 +480,4 @@ function keyPressed() {
   else if (keyCode === RIGHT_ARROW) goToScene((currentScene + 1) % scenes.length);
 }
 
-function windowResized() { resizeCanvas(windowWidth, windowHeight); }
+function windowResized() { resizeCanvas(vw(), vh()); }
