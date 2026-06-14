@@ -1,0 +1,19 @@
+# Claude Code / lokale Tool-Konfiguration (nie hochladen)
+.claude/
+
+# Umgebungsvariablen & Secrets
+.env
+.env.*
+*.local
+secrets.*
+
+# Betriebssystem / Editor
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+
+# Logs & temporäre Dateien
+*.log
+*.tmp
