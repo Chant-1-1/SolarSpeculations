@@ -28,8 +28,8 @@ ICE_LAT = 1.02         # niedriger -> groessere, klar sichtbare Polkappen (~58 G
 ICE_DYN = 0.16         # weniger Schwankung -> Kappe nicht zu loechrig
 N_FLOES = 16
 FLOE_R = (0.03, 0.06)
-CLOUD_COVER = 0.24     # weniger Bedeckung -> kleinere, gestreute Wolken
-CLOUD_ALPHA = 0.80     # max Deckkraft der separaten Wolkenschicht
+CLOUD_COVER = 0.42     # Bedeckung; mit kleiner Frequenz -> kleine, gestreute Wolken
+CLOUD_ALPHA = 0.85     # max Deckkraft der separaten Wolkenschicht
 
 C_SHOAL = np.array([ 66, 130, 162]) / 255
 C_SEA   = np.array([ 26,  78, 140]) / 255
@@ -162,8 +162,8 @@ col = np.clip(col, 0, 1)
 Image.fromarray((col * 255).astype(np.uint8), "RGB").save(OUTFILE)
 
 # Separate Wolkenschicht (RGBA: weiss + Alpha) -> zieht in app.js eigenstaendig ueber den Globus
-craw = fbm3(px, py, pz, 300, 6, 5) * 0.5 + 0.5   # hoehere Frequenz -> kleinere Wolkenfetzen
-cloud = smooth(craw, 1 - CLOUD_COVER, 1 - CLOUD_COVER + 0.12)
+craw = fbm3(px, py, pz, 300, 4, 4) * 0.5 + 0.5   # kleine Wolkenfetzen, genug Kontrast
+cloud = smooth(craw, 1 - CLOUD_COVER, 1 - CLOUD_COVER + 0.14)
 calpha = (cloud * CLOUD_ALPHA * 255).astype(np.uint8)
 white = np.full((H, W), 255, np.uint8)
 Image.fromarray(np.dstack([white, white, white, calpha]), "RGBA").save(CLOUDFILE)

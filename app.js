@@ -23,6 +23,7 @@ let heldEntity = null;    // Entity, das gerade per Maus festgehalten/gedreht wi
 let globeBuf = null;      // gemeinsamer WebGL-Layer fuer 3D-Kugeln
 let oceanShader = null;   // Shader fuer animierte Meeresstroemungen
 const GLOBE_BUF = 600;    // Aufloesung dieses Layers (px)
+const GLOBE_R_FRAC = 0.37; // Kugelradius als Anteil von GLOBE_BUF bzw. der Anzeigegroesse (Rest = Halo)
 
 // Vertex: Standard-p5-WEBGL, reicht UV durch
 const OCEAN_VERT = `
@@ -37,12 +38,14 @@ void main() {
   gl_Position = uProjectionMatrix * uModelViewMatrix * vec4(aPosition, 1.0);
 }`;
 
-// Fragment: Albedo sampeln; nur ueber Wasser ein zeitlich driftendes Stroemungsmuster
+// Fragment: Albedo + Meeresstroemung (nur Wasser) + driftende Wolken (UV-Versatz) in EINEM Pass
 const OCEAN_FRAG = `
 precision highp float;
 varying vec2 vUV;
 uniform sampler2D uTex;
+uniform sampler2D uClouds;
 uniform float uTime;
+uniform float uCloudOffset;
 float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float noise(vec2 p){
   vec2 i = floor(p), f = fract(p);
@@ -54,11 +57,14 @@ void main(){
   vec4 base = texture2D(uTex, vUV);
   // Wasser = blau dominant, nicht zu hell (kein Eis), nicht gruen (kein Land)
   float water = step(base.b, 0.62) * step(base.r, base.b - 0.04) * step(base.g, base.b);
-  // zwei entgegengesetzt driftende Noise-Lagen -> fliessende Stroemungsbaender
+  // Meeresstroemung: zwei entgegengesetzt driftende Noise-Lagen
   vec2 fc = vec2(vUV.x * 130.0, vUV.y * 60.0);
   float fl = mix(noise(fc + vec2(uTime*0.5, 0.0)), noise(fc*2.0 - vec2(uTime*0.35, 0.0)), 0.5);
   float streak = smoothstep(0.58, 0.96, fl);
   vec3 col = base.rgb + water * streak * 0.11 * vec3(0.5, 0.7, 0.95);
+  // Wolken: horizontal driftender UV-Versatz (fract -> nahtloses Wrappen)
+  float ca = texture2D(uClouds, vec2(fract(vUV.x + uCloudOffset), vUV.y)).a;
+  col = mix(col, vec3(1.0), clamp(ca * 1.35, 0.0, 1.0));
   gl_FragColor = vec4(col, base.a);
 }`;
 
@@ -69,41 +75,31 @@ function ensureGlobeBuffer() {
   }
 }
 
-// rendert die 3D-Kugel (unlit -> kraeftige Albedo) + driftende Wolkenschicht in den WebGL-Layer.
+// rendert die 3D-Kugel als EINE Sphere: Albedo + Meeresstroemung + driftende Wolken
+// laufen alle im Ozean-Shader (keine zweite Kugel -> kein Doppelrand). Unlit = kraeftige Farben.
 // Tag/Nacht-Plastizitaet kommt als 2D-Schatten in Entity.draw().
 function drawGlobe(ent) {
   const g = globeBuf;
-  const R = GLOBE_BUF * 0.42;
+  const R = GLOBE_BUF * GLOBE_R_FRAC;
   g.clear();
-  // Oberflaeche mit Ozean-Shader (animierte Meeresstroemung ueber Wasser)
+  const gl = g.drawingContext;
+  gl.enable(gl.DEPTH_TEST);   // nur Vorderseite zeigen -> keine durchscheinende Rueckseite
   g.push();
   g.noStroke();
   if (oceanShader) {
     g.shader(oceanShader);
     oceanShader.setUniform('uTex', ent.tex);
+    if (ent.cloudTex) oceanShader.setUniform('uClouds', ent.cloudTex);
     oceanShader.setUniform('uTime', millis() / 1000);
+    oceanShader.setUniform('uCloudOffset', ent.cloudDrift / (2 * Math.PI));  // Drift in UV-Einheiten
   } else {
     g.noLights(); g.texture(ent.tex);
   }
   g.rotateX(ent.tilt);
   g.rotateY(ent.spinAngle);
-  g.sphere(R, 48, 36);
+  g.sphere(R, 64, 48);
   g.pop();
   if (oceanShader) g.resetShader();
-  // Wolken (eigene Drift, knapp ueber der Oberflaeche). Backface-Culling -> nur vordere
-  // Haelfte, sonst scheint die transparente Rueckseite durch ("2 Kugeln"-Effekt).
-  if (ent.cloudTex) {
-    const gl = g.drawingContext;
-    gl.enable(gl.CULL_FACE); gl.cullFace(gl.BACK);
-    g.push();
-    g.noStroke(); g.noLights();
-    g.texture(ent.cloudTex);
-    g.rotateX(ent.tilt);
-    g.rotateY(ent.spinAngle + ent.cloudDrift);
-    g.sphere(R * 1.008, 48, 36);
-    g.pop();
-    gl.disable(gl.CULL_FACE);
-  }
 }
 let duck = 0;             // 0..1 Audio-Ducking + Bewegungs-Verlangsamung bei offenem Panel
 
@@ -253,32 +249,30 @@ class Entity {
     translate(x, y);
     const glow = 0.15 + this.highlight * 0.5 + (hoverEntity === this ? 0.2 : 0);
 
-    // 3D-Kugel: in den WebGL-Layer rendern und als Bild einsetzen
+    // 3D-Kugel: WebGL-Layer rendern, Atmosphaeren-Halo dahinter, Kugel-Bild, Tag/Nacht-Schatten
     let handled = false;
     if (this.isGlobe && this.tex && globeBuf) {
-      if (glow > 0.16) {
-        drawingContext.shadowBlur = 40 * glow;
-        drawingContext.shadowColor = `rgba(216,178,90,${0.6 * glow})`;
-      }
       drawGlobe(this);
+      const ctx = drawingContext, r = sz * GLOBE_R_FRAC;
+      // weicher Atmosphaeren-Halo (ragt ueber den Kugelrand hinaus, hinter der Kugel)
+      let halo = ctx.createRadialGradient(0, 0, r * 0.82, 0, 0, r * 1.35);
+      halo.addColorStop(0, 'rgba(130,175,235,0)');
+      halo.addColorStop(0.42, `rgba(130,175,235,${0.45 * alpha})`);
+      halo.addColorStop(1, 'rgba(130,175,235,0)');
+      ctx.fillStyle = halo; ctx.fillRect(-r * 1.5, -r * 1.5, r * 3, r * 3);
+      // Kugel-Bild
       imageMode(CENTER);
       tint(255, 255 * alpha);
       image(globeBuf, 0, 0, sz, sz);
       noTint();
-      drawingContext.shadowBlur = 0;
-      // Tag/Nacht-Schatten + Randabdunklung (Plastizitaet, Licht oben-links, fix im Raum)
-      const ctx = drawingContext, r = sz * 0.42;
+      // Tag/Nacht-Schatten (nur Terminator, weich; auf die Kugel geclippt)
       ctx.save();
-      ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.clip();
-      let term = ctx.createRadialGradient(-r * 0.4, -r * 0.35, r * 0.1, -r * 0.4, -r * 0.35, r * 1.9);
+      ctx.beginPath(); ctx.arc(0, 0, r * 0.99, 0, Math.PI * 2); ctx.clip();
+      let term = ctx.createRadialGradient(-r * 0.45, -r * 0.4, r * 0.1, -r * 0.4, -r * 0.35, r * 2.0);
       term.addColorStop(0, 'rgba(0,0,0,0)');
       term.addColorStop(0.5, 'rgba(0,0,0,0)');
-      term.addColorStop(1, `rgba(3,8,24,${0.78 * alpha})`);
+      term.addColorStop(1, `rgba(3,8,24,${0.7 * alpha})`);
       ctx.fillStyle = term; ctx.fillRect(-r, -r, 2 * r, 2 * r);
-      let edge = ctx.createRadialGradient(0, 0, r * 0.72, 0, 0, r);
-      edge.addColorStop(0, 'rgba(0,0,0,0)');
-      edge.addColorStop(1, `rgba(0,0,12,${0.42 * alpha})`);
-      ctx.fillStyle = edge; ctx.fillRect(-r, -r, 2 * r, 2 * r);
       ctx.restore();
       handled = true;
     }
