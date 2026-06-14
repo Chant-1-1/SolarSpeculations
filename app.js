@@ -22,11 +22,33 @@ let hoverEntity = null;
 let heldEntity = null;    // Entity, das gerade per Maus festgehalten/gedreht wird
 let globeBuf = null;      // gemeinsamer WebGL-Layer fuer 3D-Kugeln
 let oceanShader = null;   // Shader fuer animierte Meeresstroemungen
+let cloudShader = null;   // Shader fuer prozedurale, animierte Wolken
 const GLOBE_BUF = 600;    // Aufloesung dieses Layers (px)
 const GLOBE_R_FRAC = 0.37; // sphere(R)-Radius als Anteil von GLOBE_BUF
 let globeProjFrac = null;  // tatsaechlich projizierter Kugelradius-Anteil (zur Laufzeit gemessen)
 
 // Vertex: Standard-p5-WEBGL, reicht UV durch
+// Gemeinsames 3D-Noise + Wolkendichte: in BEIDEN Shadern genutzt -> Wolke & Schatten sind
+// per Konstruktion synchron. Drift (relativ zur Kugel) + Morph stecken in cloudDensity().
+const CLOUD_GLSL = `
+float hash3(vec3 p){ return fract(sin(dot(p, vec3(127.1,311.7,74.7)))*43758.5453); }
+float vnoise3(vec3 p){
+  vec3 i=floor(p), f=fract(p); vec3 u=f*f*(3.-2.*f);
+  return mix(mix(mix(hash3(i+vec3(0.,0.,0.)),hash3(i+vec3(1.,0.,0.)),u.x),
+                 mix(hash3(i+vec3(0.,1.,0.)),hash3(i+vec3(1.,1.,0.)),u.x),u.y),
+             mix(mix(hash3(i+vec3(0.,0.,1.)),hash3(i+vec3(1.,0.,1.)),u.x),
+                 mix(hash3(i+vec3(0.,1.,1.)),hash3(i+vec3(1.,1.,1.)),u.x),u.y),u.z);
+}
+float fbm3(vec3 p){ float v=0.,a=0.5; for(int k=0;k<4;k++){ v+=a*vnoise3(p); p*=2.0; a*=0.5; } return v; }
+// Wolkendichte 0..1 an Modellrichtung ld zur Zeit t (Drift relativ zur Kugel + langsames Morph)
+float cloudDensity(vec3 ld, float t){
+  float ang = t * 0.045;
+  float c = cos(ang), s = sin(ang);
+  vec3 d = vec3(ld.x*c + ld.z*s, ld.y, -ld.x*s + ld.z*c);
+  float n = fbm3(d * 2.7 + vec3(t*0.015, t*0.028, t*0.020));
+  return smoothstep(0.54, 0.74, n);
+}`;
+
 const OCEAN_VERT = `
 precision highp float;
 attribute vec3 aPosition;
@@ -34,20 +56,22 @@ attribute vec2 aTexCoord;
 uniform mat4 uModelViewMatrix;
 uniform mat4 uProjectionMatrix;
 varying vec2 vUV;
+varying vec3 vDir;
 void main() {
   vUV = aTexCoord;
+  vDir = normalize(aPosition);
   gl_Position = uProjectionMatrix * uModelViewMatrix * vec4(aPosition, 1.0);
 }`;
 
-// Fragment: Albedo + Meeresstroemung (nur Wasser) + driftende Wolken (UV-Versatz) in EINEM Pass
+// Oberflaeche: Albedo + Meeresstroemung + REALER Wolkenschatten (gleiche Wolkenfunktion)
 const OCEAN_FRAG = `
 precision highp float;
 varying vec2 vUV;
+varying vec3 vDir;
 uniform sampler2D uTex;
-uniform sampler2D uClouds;
 uniform sampler2D uFlow;
 uniform float uTime;
-uniform float uCloudOffset;
+uniform vec3 uLightModel;
 float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float noise(vec2 p){
   vec2 i = floor(p), f = fract(p);
@@ -55,34 +79,71 @@ float noise(vec2 p){
   vec2 u = f*f*(3.-2.*f);
   return mix(mix(a,b,u.x), mix(c,d,u.x), u.y);
 }
+` + CLOUD_GLSL + `
 void main(){
   vec4 base = texture2D(uTex, vUV);
-  // Wasser = blau dominant, nicht zu hell (kein Eis), nicht gruen (kein Land)
   float water = step(base.b, 0.62) * step(base.r, base.b - 0.04) * step(base.g, base.b);
-  // Meeresstroemung: subtiles Schimmern, folgt sanft dem Stroemungsfeld (um die Inseln)
   vec3 fdat = texture2D(uFlow, vUV).rgb;
-  vec2 flow = fdat.rg * 2.0 - 1.0;                 // Stroemungsrichtung
-  float spd = fdat.b;                              // Stroemungsstaerke (an Kuesten hoeher)
-  vec2 fc = vUV * vec2(38.0, 19.0);                // niederfrequent -> ruhig, grossflaechig
-  // sprungfreie Drift entlang flow (zwei phasenversetzte Lagen ueberblendet)
+  vec2 flow = fdat.rg * 2.0 - 1.0;
+  float spd = fdat.b;
+  vec2 fc = vUV * vec2(38.0, 19.0);
   float t = uTime * 0.05;
   float p1 = fract(t), p2 = fract(t + 0.5);
   float n = mix(noise(fc - flow * p1 * 4.0), noise(fc - flow * p2 * 4.0), abs(p1 - 0.5) * 2.0);
   float shim = smoothstep(0.45, 0.95, n);
   vec3 col = base.rgb + water * shim * spd * 0.06 * vec3(0.6, 0.75, 0.92);
-  // Nur Wolken-SCHATTEN auf der Oberflaeche (die Wolken selbst liegen auf der separaten,
-  // etwas groesseren Kugel darueber -> sie setzen sich sichtbar ab / schweben).
-  vec2 cuv = vec2(fract(vUV.x + uCloudOffset), vUV.y);
-  float csh = texture2D(uClouds, cuv + vec2(0.012, 0.006)).a;
-  col *= 1.0 - 0.20 * csh;
+  // Realer Wolkenschatten: vom Oberflaechenpunkt Richtung Licht zur Wolkenhoehe -> Dichte dort
+  vec3 sdir = normalize(vDir + uLightModel * 0.07);
+  float sh = cloudDensity(sdir, uTime);
+  col *= 1.0 - 0.32 * sh;
   gl_FragColor = vec4(col, base.a);
+}`;
+
+const CLOUD_VERT = `
+precision highp float;
+attribute vec3 aPosition;
+uniform mat4 uModelViewMatrix;
+uniform mat4 uProjectionMatrix;
+varying vec3 vDir;
+void main(){ vDir = normalize(aPosition); gl_Position = uProjectionMatrix * uModelViewMatrix * vec4(aPosition,1.0); }`;
+
+// Wolkenkugel: prozedurale, animierte Wolken mit Dichte-Shading (Volumen) + weichen Raendern
+const CLOUD_FRAG = `
+precision highp float;
+varying vec3 vDir;
+uniform float uTime;
+uniform vec3 uLightModel;
+` + CLOUD_GLSL + `
+void main(){
+  float dens = cloudDensity(vDir, uTime);
+  if(dens <= 0.001) discard;
+  // Volumen: Dichte Richtung Licht vs. selbst -> Licht-/Schattenseite der Wolke
+  float dl = cloudDensity(normalize(vDir + uLightModel * 0.05), uTime);
+  float shade = clamp(0.90 + (dens - dl) * 1.7, 0.66, 1.08);
+  float alpha = smoothstep(0.0, 0.28, dens);
+  gl_FragColor = vec4(vec3(shade), alpha);
 }`;
 
 function ensureGlobeBuffer() {
   if (!globeBuf) {
     globeBuf = createGraphics(GLOBE_BUF, GLOBE_BUF, WEBGL);
     oceanShader = globeBuf.createShader(OCEAN_VERT, OCEAN_FRAG);
+    cloudShader = globeBuf.createShader(CLOUD_VERT, CLOUD_FRAG);
   }
+}
+
+// Lichtrichtung (zur Lichtquelle) ins Modellsystem der Kugel transformieren,
+// damit Wolkenschatten/-shading korrekt fallen, waehrend sich die Kugel dreht.
+function lightInModel(tilt, spin) {
+  let L = [-0.45, -0.5, 0.74];
+  const m = Math.hypot(L[0], L[1], L[2]); L = L.map(v => v / m);
+  // Rx(-tilt)
+  let a = -tilt, cy = Math.cos(a), sy = Math.sin(a);
+  L = [L[0], L[1] * cy - L[2] * sy, L[1] * sy + L[2] * cy];
+  // Ry(-spin)
+  a = -spin; const cx = Math.cos(a), sx = Math.sin(a);
+  L = [L[0] * cx + L[2] * sx, L[1], -L[0] * sx + L[2] * cx];
+  return L;
 }
 
 // rendert die 3D-Kugel als EINE Sphere: Albedo + Meeresstroemung + driftende Wolken
@@ -94,15 +155,16 @@ function drawGlobe(ent) {
   g.clear();
   const gl = g.drawingContext;
   gl.enable(gl.DEPTH_TEST);   // nur Vorderseite zeigen -> keine durchscheinende Rueckseite
+  const tNow = millis() / 1000;
+  const Lm = lightInModel(ent.tilt, ent.spinAngle);   // Lichtrichtung im Kugel-Modellsystem
   g.push();
   g.noStroke();
   if (oceanShader) {
     g.shader(oceanShader);
     oceanShader.setUniform('uTex', ent.tex);
-    if (ent.cloudTex) oceanShader.setUniform('uClouds', ent.cloudTex);
     if (ent.flowTex) oceanShader.setUniform('uFlow', ent.flowTex);
-    oceanShader.setUniform('uTime', millis() / 1000);
-    oceanShader.setUniform('uCloudOffset', ent.cloudDrift / (2 * Math.PI));  // Drift in UV-Einheiten
+    oceanShader.setUniform('uTime', tNow);
+    oceanShader.setUniform('uLightModel', Lm);
   } else {
     g.noLights(); g.texture(ent.tex);
   }
@@ -120,20 +182,23 @@ function drawGlobe(ent) {
     globeProjFrac = r / GLOBE_BUF;
   }
 
-  // Wolken auf separater, etwas groesserer Kugel -> sie schweben sichtbar ueber der Oberflaeche.
-  // Textur ist ausser den Wolken komplett transparent. Backface-Culling (nur vordere Halbkugel)
-  // + Tiefentest -> keine durchscheinende Rueckseite ("2 Kugeln").
-  if (ent.cloudTex) {
+  // Wolken auf separater, etwas groesserer Kugel (prozedural, animiert) -> schweben darueber.
+  // Drift + Morph stecken im Shader (cloudDensity), daher nur spinAngle als Geometrie-Drehung.
+  // Backface-Culling (nur vordere Halbkugel) + Tiefentest -> keine durchscheinende Rueckseite.
+  if (cloudShader && ent.cloudTex) {
     gl.enable(gl.CULL_FACE);
     gl.cullFace(gl.FRONT);
     gl.depthMask(false);
     g.push();
-    g.noStroke(); g.noLights();
-    g.texture(ent.cloudTex);
+    g.noStroke();
+    g.shader(cloudShader);
+    cloudShader.setUniform('uTime', tNow);
+    cloudShader.setUniform('uLightModel', Lm);
     g.rotateX(ent.tilt);
-    g.rotateY(ent.spinAngle + ent.cloudDrift);   // eigener Drift relativ zur Oberflaeche
-    g.sphere(R * 1.075, 64, 48);                  // groesser -> Wolken schweben deutlich darueber
+    g.rotateY(ent.spinAngle);
+    g.sphere(R * 1.075, 72, 54);                  // groesser -> Wolken schweben deutlich darueber
     g.pop();
+    g.resetShader();
     gl.depthMask(true);
     gl.disable(gl.CULL_FACE);
   }
