@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8" />
+<title>Mixer — SolarSpeculations</title>
+<style>
+  body { margin: 0; background: #0b0f13; color: #e8eef2; font-family: system-ui, sans-serif; padding: 20px; }
+  h1 { font-size: 1.2rem; letter-spacing: 0.05em; }
+  h2 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.1em; color: #8aa0ad; margin: 22px 0 8px; }
+  .hint { font-size: 0.8rem; color: #6b7d89; line-height: 1.5; max-width: 720px; }
+  .bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+  input, select, button { padding: 6px 10px; background: #1a2229; border: 1px solid #2a343d; color: #e8eef2; border-radius: 4px; font-size: 0.85rem; }
+  button { cursor: pointer; background: #233; border-color: #355; }
+  button:hover { background: #2c4040; }
+  button.on { background: #3a5; border-color: #4c6; color: #021; }
+  table { border-collapse: collapse; width: 100%; max-width: 1000px; margin-top: 10px; }
+  th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid #1d262e; font-size: 0.85rem; vertical-align: middle; }
+  th { color: #8aa0ad; font-weight: 500; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.08em; }
+  td .name { font-family: monospace; font-size: 0.8rem; color: #cdd; }
+  input[type=range] { width: 120px; }
+  textarea { width: 100%; max-width: 1000px; height: 220px; box-sizing: border-box; background: #0c1116; color: #9ad;
+    border: 1px solid #2a343d; border-radius: 4px; font-family: monospace; font-size: 0.8rem; padding: 10px; margin-top: 8px; }
+</style>
+</head>
+<body>
+  <h1>Mixer — Sounds auditionieren & Szenen zuweisen</h1>
+  <p class="hint">
+    Lade den Ordner <code>assets/sounds</code> (oder einzelne MP3s) und probiere sie hier. Pro Sound:
+    Abspielen/Loop, Lautstaerke, Reverb-Bus + Send, Szenen-Zuordnung. Unten exportiert das Tool die
+    Ambient-Zuweisung als JSON-Block fuer <code>scenes.json</code>. Audio startet erst nach einem Klick (Autoplay-Policy).
+  </p>
+
+  <h2>Sounds laden</h2>
+  <div class="bar">
+    <label>Ordner: <input type="file" id="dir" webkitdirectory directory multiple /></label>
+    <label>oder Dateien: <input type="file" id="files" accept="audio/*" multiple /></label>
+    <button id="addpath">+ Pfad aus Repo</button>
+  </div>
+
+  <h2>Geteilte Reverb-Busse</h2>
+  <div class="bar">
+    <span class="hint">short ~3s · long ~10s · huge ~16s — geteilt von allen Sounds (wie in der Show).</span>
+  </div>
+
+  <table id="tbl">
+    <thead><tr>
+      <th>Datei</th><th>Play</th><th>Vol (dB)</th><th>Bus</th><th>Send</th><th>Szene</th>
+    </tr></thead>
+    <tbody></tbody>
+  </table>
+
+  <h2>Export → scenes.json (ambient-Felder)</h2>
+  <div class="bar"><button id="export">JSON erzeugen</button><button id="copy">kopieren</button></div>
+  <textarea id="out" readonly></textarea>
+
+  <script src="lib/Tone.js"></script>
+  <script>
+  let SCENES = [];
+  fetch('data/scenes.json').then(r=>r.json()).then(d=>{SCENES=d.scenes.map(s=>s.id);}).catch(()=>{SCENES=['scene1','scene2','scene3'];});
+
+  let started = false;
+  let master, buses;
+  function ensureAudio(){
+    if(started)return;
+    Tone.start();
+    master = new Tone.Volume(0).toDestination();
+    const mk = d => { const r=new Tone.Reverb({decay:d,wet:1}); r.connect(master); return r; };
+    buses = { short: mk(3), long: mk(10), huge: mk(16) };
+    started = true;
+  }
+
+  const rows = []; // {name, url, player, vol, sendGain, bus, send, scene, playing}
+
+  function addSound(name, url){
+    if(rows.some(r=>r.name===name))return;
+    const r = { name, url, player:null, vol:-12, bus:'long', send:0.3, sendGain:null, scene:SCENES[0]||'scene1', playing:false, sendNode:null };
+    rows.push(r);
+    renderRow(r);
+  }
+
+  function renderRow(r){
+    const tb = document.querySelector('#tbl tbody');
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td class="name">${r.name}</td>
+      <td><button data-act="play">▶ loop</button></td>
+      <td><input type="range" min="-48" max="0" step="1" value="${r.vol}"><span class="v">${r.vol}</span></td>
+      <td><select data-act="bus">${['short','long','huge'].map(b=>`<option ${b===r.bus?'selected':''}>${b}</option>`).join('')}</select></td>
+      <td><input type="range" min="0" max="1" step="0.05" value="${r.send}" style="width:80px"><span class="s">${r.send}</span></td>
+      <td><select data-act="scene"></select></td>`;
+    const sceneSel = tr.querySelector('[data-act=scene]');
+    sceneSel.innerHTML = SCENES.map(s=>`<option ${s===r.scene?'selected':''}>${s}</option>`).join('') + '<option value="">— keine —</option>';
+
+    const btn = tr.querySelector('[data-act=play]');
+    btn.addEventListener('click', ()=>togglePlay(r, btn));
+    const volR = tr.querySelector('input[type=range]');
+    volR.addEventListener('input', e=>{ r.vol=+e.target.value; tr.querySelector('.v').textContent=r.vol; if(r.player) r.vol_node.volume.rampTo(r.vol,0.1); });
+    const sendR = tr.querySelectorAll('input[type=range]')[1];
+    sendR.addEventListener('input', e=>{ r.send=+e.target.value; tr.querySelector('.s').textContent=r.send; if(r.sendNode) r.sendNode.gain.rampTo(r.send,0.1); });
+    tr.querySelector('[data-act=bus]').addEventListener('change', e=>{ r.bus=e.target.value; rewire(r); });
+    sceneSel.addEventListener('change', e=>{ r.scene=e.target.value; });
+    tb.appendChild(tr);
+  }
+
+  function buildChain(r){
+    r.vol_node = new Tone.Volume(r.vol).connect(master);
+    r.sendNode = new Tone.Gain(r.send);
+    r.sendNode.connect(buses[r.bus]);
+    r.player = new Tone.Player({ url:r.url, loop:true, fadeIn:0.5, fadeOut:0.5, onerror:()=>alert('Konnte nicht laden: '+r.name) });
+    r.player.connect(r.vol_node);
+    r.player.connect(r.sendNode);
+  }
+  function rewire(r){ if(r.sendNode){ r.sendNode.disconnect(); r.sendNode.connect(buses[r.bus]); } }
+
+  function togglePlay(r, btn){
+    ensureAudio();
+    if(!r.player) buildChain(r);
+    if(r.playing){ r.player.stop(); r.playing=false; btn.classList.remove('on'); btn.textContent='▶ loop'; }
+    else {
+      const go = ()=>{ try{ r.player.start(); }catch(e){} };
+      if(r.player.loaded) go(); else r.player.buffer.onload = go;
+      r.playing=true; btn.classList.add('on'); btn.textContent='⏸ stop';
+    }
+  }
+
+  // ---- Laden ----
+  document.getElementById('dir').addEventListener('change', e=>{
+    [...e.target.files].filter(f=>/\.mp3$/i.test(f.name)).forEach(f=>{
+      const rel = f.webkitRelativePath ? f.webkitRelativePath.replace(/^[^/]+\//,'assets/sounds/').replace('assets/sounds/assets/sounds/','assets/sounds/') : f.name;
+      addSound(rel, URL.createObjectURL(f));
+    });
+  });
+  document.getElementById('files').addEventListener('change', e=>{
+    [...e.target.files].forEach(f=> addSound(f.name, URL.createObjectURL(f)));
+  });
+  document.getElementById('addpath').addEventListener('click', ()=>{
+    const p = prompt('Pfad relativ zum Repo (z.B. assets/sounds/ambient/scene1/bed.mp3)');
+    if(p) addSound(p, p);
+  });
+
+  // ---- Export ----
+  document.getElementById('export').addEventListener('click', ()=>{
+    const bySc = {};
+    rows.filter(r=>r.scene).forEach(r=>{
+      bySc[r.scene] = { ambient: r.url.startsWith('blob:') ? '(lokal — bitte echten Repo-Pfad eintragen) '+r.name : r.url,
+        ambientVolume: r.vol, reverbSend: { bus: r.bus, amount: r.send } };
+    });
+    document.getElementById('out').value = JSON.stringify(bySc, null, 2);
+  });
+  document.getElementById('copy').addEventListener('click', ()=> navigator.clipboard.writeText(document.getElementById('out').value));
+  </script>
+</body>
+</html>

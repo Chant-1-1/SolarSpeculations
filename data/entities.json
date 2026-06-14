@@ -1,0 +1,94 @@
+{
+  "_kommentar": "Entity-Definitionen. path = Wegpunkte in 0..1 (aufloesungsunabhaengig), gesetzt im pathdesigner.html. loop: 'loop' | 'pingpong' | 'drift'. image optional - fehlt die Datei, wird eine Platzhalter-Form gezeichnet. content oeffnet beim Klick.",
+  "entities": [
+    {
+      "id": "e1_a",
+      "scene": "scene1",
+      "image": "assets/images/entities/scene1/placeholder_a.png",
+      "label": "Platzhalter-Entity A",
+      "path": [
+        { "x": 0.1, "y": 0.3 },
+        { "x": 0.4, "y": 0.2 },
+        { "x": 0.7, "y": 0.45 },
+        { "x": 0.9, "y": 0.35 }
+      ],
+      "loop": "pingpong",
+      "speed": 0.04,
+      "scale": 0.14,
+      "bob": 0.012,
+      "opacity": 1.0,
+      "content": {
+        "title": "Platzhalter-Titel A",
+        "body": "Lorem ipsum. Hier kommt spaeter dein Text oder dein Gedicht hin. Eine Zeile,\nund noch eine Zeile,\nund das Schweigen dazwischen.",
+        "secondaryImage": "",
+        "link": { "url": "", "label": "" }
+      }
+    },
+    {
+      "id": "e1_b",
+      "scene": "scene1",
+      "image": "assets/images/entities/scene1/placeholder_b.png",
+      "label": "Platzhalter-Entity B",
+      "path": [
+        { "x": 0.8, "y": 0.7 },
+        { "x": 0.5, "y": 0.6 },
+        { "x": 0.2, "y": 0.75 }
+      ],
+      "loop": "loop",
+      "speed": 0.025,
+      "scale": 0.1,
+      "bob": 0.02,
+      "opacity": 0.9,
+      "content": {
+        "title": "Platzhalter-Titel B",
+        "body": "Noch ein Platzhalter-Text. Ersetzbar in data/entities.json.",
+        "secondaryImage": "",
+        "link": { "url": "https://example.com", "label": "Weiterlesen" }
+      }
+    },
+    {
+      "id": "e2_a",
+      "scene": "scene2",
+      "image": "assets/images/entities/scene2/placeholder_a.png",
+      "label": "Platzhalter-Entity C",
+      "path": [
+        { "x": 0.15, "y": 0.5 },
+        { "x": 0.35, "y": 0.3 },
+        { "x": 0.6, "y": 0.55 },
+        { "x": 0.85, "y": 0.4 },
+        { "x": 0.6, "y": 0.7 }
+      ],
+      "loop": "drift",
+      "speed": 0.03,
+      "scale": 0.16,
+      "bob": 0.008,
+      "opacity": 1.0,
+      "content": {
+        "title": "Platzhalter-Titel C",
+        "body": "Drift-Modus: schwebt einmal durch und taucht am Anfang wieder auf.",
+        "secondaryImage": "",
+        "link": { "url": "", "label": "" }
+      }
+    },
+    {
+      "id": "e3_a",
+      "scene": "scene3",
+      "image": "assets/images/entities/scene3/placeholder_a.png",
+      "label": "Platzhalter-Entity D",
+      "path": [
+        { "x": 0.5, "y": 0.5 }
+      ],
+      "loop": "loop",
+      "speed": 0.02,
+      "scale": 0.2,
+      "bob": 0.025,
+      "opacity": 1.0,
+      "content": {
+        "title": "Platzhalter-Titel D",
+        "body": "Ein einzelner Wegpunkt = stehendes Entity (wackelt nur leicht via bob).",
+        "secondaryImage": "",
+        "link": { "url": "", "label": "" }
+      }
+    }
+  ]
+}

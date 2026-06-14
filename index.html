@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>SolarSpeculations</title>
+<link rel="icon" href="data:," />
+<style>
+  :root {
+    --fg: #e8eef2;
+    --muted: #8aa0ad;
+    --panel-bg: rgba(8, 14, 20, 0.92);
+    --accent: #d8b25a;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; height: 100%; overflow: hidden;
+    background: #05080b; color: var(--fg);
+    font-family: "Iowan Old Style", Georgia, "Times New Roman", serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  #canvas-holder { position: fixed; inset: 0; }
+  canvas { display: block; }
+
+  /* --- Start-Overlay (Browser-Autoplay-Policy: Audio erst nach Geste) --- */
+  #gate {
+    position: fixed; inset: 0; z-index: 50;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    background: radial-gradient(ellipse at center, #0a1620 0%, #05080b 80%);
+    cursor: pointer; transition: opacity 1.2s ease;
+    text-align: center; padding: 2rem;
+  }
+  #gate h1 { font-weight: 400; letter-spacing: 0.18em; font-size: clamp(1.6rem, 5vw, 3rem); margin: 0 0 1.2rem; }
+  #gate p { color: var(--muted); letter-spacing: 0.12em; font-size: 0.95rem; }
+  #gate.hidden { opacity: 0; pointer-events: none; }
+
+  /* --- Lade-/Statusanzeige --- */
+  #status {
+    position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    z-index: 40; color: var(--muted); letter-spacing: 0.12em; font-size: 0.9rem;
+  }
+
+  /* --- Inhalts-Panel (Drawer von rechts) --- */
+  #panel {
+    position: fixed; top: 0; right: 0; z-index: 30;
+    width: min(440px, 92vw); height: 100%;
+    background: var(--panel-bg); backdrop-filter: blur(6px);
+    border-left: 1px solid rgba(216, 178, 90, 0.25);
+    transform: translateX(100%); transition: transform 0.6s cubic-bezier(.2,.7,.2,1);
+    display: flex; flex-direction: column; padding: 3rem 2.2rem 2.2rem;
+    overflow-y: auto;
+  }
+  #panel.open { transform: translateX(0); }
+  #panel h2 { font-weight: 400; font-size: 1.7rem; margin: 0 0 1.2rem; letter-spacing: 0.04em; }
+  #panel .body { white-space: pre-wrap; line-height: 1.7; color: var(--fg); font-size: 1.02rem; }
+  #panel img.secondary { width: 100%; margin: 1.6rem 0 0; border-radius: 2px; opacity: 0.95; }
+  #panel a.link {
+    display: inline-block; margin-top: 1.6rem; color: var(--accent);
+    text-decoration: none; border-bottom: 1px solid rgba(216,178,90,0.4);
+    letter-spacing: 0.06em; font-size: 0.95rem;
+  }
+  #panel-close {
+    position: absolute; top: 1.1rem; right: 1.3rem; cursor: pointer;
+    color: var(--muted); font-size: 1.5rem; line-height: 1; background: none; border: none;
+  }
+  #panel-close:hover { color: var(--fg); }
+
+  /* --- Szenen-Navigation --- */
+  #nav {
+    position: fixed; left: 50%; bottom: 1.6rem; transform: translateX(-50%);
+    z-index: 20; display: flex; align-items: center; gap: 0.9rem;
+    transition: opacity 0.6s ease;
+  }
+  #nav button.arrow {
+    background: none; border: none; color: var(--muted); cursor: pointer;
+    font-size: 1.4rem; padding: 0.2rem 0.5rem;
+  }
+  #nav button.arrow:hover { color: var(--fg); }
+  #nav .dots { display: flex; gap: 0.6rem; }
+  #nav .dot {
+    width: 8px; height: 8px; border-radius: 50%; cursor: pointer;
+    background: rgba(255,255,255,0.25); transition: background 0.3s, transform 0.3s;
+  }
+  #nav .dot.active { background: var(--accent); transform: scale(1.3); }
+  #scene-name {
+    position: fixed; left: 1.6rem; bottom: 1.5rem; z-index: 20;
+    color: var(--muted); letter-spacing: 0.16em; font-size: 0.85rem; text-transform: uppercase;
+    transition: opacity 0.6s ease;
+  }
+</style>
+</head>
+<body>
+  <div id="canvas-holder"></div>
+  <div id="status">lade …</div>
+
+  <div id="gate" class="hidden">
+    <h1>SolarSpeculations</h1>
+    <p>Klicken, um einzutreten</p>
+  </div>
+
+  <aside id="panel">
+    <button id="panel-close" aria-label="schliessen">×</button>
+    <h2 id="panel-title"></h2>
+    <div class="body" id="panel-body"></div>
+    <img class="secondary" id="panel-secondary" alt="" style="display:none" />
+    <a class="link" id="panel-link" href="#" target="_blank" rel="noopener" style="display:none"></a>
+  </aside>
+
+  <div id="scene-name"></div>
+  <nav id="nav">
+    <button class="arrow" id="prev" aria-label="vorherige Szene">‹</button>
+    <div class="dots" id="dots"></div>
+    <button class="arrow" id="next" aria-label="naechste Szene">›</button>
+  </nav>
+
+  <script src="lib/p5.min.js"></script>
+  <script src="lib/Tone.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,32 @@
+{
+  "_kommentar": "Szenenliste. Reihenfolge bestimmt die Navigation. background/ambient sind optional - fehlt die Datei, zeichnet index.html einen prozeduralen Verlauf bzw. spielt Stille. Pfade immer relativ (GitHub Pages).",
+  "scenes": [
+    {
+      "id": "scene1",
+      "name": "Platzhalter-Szene I",
+      "background": "assets/images/backgrounds/scene1.jpg",
+      "backgroundTint": "#0a1822",
+      "ambient": "assets/sounds/ambient/scene1/bed.mp3",
+      "ambientVolume": -12,
+      "reverbSend": { "bus": "long", "amount": 0.4 }
+    },
+    {
+      "id": "scene2",
+      "name": "Platzhalter-Szene II",
+      "background": "assets/images/backgrounds/scene2.jpg",
+      "backgroundTint": "#1a1020",
+      "ambient": "assets/sounds/ambient/scene2/bed.mp3",
+      "ambientVolume": -12,
+      "reverbSend": { "bus": "huge", "amount": 0.5 }
+    },
+    {
+      "id": "scene3",
+      "name": "Platzhalter-Szene III",
+      "background": "assets/images/backgrounds/scene3.jpg",
+      "backgroundTint": "#08120e",
+      "ambient": "assets/sounds/ambient/scene3/bed.mp3",
+      "ambientVolume": -12,
+      "reverbSend": { "bus": "short", "amount": 0.3 }
+    }
+  ]
+}
