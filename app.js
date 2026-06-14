@@ -125,14 +125,15 @@ void main(){
   float latFade = 1.0 - smoothstep(0.5, 0.9, abs(vDir.y));   // weniger an den Polen
   float rim = smoothstep(0.10, 0.40, vFacing);               // Rand sauber ausblenden (nicht flach)
   float raw = cloudNoise(vDir, uTime);
-  // breiter Schwellbereich -> Deckkraft variiert: Kerne ~1 (weiss), Raender ~0 (transparent)
-  float al = smoothstep(0.50, 0.86, raw) * latFade * rim;
+  // breiter Schwellbereich -> Deckkraft variiert: dichte Stellen weisser, duenne durchscheinend.
+  // Hoeherer Schwellwert = weniger Wolken; Deckkraft gedeckelt -> ueberall scheint etwas Blau durch.
+  float al = smoothstep(0.60, 0.82, raw) * latFade * rim * 0.72;
   if (al < 0.012) discard;
   // sanftes Volumen-Shading: Seite zum Licht etwas heller
   float dl = cloudNoise(normalize(vDir + uLightModel * 0.07), uTime);
   float shade = clamp(0.90 + (raw - dl) * 0.8, 0.80, 1.0);
   vec3 col = mix(vec3(0.84, 0.87, 0.92), vec3(0.97, 0.98, 0.99), shade);
-  gl_FragColor = vec4(col, clamp(al, 0.0, 0.96));
+  gl_FragColor = vec4(col, al);
 }`;
 
 function ensureGlobeBuffer() {
