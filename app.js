@@ -19,6 +19,7 @@ const SCENE_FADE_SPEED = 0.6; // pro Sekunde
 let started = false;      // Audio-Geste erfolgt?
 let openEntity = null;    // aktuell geoeffnetes Inhalts-Panel
 let hoverEntity = null;
+let heldEntity = null;    // Entity, dessen Drehung per Maus-Halten pausiert wird
 let duck = 0;             // 0..1 Audio-Ducking + Bewegungs-Verlangsamung bei offenem Panel
 
 let audio = null;         // Tone-Graph
@@ -78,6 +79,7 @@ class Entity {
     this.def = def;
     this.img = img;
     this.frames = null;               // optionale Animations-Sequenz (rotierender Globus)
+    this.spinTime = 0;                // akkumulierte Dreh-Zeit (pausierbar)
     this.path = def.path || [{ x: 0.5, y: 0.5 }];
     this.loop = def.loop || 'loop';
     this.closed = this.loop === 'loop' && this.path.length > 2;
@@ -112,6 +114,9 @@ class Entity {
     }
     this.bobPhase += dt * 1.4;
 
+    // Drehung der Frame-Sequenz laeuft weiter, solange nicht festgehalten
+    if (this.frames && this.frames.length && heldEntity !== this) this.spinTime += dt;
+
     const target = this.highlight > 0 && openEntity === this ? 1 : 0;
     this.highlight += (target - this.highlight) * min(1, dt * 4);
   }
@@ -142,7 +147,7 @@ class Entity {
     let drawImg = this.img;
     if (this.frames && this.frames.length) {
       const fps = (this.def.frames && this.def.frames.fps) || 12;
-      const idx = Math.floor(millis() / (1000 / fps)) % this.frames.length;
+      const idx = Math.floor(this.spinTime * fps) % this.frames.length;
       drawImg = this.frames[idx];
     }
 
@@ -388,7 +393,9 @@ function draw() {
     ent.draw();
   }
 
-  cursor(hoverEntity ? 'pointer' : 'default');
+  if (heldEntity) cursor('grabbing');
+  else if (hoverEntity) cursor(hoverEntity.frames ? 'grab' : 'pointer');
+  else cursor('default');
 }
 
 function drawBackground(index, alpha) {
@@ -426,11 +433,15 @@ function mousePressed() {
   for (let i = allEntities.length - 1; i >= 0; i--) {
     const ent = allEntities[i];
     if (currentSceneAlphaFor(ent) > 0.4 && ent.contains(mouseX, mouseY)) {
-      openPanel(ent);
+      // animierte Entities (rotierende Kugel): Halten pausiert die Drehung
+      if (ent.frames && ent.frames.length) heldEntity = ent;
+      else openPanel(ent);
       return;
     }
   }
 }
+
+function mouseReleased() { heldEntity = null; }   // Loslassen -> Drehung laeuft weiter
 
 function openPanel(ent) {
   openEntity = ent;

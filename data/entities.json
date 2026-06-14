@@ -7,8 +7,8 @@
       "image": "assets/images/entities/scene1/weltkugel.png",
       "frames": {
         "dir": "assets/images/entities/scene1/globe/",
-        "count": 96,
-        "fps": 6,
+        "count": 72,
+        "fps": 4,
         "pad": 2
       },
       "label": "Weltkugel",
