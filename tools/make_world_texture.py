@@ -24,12 +24,12 @@ WARP = 0.20
 LAND = 0.45
 SHELF = 0.30
 
-ICE_LAT = 1.28
-ICE_DYN = 0.26
+ICE_LAT = 1.02         # niedriger -> groessere, klar sichtbare Polkappen (~58 Grad)
+ICE_DYN = 0.16         # weniger Schwankung -> Kappe nicht zu loechrig
 N_FLOES = 16
 FLOE_R = (0.03, 0.06)
 CLOUD_COVER = 0.45
-CLOUD_BAKE = 0.85      # wie deckend die Wolken in die Textur eingehen
+CLOUD_ALPHA = 0.92     # max Deckkraft der separaten Wolkenschicht
 
 C_SHOAL = np.array([ 66, 130, 162]) / 255
 C_SEA   = np.array([ 26,  78, 140]) / 255
@@ -40,6 +40,7 @@ C_HIGH  = np.array([122, 150,  92]) / 255
 C_ICE   = np.array([238, 244, 250]) / 255
 
 OUTFILE = os.path.join(os.path.dirname(__file__), "..", "assets", "images", "entities", "scene1", "world.png")
+CLOUDFILE = os.path.join(os.path.dirname(__file__), "..", "assets", "images", "entities", "scene1", "clouds.png")
 # ==============================================
 
 # equirectangulares Gitter -> 3D-Punkte auf der Einheitskugel
@@ -156,12 +157,16 @@ for (v, lr) in floes:
 ice = cap | ((ff + 0.18 * coast) > 0.5)
 col[ice] = C_ICE
 
-# Wolken in die Albedo backen
-craw = fbm3(px, py, pz, 300, 5, 3) * 0.5 + 0.5
-cloud = smooth(craw, 1 - CLOUD_COVER, 1 - CLOUD_COVER + 0.18)
-ca = (cloud * CLOUD_BAKE)[..., None]
-col = col * (1 - ca) + np.array([1.0, 1.0, 1.0]) * ca
-
+# Oberflaeche OHNE Wolken speichern (kraeftige Albedo; Beleuchtung macht WebGL)
 col = np.clip(col, 0, 1)
 Image.fromarray((col * 255).astype(np.uint8), "RGB").save(OUTFILE)
-print("gespeichert:", os.path.normpath(OUTFILE), (W, H), "| Inseln:", len(islands), "| Schollen:", len(floes))
+
+# Separate Wolkenschicht (RGBA: weiss + Alpha) -> zieht in app.js eigenstaendig ueber den Globus
+craw = fbm3(px, py, pz, 300, 5, 3) * 0.5 + 0.5
+cloud = smooth(craw, 1 - CLOUD_COVER, 1 - CLOUD_COVER + 0.18)
+calpha = (cloud * CLOUD_ALPHA * 255).astype(np.uint8)
+white = np.full((H, W), 255, np.uint8)
+Image.fromarray(np.dstack([white, white, white, calpha]), "RGBA").save(CLOUDFILE)
+
+print("gespeichert:", os.path.normpath(OUTFILE), "+ clouds.png", (W, H),
+      "| Inseln:", len(islands), "| Schollen:", len(floes))

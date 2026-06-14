@@ -27,20 +27,30 @@ function ensureGlobeBuffer() {
   if (!globeBuf) globeBuf = createGraphics(GLOBE_BUF, GLOBE_BUF, WEBGL);
 }
 
-// rendert die texturierte, beleuchtete 3D-Kugel eines Entitys in den WebGL-Layer
+// rendert die 3D-Kugel (unlit -> kraeftige Albedo) + driftende Wolkenschicht in den WebGL-Layer.
+// Tag/Nacht-Plastizitaet kommt als 2D-Schatten in Entity.draw().
 function drawGlobe(ent) {
   const g = globeBuf;
+  const R = GLOBE_BUF * 0.42;
   g.clear();
+  // Oberflaeche
   g.push();
-  g.noStroke();
-  g.ambientLight(70);
-  g.directionalLight(255, 250, 244, 0.4, 0.5, -0.6);   // festes Licht (Tag/Nacht-Kante)
-  g.ambientMaterial(255);
+  g.noStroke(); g.noLights();
   g.texture(ent.tex);
   g.rotateX(ent.tilt);
   g.rotateY(ent.spinAngle);
-  g.sphere(GLOBE_BUF * 0.42, 48, 36);
+  g.sphere(R, 48, 36);
   g.pop();
+  // Wolken (eigene Drift, leicht groesserer Radius -> schweben ueber der Oberflaeche)
+  if (ent.cloudTex) {
+    g.push();
+    g.noStroke(); g.noLights();
+    g.texture(ent.cloudTex);
+    g.rotateX(ent.tilt);
+    g.rotateY(ent.spinAngle + ent.cloudDrift);
+    g.sphere(R * 1.015, 48, 36);
+    g.pop();
+  }
 }
 let duck = 0;             // 0..1 Audio-Ducking + Bewegungs-Verlangsamung bei offenem Panel
 
@@ -79,7 +89,11 @@ async function buildWorld() {
     const img = await tryLoadImage(def.image);
     const ent = new Entity(def, img);
     if (def.frames) ent.frames = await loadFrames(def.frames);  // Animations-Sequenz
-    if (def.globe) { ent.tex = await tryLoadImage(def.globe.texture); ensureGlobeBuffer(); }
+    if (def.globe) {
+      ent.tex = await tryLoadImage(def.globe.texture);
+      if (def.globe.clouds) ent.cloudTex = await tryLoadImage(def.globe.clouds);
+      ensureGlobeBuffer();
+    }
     allEntities.push(ent);
   }
 }
@@ -106,11 +120,13 @@ class Entity {
     // 3D-Kugel (WebGL): freie Drehung mit Schwung
     this.isGlobe = !!def.globe;
     if (this.isGlobe) {
-      this.tex = null;
+      this.tex = null; this.cloudTex = null;
       this.baseVel = def.globe.baseVel != null ? def.globe.baseVel : 0.3;  // rad/s Normaltempo
       this.tilt = def.globe.tilt != null ? def.globe.tilt : 0.35;
+      this.cloudVel = def.globe.cloudDrift != null ? def.globe.cloudDrift : 0.05;  // Wolken-Eigendrift
       this.spinAngle = 0;
       this.spinVel = this.baseVel;
+      this.cloudDrift = 0;
     }
     this.path = def.path || [{ x: 0.5, y: 0.5 }];
     this.loop = def.loop || 'loop';
@@ -150,9 +166,12 @@ class Entity {
     if (this.frames && this.frames.length && heldEntity !== this) this.spinTime += dt;
 
     // 3D-Kugel: dreht von selbst; Schwung klingt sanft auf Normaltempo ab
-    if (this.isGlobe && heldEntity !== this) {
-      this.spinAngle += this.spinVel * dt;
-      this.spinVel += (this.baseVel - this.spinVel) * Math.min(1, dt * 1.2);
+    if (this.isGlobe) {
+      if (heldEntity !== this) {
+        this.spinAngle += this.spinVel * dt;
+        this.spinVel += (this.baseVel - this.spinVel) * Math.min(1, dt * 1.2);
+      }
+      this.cloudDrift += this.cloudVel * dt;   // Wolken ziehen immer (auch im Stillstand)
     }
 
     const target = this.highlight > 0 && openEntity === this ? 1 : 0;
@@ -194,6 +213,20 @@ class Entity {
       image(globeBuf, 0, 0, sz, sz);
       noTint();
       drawingContext.shadowBlur = 0;
+      // Tag/Nacht-Schatten + Randabdunklung (Plastizitaet, Licht oben-links, fix im Raum)
+      const ctx = drawingContext, r = sz * 0.42;
+      ctx.save();
+      ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.clip();
+      let term = ctx.createRadialGradient(-r * 0.4, -r * 0.35, r * 0.1, -r * 0.4, -r * 0.35, r * 1.9);
+      term.addColorStop(0, 'rgba(0,0,0,0)');
+      term.addColorStop(0.5, 'rgba(0,0,0,0)');
+      term.addColorStop(1, `rgba(3,8,24,${0.78 * alpha})`);
+      ctx.fillStyle = term; ctx.fillRect(-r, -r, 2 * r, 2 * r);
+      let edge = ctx.createRadialGradient(0, 0, r * 0.72, 0, 0, r);
+      edge.addColorStop(0, 'rgba(0,0,0,0)');
+      edge.addColorStop(1, `rgba(0,0,12,${0.42 * alpha})`);
+      ctx.fillStyle = edge; ctx.fillRect(-r, -r, 2 * r, 2 * r);
+      ctx.restore();
       handled = true;
     }
 

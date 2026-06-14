@@ -7,8 +7,10 @@
       "image": "",
       "globe": {
         "texture": "assets/images/entities/scene1/world.png",
+        "clouds": "assets/images/entities/scene1/clouds.png",
         "baseVel": 0.30,
-        "tilt": 0.35
+        "tilt": 0.30,
+        "cloudDrift": 0.05
       },
       "label": "Weltkugel",
       "path": [
