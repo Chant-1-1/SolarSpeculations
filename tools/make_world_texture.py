@@ -171,25 +171,26 @@ calpha = (cloud * CLOUD_ALPHA * 255).astype(np.uint8)
 white = np.full((H, W), 255, np.uint8)
 Image.fromarray(np.dstack([white, white, white, calpha]), "RGBA").save(CLOUDFILE)
 
-# --- Stroemungs-Flowmap: globale Stroemung, an Kuesten tangential um Inseln abgelenkt ---
-D = ndimage.distance_transform_edt(~land)              # Abstand zu Land (px, in Wasser)
-gy, gx = np.gradient(D)                                # Gradient zeigt von Land weg
-gn = np.sqrt(gx*gx + gy*gy) + 1e-6
-nx, ny = gx/gn, gy/gn                                  # Kuestennormale (von Land weg)
-# globale Grundstroemung: Baender entlang Breitengrad + sanfter Maeander
-gxf = np.cos(lat * 3.0)
-gyf = 0.35 * np.sin(lon * 4.0)
-gl = np.sqrt(gxf*gxf + gyf*gyf) + 1e-6
-gxf, gyf = gxf/gl, gyf/gl
-into = np.minimum(gxf*nx + gyf*ny, 0.0)                # Komponente, die ins Land zeigt
-defx, defy = gxf - into*nx, gyf - into*ny              # diese entfernen -> tangential zur Kueste
-w = np.clip(D / COAST_PX, 0, 1)
-fx = defx*(1-w) + gxf*w                                # nahe Kueste abgelenkt, weit weg global
-fy = defy*(1-w) + gyf*w
+# --- Stroemungs-Flowmap: divergenzfreies Wirbelfeld ---
+# Stromfunktion psi mit Wirbeln zentriert auf Inseln + Polen. Das Feld flow = rot(psi)
+# ist quellenfrei; seine Stagnationspunkte (die "Urspruenge") liegen genau auf den
+# Inseln und Polen -> unter Land/Eis versteckt. Im Wasser zirkuliert die Stroemung herum.
+psi = np.zeros((H, W))
+rng2 = np.random.default_rng(SEED + 99)
+for (ilon, ilat, R, lobes) in islands:
+    sgn = 1.0 if rng2.random() < 0.5 else -1.0
+    d = gc(lon, lat, ilon, ilat)
+    psi += sgn * (R / 0.14) * np.exp(-(d * d) / (0.42 ** 2))   # Wirbel um die Insel
+dN, dS = np.pi/2 - lat, np.pi/2 + lat
+psi += 1.3 * np.exp(-(dN * dN) / (0.55 ** 2))                  # Nordpol-Wirbel
+psi += -1.3 * np.exp(-(dS * dS) / (0.55 ** 2))                 # Suedpol-Wirbel
+gj, gi = np.gradient(psi)
+fx = -gj + 0.5                                                 # rot(psi) + sanfter Grunddrift
+fy = gi
 fln = np.sqrt(fx*fx + fy*fy) + 1e-6
 fx, fy = fx/fln, fy/fln
 fx[land], fy[land] = 0, 0
-spd = np.clip(1.0 - w*0.4, 0.55, 1.0)                  # an Kueste (eng) etwas schneller
+spd = np.ones((H, W))                                          # gleichmaessig subtil
 flow = np.dstack([(fx*0.5+0.5)*255, (fy*0.5+0.5)*255, spd*255]).astype(np.uint8)
 Image.fromarray(flow, "RGB").save(FLOWFILE)
 
