@@ -23,7 +23,8 @@ let heldEntity = null;    // Entity, das gerade per Maus festgehalten/gedreht wi
 let globeBuf = null;      // gemeinsamer WebGL-Layer fuer 3D-Kugeln
 let oceanShader = null;   // Shader fuer animierte Meeresstroemungen
 const GLOBE_BUF = 600;    // Aufloesung dieses Layers (px)
-const GLOBE_R_FRAC = 0.37; // Kugelradius als Anteil von GLOBE_BUF bzw. der Anzeigegroesse (Rest = Halo)
+const GLOBE_R_FRAC = 0.37; // sphere(R)-Radius als Anteil von GLOBE_BUF
+let globeProjFrac = null;  // tatsaechlich projizierter Kugelradius-Anteil (zur Laufzeit gemessen)
 
 // Vertex: Standard-p5-WEBGL, reicht UV durch
 const OCEAN_VERT = `
@@ -108,6 +109,14 @@ function drawGlobe(ent) {
   g.sphere(R, 64, 48);
   g.pop();
   if (oceanShader) g.resetShader();
+
+  // tatsaechlich projizierten Kugelradius einmal messen -> Halo/Schatten passen sich an
+  if (globeProjFrac === null) {
+    const cx = GLOBE_BUF / 2, cy = GLOBE_BUF / 2;
+    let r = GLOBE_BUF / 2;
+    for (let x = cx; x < GLOBE_BUF; x++) { if (g.get(x, cy)[3] < 10) { r = x - cx; break; } }
+    globeProjFrac = r / GLOBE_BUF;
+  }
 }
 let duck = 0;             // 0..1 Audio-Ducking + Bewegungs-Verlangsamung bei offenem Panel
 
@@ -262,7 +271,7 @@ class Entity {
     let handled = false;
     if (this.isGlobe && this.tex && globeBuf) {
       drawGlobe(this);
-      const ctx = drawingContext, r = sz * GLOBE_R_FRAC;
+      const ctx = drawingContext, r = sz * (globeProjFrac || GLOBE_R_FRAC);
       // weicher Atmosphaeren-Halo (ragt ueber den Kugelrand hinaus, hinter der Kugel)
       let halo = ctx.createRadialGradient(0, 0, r * 0.82, 0, 0, r * 1.35);
       halo.addColorStop(0, 'rgba(130,175,235,0)');
