@@ -58,19 +58,17 @@ void main(){
   vec4 base = texture2D(uTex, vUV);
   // Wasser = blau dominant, nicht zu hell (kein Eis), nicht gruen (kein Land)
   float water = step(base.b, 0.62) * step(base.r, base.b - 0.04) * step(base.g, base.b);
-  // Meeresstroemung folgt dem vorberechneten Feld -> fliesst um die Inseln herum
+  // Meeresstroemung: subtiles Schimmern, folgt sanft dem Stroemungsfeld (um die Inseln)
   vec3 fdat = texture2D(uFlow, vUV).rgb;
   vec2 flow = fdat.rg * 2.0 - 1.0;                 // Stroemungsrichtung
   float spd = fdat.b;                              // Stroemungsstaerke (an Kuesten hoeher)
-  vec2 fc = vUV * vec2(90.0, 45.0);
-  // Flow-Map-Advektion: zwei phasenversetzte Lagen, entlang flow verschoben, ueberblendet
-  float t = uTime * 0.16;
+  vec2 fc = vUV * vec2(38.0, 19.0);                // niederfrequent -> ruhig, grossflaechig
+  // sprungfreie Drift entlang flow (zwei phasenversetzte Lagen ueberblendet)
+  float t = uTime * 0.05;
   float p1 = fract(t), p2 = fract(t + 0.5);
-  float n1 = noise(fc - flow * p1 * 9.0);
-  float n2 = noise(fc - flow * p2 * 9.0);
-  float fl = mix(n1, n2, abs(p1 - 0.5) * 2.0);
-  float streak = smoothstep(0.5, 0.9, fl);
-  vec3 col = base.rgb + water * streak * spd * 0.16 * vec3(0.55, 0.72, 0.95);
+  float n = mix(noise(fc - flow * p1 * 4.0), noise(fc - flow * p2 * 4.0), abs(p1 - 0.5) * 2.0);
+  float shim = smoothstep(0.45, 0.95, n);
+  vec3 col = base.rgb + water * shim * spd * 0.06 * vec3(0.6, 0.75, 0.92);
   // Wolken: horizontal driftender UV-Versatz (fract -> nahtloses Wrappen)
   float ca = texture2D(uClouds, vec2(fract(vUV.x + uCloudOffset), vUV.y)).a;
   col = mix(col, vec3(1.0), clamp(ca * 1.35, 0.0, 1.0));
