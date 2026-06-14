@@ -162,8 +162,8 @@ col = np.clip(col, 0, 1)
 Image.fromarray((col * 255).astype(np.uint8), "RGB").save(OUTFILE)
 
 # Separate Wolkenschicht (RGBA: weiss + Alpha) -> zieht in app.js eigenstaendig ueber den Globus
-craw = fbm3(px, py, pz, 300, 4, 4) * 0.5 + 0.5   # kleine Wolkenfetzen, genug Kontrast
-cloud = smooth(craw, 1 - CLOUD_COVER, 1 - CLOUD_COVER + 0.14)
+craw = fbm3(px, py, pz, 300, 4, 6) * 0.5 + 0.5   # kleinere Wolkenfetzen
+cloud = smooth(craw, 1 - CLOUD_COVER, 1 - CLOUD_COVER + 0.13)
 calpha = (cloud * CLOUD_ALPHA * 255).astype(np.uint8)
 white = np.full((H, W), 255, np.uint8)
 Image.fromarray(np.dstack([white, white, white, calpha]), "RGBA").save(CLOUDFILE)

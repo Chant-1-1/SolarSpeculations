@@ -8,9 +8,9 @@
       "globe": {
         "texture": "assets/images/entities/scene1/world.png",
         "clouds": "assets/images/entities/scene1/clouds.png",
-        "baseVel": -0.30,
+        "baseVel": -0.10,
         "tilt": 0.0,
-        "cloudDrift": 0.05
+        "cloudDrift": 0.09
       },
       "label": "Weltkugel",
       "path": [

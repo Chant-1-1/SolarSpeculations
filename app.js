@@ -57,11 +57,15 @@ void main(){
   vec4 base = texture2D(uTex, vUV);
   // Wasser = blau dominant, nicht zu hell (kein Eis), nicht gruen (kein Land)
   float water = step(base.b, 0.62) * step(base.r, base.b - 0.04) * step(base.g, base.b);
-  // Meeresstroemung: zwei entgegengesetzt driftende Noise-Lagen
-  vec2 fc = vec2(vUV.x * 130.0, vUV.y * 60.0);
-  float fl = mix(noise(fc + vec2(uTime*0.5, 0.0)), noise(fc*2.0 - vec2(uTime*0.35, 0.0)), 0.5);
-  float streak = smoothstep(0.58, 0.96, fl);
-  vec3 col = base.rgb + water * streak * 0.11 * vec3(0.5, 0.7, 0.95);
+  // Meeresstroemung: domain-warped, fliessende Baender mit Wirbeln (lebendiger)
+  vec2 fc = vec2(vUV.x * 95.0, vUV.y * 46.0);
+  vec2 w = vec2(noise(fc*0.22 + uTime*0.08), noise(fc*0.22 + 7.0 - uTime*0.06));
+  fc += (w - 0.5) * 6.0;                                  // Verwirbelung -> geschwungene Stroemung
+  float f1 = noise(fc + vec2(uTime*0.45, 0.0));
+  float f2 = noise(fc*1.9 - vec2(uTime*0.3, uTime*0.08));
+  float fl = mix(f1, f2, 0.5);
+  float streak = smoothstep(0.52, 0.9, fl);
+  vec3 col = base.rgb + water * streak * 0.14 * vec3(0.55, 0.72, 0.95);
   // Wolken: horizontal driftender UV-Versatz (fract -> nahtloses Wrappen)
   float ca = texture2D(uClouds, vec2(fract(vUV.x + uCloudOffset), vUV.y)).a;
   col = mix(col, vec3(1.0), clamp(ca * 1.35, 0.0, 1.0));
