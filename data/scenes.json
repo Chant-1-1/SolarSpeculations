@@ -3,9 +3,9 @@
   "scenes": [
     {
       "id": "scene1",
-      "name": "Heliotrop",
+      "name": "Weltkugel-Test",
       "background": "",
-      "backgroundTint": "#2a1838",
+      "backgroundTint": "#ffffff",
       "ambient": "",
       "ambientVolume": -12,
       "reverbSend": { "bus": "long", "amount": 0.4 }

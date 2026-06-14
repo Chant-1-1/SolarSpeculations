@@ -7,15 +7,15 @@
 <link rel="icon" href="data:," />
 <style>
   :root {
-    --fg: #e8eef2;
-    --muted: #8aa0ad;
-    --panel-bg: rgba(8, 14, 20, 0.92);
-    --accent: #d8b25a;
+    --fg: #1c1c1c;
+    --muted: #6b6b6b;
+    --panel-bg: rgba(250, 249, 246, 0.96);
+    --accent: #b07d0a;
   }
   * { box-sizing: border-box; }
   html, body {
     margin: 0; padding: 0; height: 100%; overflow: hidden;
-    background: #05080b; color: var(--fg);
+    background: #ffffff; color: var(--fg);
     font-family: "Iowan Old Style", Georgia, "Times New Roman", serif;
     -webkit-font-smoothing: antialiased;
   }
@@ -26,9 +26,9 @@
   #gate {
     position: fixed; inset: 0; z-index: 50;
     display: flex; flex-direction: column; align-items: center; justify-content: center;
-    background: radial-gradient(ellipse at center, #0a1620 0%, #05080b 80%);
+    background: radial-gradient(ellipse at center, #ffffff 0%, #eef0f2 90%);
     cursor: pointer; transition: opacity 1.2s ease;
-    text-align: center; padding: 2rem;
+    text-align: center; padding: 2rem; color: var(--fg);
   }
   #gate h1 { font-weight: 400; letter-spacing: 0.18em; font-size: clamp(1.6rem, 5vw, 3rem); margin: 0 0 1.2rem; }
   #gate p { color: var(--muted); letter-spacing: 0.12em; font-size: 0.95rem; }
@@ -79,7 +79,7 @@
   #nav .dots { display: flex; gap: 0.6rem; }
   #nav .dot {
     width: 8px; height: 8px; border-radius: 50%; cursor: pointer;
-    background: rgba(255,255,255,0.25); transition: background 0.3s, transform 0.3s;
+    background: rgba(0,0,0,0.22); transition: background 0.3s, transform 0.3s;
   }
   #nav .dot.active { background: var(--accent); transform: scale(1.3); }
   #scene-name {

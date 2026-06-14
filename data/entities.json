@@ -1,72 +1,22 @@
 {
-  "_kommentar": "MINI-TEST-KULISSE: 3 Entities in scene1. image leer -> Platzhalter-Leuchtkleck (Farbe aus id). Pfade mit pathdesigner.html anpassen, Bilder spaeter in assets/images/entities/scene1/ ablegen und image-Pfad eintragen.",
+  "_kommentar": "TEST: weißer Hintergrund, eine Weltkugel als Rasterbild mittig. Weitere Entities als Objekte mit eigenem image-Pfad ergaenzen. Pfade mit pathdesigner.html anpassen.",
   "entities": [
     {
-      "id": "sonnenfloss",
+      "id": "weltkugel",
       "scene": "scene1",
-      "image": "",
-      "label": "Sonnenfloß",
+      "image": "assets/images/entities/scene1/weltkugel.png",
+      "label": "Weltkugel",
       "path": [
-        { "x": 0.04, "y": 0.72 },
-        { "x": 0.30, "y": 0.55 },
-        { "x": 0.55, "y": 0.63 },
-        { "x": 0.80, "y": 0.42 },
-        { "x": 0.98, "y": 0.50 }
-      ],
-      "loop": "drift",
-      "speed": 0.022,
-      "scale": 0.16,
-      "bob": 0.010,
-      "opacity": 1.0,
-      "content": {
-        "title": "Sonnenfloß",
-        "body": "Geflochten aus alten Paneelen,\ntreibt es dorthin, wo noch Licht fällt.\nNiemand steuert. Es folgt der Wärme,\nwie andere dem Schlaf folgen.",
-        "secondaryImage": "",
-        "link": { "url": "", "label": "" }
-      }
-    },
-    {
-      "id": "heliophage",
-      "scene": "scene1",
-      "image": "",
-      "label": "Heliophage",
-      "path": [
-        { "x": 0.20, "y": 0.42 },
-        { "x": 0.45, "y": 0.24 },
-        { "x": 0.70, "y": 0.44 },
-        { "x": 0.86, "y": 0.30 }
-      ],
-      "loop": "pingpong",
-      "speed": 0.05,
-      "scale": 0.13,
-      "bob": 0.016,
-      "opacity": 0.92,
-      "content": {
-        "title": "Heliophage",
-        "body": "Frisst kein Fleisch, nur Helligkeit.\nWo sie vorbeizog, bleibt ein kühler Schatten —\nein Stück Tag, das fehlt.\nWir nennen es Nacht und gewöhnen uns daran.",
-        "secondaryImage": "",
-        "link": { "url": "", "label": "" }
-      }
-    },
-    {
-      "id": "reststern",
-      "scene": "scene1",
-      "image": "",
-      "label": "Reststern",
-      "path": [
-        { "x": 0.78, "y": 0.22 },
-        { "x": 0.86, "y": 0.20 },
-        { "x": 0.84, "y": 0.29 },
-        { "x": 0.76, "y": 0.27 }
+        { "x": 0.5, "y": 0.5 }
       ],
       "loop": "loop",
-      "speed": 0.012,
+      "speed": 0.01,
       "scale": 0.22,
-      "bob": 0.022,
+      "bob": 0.012,
       "opacity": 1.0,
       "content": {
-        "title": "Reststern",
-        "body": "Eine Sonne, die vergaß zu verlöschen.\nZu klein zum Wärmen, zu stur zum Sterben.\nSie hängt am Himmel wie eine Frage,\ndie niemand mehr stellt.",
+        "title": "Weltkugel",
+        "body": "Test-Rasterbild. Steht mittig und wackelt nur leicht (bob).\nWeitere Objekte einfach als neue Entities mit eigenem Bild ergänzen.",
         "secondaryImage": "",
         "link": { "url": "", "label": "" }
       }

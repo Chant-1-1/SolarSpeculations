@@ -159,8 +159,8 @@ class Entity {
       textSize(14);
       const ty = y - this.radius - 10;
       noStroke();
-      fill(0, 150); rect(x - textWidth(this.def.label) / 2 - 8, ty - 20, textWidth(this.def.label) + 16, 24, 3);
-      fill(232, 238, 242, 255 * Math.min(1, glow * 3 + 0.5));
+      fill(255, 225); rect(x - textWidth(this.def.label) / 2 - 8, ty - 20, textWidth(this.def.label) + 16, 24, 3);
+      fill(20, 20, 20, 255 * Math.min(1, glow * 3 + 0.5));
       text(this.def.label, x, ty);
       pop();
     }
@@ -330,7 +330,8 @@ async function startExperience() {
 
 function draw() {
   const dt = Math.min(0.05, deltaTime / 1000); // s, gedeckelt gegen Tab-Sprung
-  background(5, 8, 11);
+  const base = hexToRgb(scenes[currentScene]?.backgroundTint || '#ffffff');
+  background(base[0], base[1], base[2]);
 
   // Hintergruende (mit Crossfade)
   drawBackground(currentScene, nextScene >= 0 ? 1 - sceneFade : 1);
@@ -382,17 +383,11 @@ function drawBackground(index, alpha) {
     tint(255, 255 * alpha);
     image(sc.bg, width / 2, height / 2, w, h);
   } else {
-    // prozeduraler Verlauf aus backgroundTint
-    const tintCol = hexToRgb(sc.backgroundTint || '#0a1822');
-    noFill();
-    for (let y = 0; y < height; y += 4) {
-      const t = y / height;
-      const r = lerp(tintCol[0], 5, t * 0.7);
-      const g = lerp(tintCol[1], 8, t * 0.7);
-      const b = lerp(tintCol[2], 11, t * 0.7);
-      stroke(r, g, b, 255 * alpha);
-      line(0, y, width, y);
-    }
+    // einfarbiger Hintergrund aus backgroundTint
+    const tintCol = hexToRgb(sc.backgroundTint || '#ffffff');
+    noStroke();
+    fill(tintCol[0], tintCol[1], tintCol[2], 255 * alpha);
+    rect(0, 0, width, height);
   }
   pop();
 }
