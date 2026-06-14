@@ -19,7 +19,29 @@ const SCENE_FADE_SPEED = 0.6; // pro Sekunde
 let started = false;      // Audio-Geste erfolgt?
 let openEntity = null;    // aktuell geoeffnetes Inhalts-Panel
 let hoverEntity = null;
-let heldEntity = null;    // Entity, dessen Drehung per Maus-Halten pausiert wird
+let heldEntity = null;    // Entity, das gerade per Maus festgehalten/gedreht wird
+let globeBuf = null;      // gemeinsamer WebGL-Layer fuer 3D-Kugeln
+const GLOBE_BUF = 600;    // Aufloesung dieses Layers (px)
+
+function ensureGlobeBuffer() {
+  if (!globeBuf) globeBuf = createGraphics(GLOBE_BUF, GLOBE_BUF, WEBGL);
+}
+
+// rendert die texturierte, beleuchtete 3D-Kugel eines Entitys in den WebGL-Layer
+function drawGlobe(ent) {
+  const g = globeBuf;
+  g.clear();
+  g.push();
+  g.noStroke();
+  g.ambientLight(70);
+  g.directionalLight(255, 250, 244, 0.4, 0.5, -0.6);   // festes Licht (Tag/Nacht-Kante)
+  g.ambientMaterial(255);
+  g.texture(ent.tex);
+  g.rotateX(ent.tilt);
+  g.rotateY(ent.spinAngle);
+  g.sphere(GLOBE_BUF * 0.42, 48, 36);
+  g.pop();
+}
 let duck = 0;             // 0..1 Audio-Ducking + Bewegungs-Verlangsamung bei offenem Panel
 
 let audio = null;         // Tone-Graph
@@ -57,6 +79,7 @@ async function buildWorld() {
     const img = await tryLoadImage(def.image);
     const ent = new Entity(def, img);
     if (def.frames) ent.frames = await loadFrames(def.frames);  // Animations-Sequenz
+    if (def.globe) { ent.tex = await tryLoadImage(def.globe.texture); ensureGlobeBuffer(); }
     allEntities.push(ent);
   }
 }
@@ -78,8 +101,17 @@ class Entity {
   constructor(def, img) {
     this.def = def;
     this.img = img;
-    this.frames = null;               // optionale Animations-Sequenz (rotierender Globus)
+    this.frames = null;               // optionale Animations-Sequenz
     this.spinTime = 0;                // akkumulierte Dreh-Zeit (pausierbar)
+    // 3D-Kugel (WebGL): freie Drehung mit Schwung
+    this.isGlobe = !!def.globe;
+    if (this.isGlobe) {
+      this.tex = null;
+      this.baseVel = def.globe.baseVel != null ? def.globe.baseVel : 0.3;  // rad/s Normaltempo
+      this.tilt = def.globe.tilt != null ? def.globe.tilt : 0.35;
+      this.spinAngle = 0;
+      this.spinVel = this.baseVel;
+    }
     this.path = def.path || [{ x: 0.5, y: 0.5 }];
     this.loop = def.loop || 'loop';
     this.closed = this.loop === 'loop' && this.path.length > 2;
@@ -117,6 +149,12 @@ class Entity {
     // Drehung der Frame-Sequenz laeuft weiter, solange nicht festgehalten
     if (this.frames && this.frames.length && heldEntity !== this) this.spinTime += dt;
 
+    // 3D-Kugel: dreht von selbst; Schwung klingt sanft auf Normaltempo ab
+    if (this.isGlobe && heldEntity !== this) {
+      this.spinAngle += this.spinVel * dt;
+      this.spinVel += (this.baseVel - this.spinVel) * Math.min(1, dt * 1.2);
+    }
+
     const target = this.highlight > 0 && openEntity === this ? 1 : 0;
     this.highlight += (target - this.highlight) * min(1, dt * 4);
   }
@@ -143,9 +181,25 @@ class Entity {
     translate(x, y);
     const glow = 0.15 + this.highlight * 0.5 + (hoverEntity === this ? 0.2 : 0);
 
+    // 3D-Kugel: in den WebGL-Layer rendern und als Bild einsetzen
+    let handled = false;
+    if (this.isGlobe && this.tex && globeBuf) {
+      if (glow > 0.16) {
+        drawingContext.shadowBlur = 40 * glow;
+        drawingContext.shadowColor = `rgba(216,178,90,${0.6 * glow})`;
+      }
+      drawGlobe(this);
+      imageMode(CENTER);
+      tint(255, 255 * alpha);
+      image(globeBuf, 0, 0, sz, sz);
+      noTint();
+      drawingContext.shadowBlur = 0;
+      handled = true;
+    }
+
     // aktuelles Bild: bei Frame-Sequenz das laufende Einzelbild, sonst das Standbild
-    let drawImg = this.img;
-    if (this.frames && this.frames.length) {
+    let drawImg = handled ? null : this.img;
+    if (!handled && this.frames && this.frames.length) {
       const fps = (this.def.frames && this.def.frames.fps) || 12;
       const idx = Math.floor(this.spinTime * fps) % this.frames.length;
       drawImg = this.frames[idx];
@@ -162,7 +216,7 @@ class Entity {
       const ratio = drawImg.height / drawImg.width;
       image(drawImg, 0, 0, sz, sz * ratio);
       drawingContext.shadowBlur = 0;
-    } else {
+    } else if (!handled) {
       // Platzhalter-Form: weicher Leuchtkleks
       noStroke();
       const c = this.color;
@@ -394,7 +448,7 @@ function draw() {
   }
 
   if (heldEntity) cursor('grabbing');
-  else if (hoverEntity) cursor(hoverEntity.frames ? 'grab' : 'pointer');
+  else if (hoverEntity) cursor((hoverEntity.frames || hoverEntity.isGlobe) ? 'grab' : 'pointer');
   else cursor('default');
 }
 
@@ -433,15 +487,27 @@ function mousePressed() {
   for (let i = allEntities.length - 1; i >= 0; i--) {
     const ent = allEntities[i];
     if (currentSceneAlphaFor(ent) > 0.4 && ent.contains(mouseX, mouseY)) {
-      // animierte Entities (rotierende Kugel): Halten pausiert die Drehung
-      if (ent.frames && ent.frames.length) heldEntity = ent;
+      // 3D-Kugel: greifen (Drehung anhalten, dann per Ziehen steuern)
+      if (ent.isGlobe) { heldEntity = ent; ent.spinVel = 0; }
+      // Frame-Sequenz: Halten pausiert
+      else if (ent.frames && ent.frames.length) heldEntity = ent;
       else openPanel(ent);
       return;
     }
   }
 }
 
-function mouseReleased() { heldEntity = null; }   // Loslassen -> Drehung laeuft weiter
+// Ziehen dreht die gegriffene Kugel nach links/rechts; Tempo merkt sie sich als Schwung
+function mouseDragged() {
+  if (heldEntity && heldEntity.isGlobe) {
+    const ent = heldEntity;
+    const dAng = (mouseX - pmouseX) / Math.max(ent.radius, 1) * 1.3;
+    ent.spinAngle += dAng;
+    ent.spinVel = dAng / Math.max(deltaTime / 1000, 0.001);   // Schwung fuers Loslassen
+  }
+}
+
+function mouseReleased() { heldEntity = null; }   // Loslassen -> Schwung, dann zurueck auf Normaltempo
 
 function openPanel(ent) {
   openEntity = ent;

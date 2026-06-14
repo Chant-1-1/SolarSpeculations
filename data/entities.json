@@ -4,12 +4,11 @@
     {
       "id": "weltkugel",
       "scene": "scene1",
-      "image": "assets/images/entities/scene1/weltkugel.png",
-      "frames": {
-        "dir": "assets/images/entities/scene1/globe/",
-        "count": 72,
-        "fps": 4,
-        "pad": 2
+      "image": "",
+      "globe": {
+        "texture": "assets/images/entities/scene1/world.png",
+        "baseVel": 0.30,
+        "tilt": 0.35
       },
       "label": "Weltkugel",
       "path": [
