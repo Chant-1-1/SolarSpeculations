@@ -41,8 +41,8 @@ def vnoise(u, v, period, seed):
 # --- fraktales Noise (mehrere Oktaven) fuer Kontinente ---
 fbm = np.zeros_like(u); amp = 1.0; tot = 0.0
 for o, per in enumerate([3, 6, 12, 24, 48]):
-    fbm += amp * vnoise(u, v, per, seed=7 + o)
-    tot += amp; amp *= 0.55
+    fbm += amp * vnoise(u, v, per, seed=15 + o)
+    tot += amp; amp *= 0.85
 fbm /= tot
 
 # --- Farben nach Hoehe (Land/Ozean) ---
