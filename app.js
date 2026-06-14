@@ -21,10 +21,52 @@ let openEntity = null;    // aktuell geoeffnetes Inhalts-Panel
 let hoverEntity = null;
 let heldEntity = null;    // Entity, das gerade per Maus festgehalten/gedreht wird
 let globeBuf = null;      // gemeinsamer WebGL-Layer fuer 3D-Kugeln
+let oceanShader = null;   // Shader fuer animierte Meeresstroemungen
 const GLOBE_BUF = 600;    // Aufloesung dieses Layers (px)
 
+// Vertex: Standard-p5-WEBGL, reicht UV durch
+const OCEAN_VERT = `
+precision highp float;
+attribute vec3 aPosition;
+attribute vec2 aTexCoord;
+uniform mat4 uModelViewMatrix;
+uniform mat4 uProjectionMatrix;
+varying vec2 vUV;
+void main() {
+  vUV = aTexCoord;
+  gl_Position = uProjectionMatrix * uModelViewMatrix * vec4(aPosition, 1.0);
+}`;
+
+// Fragment: Albedo sampeln; nur ueber Wasser ein zeitlich driftendes Stroemungsmuster
+const OCEAN_FRAG = `
+precision highp float;
+varying vec2 vUV;
+uniform sampler2D uTex;
+uniform float uTime;
+float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float noise(vec2 p){
+  vec2 i = floor(p), f = fract(p);
+  float a = hash(i), b = hash(i+vec2(1.,0.)), c = hash(i+vec2(0.,1.)), d = hash(i+vec2(1.,1.));
+  vec2 u = f*f*(3.-2.*f);
+  return mix(mix(a,b,u.x), mix(c,d,u.x), u.y);
+}
+void main(){
+  vec4 base = texture2D(uTex, vUV);
+  // Wasser = blau dominant, nicht zu hell (kein Eis), nicht gruen (kein Land)
+  float water = step(base.b, 0.62) * step(base.r, base.b - 0.04) * step(base.g, base.b);
+  // zwei entgegengesetzt driftende Noise-Lagen -> fliessende Stroemungsbaender
+  vec2 fc = vec2(vUV.x * 130.0, vUV.y * 60.0);
+  float fl = mix(noise(fc + vec2(uTime*0.5, 0.0)), noise(fc*2.0 - vec2(uTime*0.35, 0.0)), 0.5);
+  float streak = smoothstep(0.58, 0.96, fl);
+  vec3 col = base.rgb + water * streak * 0.11 * vec3(0.5, 0.7, 0.95);
+  gl_FragColor = vec4(col, base.a);
+}`;
+
 function ensureGlobeBuffer() {
-  if (!globeBuf) globeBuf = createGraphics(GLOBE_BUF, GLOBE_BUF, WEBGL);
+  if (!globeBuf) {
+    globeBuf = createGraphics(GLOBE_BUF, GLOBE_BUF, WEBGL);
+    oceanShader = globeBuf.createShader(OCEAN_VERT, OCEAN_FRAG);
+  }
 }
 
 // rendert die 3D-Kugel (unlit -> kraeftige Albedo) + driftende Wolkenschicht in den WebGL-Layer.
@@ -33,14 +75,21 @@ function drawGlobe(ent) {
   const g = globeBuf;
   const R = GLOBE_BUF * 0.42;
   g.clear();
-  // Oberflaeche
+  // Oberflaeche mit Ozean-Shader (animierte Meeresstroemung ueber Wasser)
   g.push();
-  g.noStroke(); g.noLights();
-  g.texture(ent.tex);
+  g.noStroke();
+  if (oceanShader) {
+    g.shader(oceanShader);
+    oceanShader.setUniform('uTex', ent.tex);
+    oceanShader.setUniform('uTime', millis() / 1000);
+  } else {
+    g.noLights(); g.texture(ent.tex);
+  }
   g.rotateX(ent.tilt);
   g.rotateY(ent.spinAngle);
   g.sphere(R, 48, 36);
   g.pop();
+  if (oceanShader) g.resetShader();
   // Wolken (eigene Drift, knapp ueber der Oberflaeche). Backface-Culling -> nur vordere
   // Haelfte, sonst scheint die transparente Rueckseite durch ("2 Kugeln"-Effekt).
   if (ent.cloudTex) {
