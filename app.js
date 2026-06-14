@@ -40,14 +40,13 @@ float vnoise3(vec3 p){
                  mix(hash3(i+vec3(0.,1.,1.)),hash3(i+vec3(1.,1.,1.)),u.x),u.y),u.z);
 }
 float fbm3(vec3 p){ float v=0.,a=0.5; for(int k=0;k<4;k++){ v+=a*vnoise3(p); p*=2.0; a*=0.5; } return v; }
-// Nebeldichte 0..1 an 3D-Modellposition p zur Zeit t (Drift relativ zur Kugel + Morph).
-// Weicher, breiter Schwellbereich -> wispy Nebel statt harter Flecken.
-float volumeDensity(vec3 p, float t){
+// Rohes Wolken-Rauschen 0..~1 an Modellrichtung p zur Zeit t (Drift relativ zur Kugel + Morph).
+// Roh (ohne Schwelle) -> die interne Variation steuert spaeter die Deckkraft (Kerne weiss, Raender transparent).
+float cloudNoise(vec3 p, float t){
   float ang = t * 0.04;
   float c = cos(ang), s = sin(ang);
   vec3 d = vec3(p.x*c + p.z*s, p.y, -p.x*s + p.z*c);
-  float n = fbm3(d * 4.6 + vec3(t*0.02, t*0.035, t*0.015));   // hoehere Frequenz -> feiner, wispy
-  return smoothstep(0.55, 0.97, n);                           // Schwellwert -> Wolkenmenge
+  return fbm3(d * 3.2 + vec3(t*0.02, t*0.035, t*0.015));
 }`;
 
 const OCEAN_VERT = `
@@ -93,10 +92,10 @@ void main(){
   float n = mix(noise(fc - flow * p1 * 4.0), noise(fc - flow * p2 * 4.0), abs(p1 - 0.5) * 2.0);
   float shim = smoothstep(0.45, 0.95, n);
   vec3 col = base.rgb + water * shim * spd * 0.06 * vec3(0.6, 0.75, 0.92);
-  // Realer Wolkenschatten: vom Oberflaechenpunkt Richtung Licht zur Wolkenhoehe -> Nebeldichte dort
-  vec3 sdir = normalize(vDir + uLightModel * 0.07);
-  float sh = volumeDensity(sdir * 1.05, uTime);
-  col *= 1.0 - 0.22 * sh;
+  // Realer Wolkenschatten: vom Oberflaechenpunkt Richtung Licht zur Wolkenhoehe -> Wolke dort?
+  vec3 sdir = normalize(vDir + uLightModel * 0.06);
+  float sh = smoothstep(0.52, 0.82, cloudNoise(sdir, uTime));
+  col *= 1.0 - 0.18 * sh;
   gl_FragColor = vec4(col, base.a);
 }`;
 
@@ -106,57 +105,34 @@ attribute vec3 aPosition;
 uniform mat4 uModelViewMatrix;
 uniform mat4 uProjectionMatrix;
 varying vec3 vDir;
-varying vec3 vRayDir;
+varying float vFacing;
 void main(){
   vDir = normalize(aPosition);
-  vec3 viewDir = normalize((uModelViewMatrix * vec4(aPosition, 1.0)).xyz);   // Kamera->Fragment
-  mat3 m = mat3(uModelViewMatrix);
-  mat3 mt = mat3(m[0][0], m[1][0], m[2][0], m[0][1], m[1][1], m[2][1], m[0][2], m[1][2], m[2][2]); // transpose = inverse Rotation
-  vRayDir = mt * viewDir;                                                     // Blickstrahl im Modellsystem
+  vFacing = clamp((mat3(uModelViewMatrix) * vDir).z, 0.0, 1.0);   // 1 = mittig, 0 = Rand
   gl_Position = uProjectionMatrix * uModelViewMatrix * vec4(aPosition, 1.0);
 }`;
 
-// Wolkenkugel: VOLUMETRISCHER Nebel per Raymarching durch eine Schicht (Ri..Ro).
-// Pro Pixel die Dichte entlang des Strahls aufsummieren -> weicher, durchscheinender Nebel
-// mit echter Tiefe; Selbstschatten Richtung Licht (Beer-Lambert) gibt Volumen.
+// Wolkenkugel: illustrativ/gemalt. Deckkraft folgt der Dichte ueber einen BREITEN Bereich
+// -> dichte Kerne voll weiss, duennere Stellen durchscheinend (natuerliche Variation).
 const CLOUD_FRAG = `
 precision highp float;
 varying vec3 vDir;
-varying vec3 vRayDir;
+varying float vFacing;
 uniform float uTime;
 uniform vec3 uLightModel;
 ` + CLOUD_GLSL + `
 void main(){
-  float Ro = 1.12, Ri = 1.0;
-  vec3 ro = vDir * Ro;                 // Eintritt auf der Aussenschale (Oberflaeche = 1.0)
-  vec3 rd = normalize(vRayDir);        // Blickstrahl ins Volumen
-  // Strahl-Kugel-Schnitt mit der Innenschale (Oberflaeche): Wegstrecke durch den Nebel
-  float b = dot(ro, rd);
-  float disc = b * b - (dot(ro, ro) - Ri * Ri);
-  float tEnd;
-  if (disc > 0.0) {
-    tEnd = -b - sqrt(disc);            // bis zur Oberflaeche
-  } else {
-    tEnd = -b + sqrt(b * b - (dot(ro, ro) - Ro * Ro));   // streift -> langer Weg am Rand
-  }
-  tEnd = clamp(tEnd, 0.0, 0.34);   // Randverdichtung begrenzen -> gleichmaessiger
-  float dt = tEnd / 10.0;
-  float trans = 1.0, lum = 0.0;
-  for (int i = 0; i < 10; i++) {
-    vec3 pos = ro + rd * ((float(i) + 0.5) * dt);
-    float dens = volumeDensity(pos, uTime);
-    float a = clamp(dens * dt * 3.3, 0.0, 1.0);          // Weglaenge -> dicker am Rand (3D); halb so dick
-    if (a > 0.001) {
-      float dl = volumeDensity(pos + uLightModel * 0.05, uTime);
-      float lt = exp(-dl * 2.8);                          // Selbstschatten Richtung Licht
-      lum += trans * a * (0.5 + 0.6 * lt);
-      trans *= (1.0 - a);
-    }
-  }
-  float alpha = 1.0 - trans;
-  if (alpha < 0.015) discard;
-  vec3 col = vec3(clamp(lum / max(alpha, 0.001), 0.0, 1.06));
-  gl_FragColor = vec4(col, alpha * 0.82);   // leicht durchscheinend -> nebelig
+  float latFade = 1.0 - smoothstep(0.5, 0.9, abs(vDir.y));   // weniger an den Polen
+  float rim = smoothstep(0.10, 0.40, vFacing);               // Rand sauber ausblenden (nicht flach)
+  float raw = cloudNoise(vDir, uTime);
+  // breiter Schwellbereich -> Deckkraft variiert: Kerne ~1 (weiss), Raender ~0 (transparent)
+  float al = smoothstep(0.50, 0.86, raw) * latFade * rim;
+  if (al < 0.012) discard;
+  // sanftes Volumen-Shading: Seite zum Licht etwas heller
+  float dl = cloudNoise(normalize(vDir + uLightModel * 0.07), uTime);
+  float shade = clamp(0.90 + (raw - dl) * 0.8, 0.80, 1.0);
+  vec3 col = mix(vec3(0.84, 0.87, 0.92), vec3(0.97, 0.98, 0.99), shade);
+  gl_FragColor = vec4(col, clamp(al, 0.0, 0.96));
 }`;
 
 function ensureGlobeBuffer() {
@@ -231,7 +207,7 @@ function drawGlobe(ent) {
     cloudShader.setUniform('uLightModel', Lm);
     g.rotateX(ent.tilt);
     g.rotateY(ent.spinAngle);
-    g.sphere(R * 1.12, 72, 54);                   // = Aussenschale Ro des Raymarch (Eintritt)
+    g.sphere(R * 1.05, 72, 54);                   // schwebt knapp ueber der Oberflaeche
     g.pop();
     g.resetShader();
     gl.depthMask(true);
