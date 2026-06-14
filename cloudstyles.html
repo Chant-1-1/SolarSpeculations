@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8" />
+<title>Wolken-Stile vergleichen — SolarSpeculations</title>
+<style>
+  body { margin: 0; background: #fff; color: #222; font-family: system-ui, sans-serif; text-align: center; }
+  h1 { font-weight: 500; font-size: 1.1rem; margin: 16px 0 4px; letter-spacing: 0.04em; }
+  p.hint { color: #777; font-size: 0.85rem; margin: 0 0 6px; }
+  #holder { display: flex; justify-content: center; }
+  #labels { display: flex; justify-content: center; }
+  #labels div { width: 230px; font-size: 0.92rem; color: #333; }
+  #labels small { display: block; color: #999; font-size: 0.72rem; line-height: 1.3; margin-top: 2px; }
+</style>
+</head>
+<body>
+  <h1>Wolken-Stile</h1>
+  <p class="hint">Alle live animiert. Gemeinsame Fixes: cremeweiss, weniger an Polen, Rand ausgeblendet. Welcher? (Nummer)</p>
+  <div id="holder"></div>
+  <div id="labels">
+    <div>1 · Illustrativ/gemalt<small>weiche Formen wie die Inseln</small></div>
+    <div>2 · Zarte Dunstschleier<small>fein, minimal, ruhig</small></div>
+    <div>3 · Realistisch sauber<small>Volumen + Schatten, off-white</small></div>
+    <div>4 · Ohne Wolken<small>nur Atmosphaere</small></div>
+  </div>
+
+  <script src="lib/p5.min.js"></script>
+  <script>
+  const N = 4, SP = 230, R = 78;
+  let tex, sh;
+
+  const VERT = `
+  precision highp float;
+  attribute vec3 aPosition;
+  uniform mat4 uModelViewMatrix, uProjectionMatrix;
+  varying vec3 vDir; varying vec3 vRayDir; varying float vFacing;
+  void main(){
+    vDir = normalize(aPosition);
+    vec3 viewDir = normalize((uModelViewMatrix * vec4(aPosition,1.0)).xyz);
+    mat3 m = mat3(uModelViewMatrix);
+    mat3 mt = mat3(m[0][0],m[1][0],m[2][0], m[0][1],m[1][1],m[2][1], m[0][2],m[1][2],m[2][2]);
+    vRayDir = mt * viewDir;
+    vFacing = clamp((m * vDir).z, 0.0, 1.0);
+    gl_Position = uProjectionMatrix * uModelViewMatrix * vec4(aPosition,1.0);
+  }`;
+
+  const FRAG = `
+  precision highp float;
+  varying vec3 vDir; varying vec3 vRayDir; varying float vFacing;
+  uniform float uTime; uniform vec3 uLightModel; uniform int uStyle;
+  float hash3(vec3 p){ return fract(sin(dot(p, vec3(127.1,311.7,74.7)))*43758.5453); }
+  float vnoise3(vec3 p){ vec3 i=floor(p),f=fract(p); vec3 u=f*f*(3.-2.*f);
+    return mix(mix(mix(hash3(i+vec3(0.,0.,0.)),hash3(i+vec3(1.,0.,0.)),u.x),mix(hash3(i+vec3(0.,1.,0.)),hash3(i+vec3(1.,1.,0.)),u.x),u.y),
+               mix(mix(hash3(i+vec3(0.,0.,1.)),hash3(i+vec3(1.,0.,1.)),u.x),mix(hash3(i+vec3(0.,1.,1.)),hash3(i+vec3(1.,1.,1.)),u.x),u.y),u.z); }
+  float fbm3(vec3 p){ float v=0.,a=0.5; for(int k=0;k<4;k++){ v+=a*vnoise3(p); p*=2.0; a*=0.5; } return v; }
+  float dens3(vec3 p, float t, float fr, float lo, float hi){
+    float ang=t*0.04; float c=cos(ang),s=sin(ang);
+    vec3 d=vec3(p.x*c+p.z*s, p.y, -p.x*s+p.z*c);
+    return smoothstep(lo, hi, fbm3(d*fr + vec3(t*0.02,t*0.035,t*0.015)));
+  }
+  void main(){
+    float latFade = 1.0 - smoothstep(0.5, 0.9, abs(vDir.y));   // weniger an Polen
+    float rim = smoothstep(0.12, 0.42, vFacing);               // Rand ausblenden
+    if(uStyle==0){ // illustrativ/gemalt: weiche Formen, cremeweiss, sanfter Schatten
+      float dn = dens3(vDir, uTime, 3.0, 0.50, 0.74) * latFade;
+      float body = smoothstep(0.18, 0.5, dn);
+      float al = body * rim * 0.95;
+      if(al < 0.01) discard;
+      float dl = dens3(normalize(vDir+uLightModel*0.07), uTime, 3.0, 0.50, 0.74) * latFade;
+      float shade = clamp(0.92 + (dn-dl)*1.0, 0.78, 1.0);
+      vec3 col = mix(vec3(0.82,0.85,0.90), vec3(0.96,0.97,0.98), shade);
+      gl_FragColor = vec4(col, al);
+    } else if(uStyle==1){ // zarte dunstschleier: fein, sehr durchscheinend
+      float dn = dens3(vDir, uTime, 5.5, 0.45, 0.9) * latFade;
+      float al = smoothstep(0.05,0.6,dn) * rim * 0.34;
+      if(al < 0.01) discard;
+      gl_FragColor = vec4(vec3(0.93,0.95,0.97), al);
+    } else { // realistisch sauber: Volumen-Raymarch, off-white, Rand-/Pol-Fade
+      float Ro=1.1, Ri=1.0; vec3 ro=vDir*Ro, rd=normalize(vRayDir);
+      float b=dot(ro,rd); float disc=b*b-(dot(ro,ro)-Ri*Ri);
+      float tE = disc>0.0 ? (-b-sqrt(disc)) : (-b+sqrt(b*b-(dot(ro,ro)-Ro*Ro)));
+      tE=clamp(tE,0.0,0.3); float dt=tE/8.0; float tr=1.0,lum=0.0;
+      for(int i=0;i<8;i++){ vec3 pos=ro+rd*((float(i)+0.5)*dt);
+        float dn=dens3(pos,uTime,4.0,0.52,0.95)*latFade;
+        float a=clamp(dn*dt*4.0,0.0,1.0);
+        if(a>0.001){ float dl=dens3(pos+uLightModel*0.05,uTime,4.0,0.52,0.95)*latFade;
+          lum+=tr*a*(0.55+0.5*exp(-dl*2.5)); tr*=(1.0-a); } }
+      float al=1.0-tr; if(al<0.01) discard;
+      vec3 col=mix(vec3(0.86,0.89,0.93), vec3(0.97,0.98,0.99), clamp(lum/max(al,0.001),0.0,1.0));
+      gl_FragColor=vec4(col, al*rim*0.8);
+    }
+  }`;
+
+  function lightModel(tilt, spin){
+    let L=[-0.45,-0.5,0.74]; const m=Math.hypot(L[0],L[1],L[2]); L=L.map(v=>v/m);
+    let a=-tilt, c=Math.cos(a), s=Math.sin(a); L=[L[0], L[1]*c-L[2]*s, L[1]*s+L[2]*c];
+    a=-spin; c=Math.cos(a); s=Math.sin(a); L=[L[0]*c+L[2]*s, L[1], -L[0]*s+L[2]*c];
+    return L;
+  }
+  function preload(){ tex = loadImage('assets/images/entities/scene1/world.png'); }
+  function setup(){ const c=createCanvas(N*SP, 230, WEBGL); c.parent('holder'); sh=createShader(VERT,FRAG); noStroke(); }
+  function draw(){
+    clear(); const gl=drawingContext; gl.enable(gl.DEPTH_TEST);
+    const spin = millis()/1000 * -0.1, tilt = 0.0;
+    const Lm = lightModel(tilt, spin);
+    for(let i=0;i<N;i++){
+      push(); translate(-width/2 + SP/2 + i*SP, 0, 0);
+      // Oberflaeche
+      push(); rotateX(tilt); rotateY(spin); texture(tex); sphere(R,48,36); pop();
+      // Wolken
+      if(i<3){
+        blendMode(BLEND);
+        gl.enable(gl.CULL_FACE); gl.cullFace(gl.FRONT); gl.depthMask(false);
+        push(); shader(sh);
+        sh.setUniform('uTime', millis()/1000); sh.setUniform('uLightModel', Lm); sh.setUniform('uStyle', i);
+        rotateX(tilt); rotateY(spin); sphere(R*1.1, 64, 48); pop();
+        resetShader(); gl.depthMask(true); gl.disable(gl.CULL_FACE);
+      }
+      pop();
+    }
+  }
+  </script>
+</body>
+</html>
