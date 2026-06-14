@@ -54,8 +54,20 @@ async function buildWorld() {
   allEntities = [];
   for (const def of entitiesData.entities) {
     const img = await tryLoadImage(def.image);
-    allEntities.push(new Entity(def, img));
+    const ent = new Entity(def, img);
+    if (def.frames) ent.frames = await loadFrames(def.frames);  // Animations-Sequenz
+    allEntities.push(ent);
   }
+}
+
+// Frame-Sequenz laden (z.B. rotierender Globus): frames = { dir, count, fps, pad }
+async function loadFrames(spec) {
+  const ps = [];
+  for (let i = 0; i < spec.count; i++) {
+    const n = String(i).padStart(spec.pad || 2, '0');
+    ps.push(tryLoadImage(spec.dir + 'frame_' + n + '.png'));
+  }
+  return (await Promise.all(ps)).filter(Boolean);
 }
 
 // =========================================================================
@@ -65,6 +77,7 @@ class Entity {
   constructor(def, img) {
     this.def = def;
     this.img = img;
+    this.frames = null;               // optionale Animations-Sequenz (rotierender Globus)
     this.path = def.path || [{ x: 0.5, y: 0.5 }];
     this.loop = def.loop || 'loop';
     this.closed = this.loop === 'loop' && this.path.length > 2;
@@ -125,7 +138,15 @@ class Entity {
     translate(x, y);
     const glow = 0.15 + this.highlight * 0.5 + (hoverEntity === this ? 0.2 : 0);
 
-    if (this.img) {
+    // aktuelles Bild: bei Frame-Sequenz das laufende Einzelbild, sonst das Standbild
+    let drawImg = this.img;
+    if (this.frames && this.frames.length) {
+      const fps = (this.def.frames && this.def.frames.fps) || 12;
+      const idx = Math.floor(millis() / (1000 / fps)) % this.frames.length;
+      drawImg = this.frames[idx];
+    }
+
+    if (drawImg) {
       // weicher Schein bei Hover/Highlight
       if (glow > 0.16) {
         drawingContext.shadowBlur = 40 * glow;
@@ -133,8 +154,8 @@ class Entity {
       }
       imageMode(CENTER);
       tint(255, 255 * alpha);
-      const ratio = this.img.height / this.img.width;
-      image(this.img, 0, 0, sz, sz * ratio);
+      const ratio = drawImg.height / drawImg.width;
+      image(drawImg, 0, 0, sz, sz * ratio);
       drawingContext.shadowBlur = 0;
     } else {
       // Platzhalter-Form: weicher Leuchtkleks

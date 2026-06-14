@@ -5,14 +5,20 @@
       "id": "weltkugel",
       "scene": "scene1",
       "image": "assets/images/entities/scene1/weltkugel.png",
+      "frames": {
+        "dir": "assets/images/entities/scene1/globe/",
+        "count": 48,
+        "fps": 12,
+        "pad": 2
+      },
       "label": "Weltkugel",
       "path": [
         { "x": 0.5, "y": 0.5 }
       ],
       "loop": "loop",
       "speed": 0.01,
-      "scale": 0.22,
-      "bob": 0.012,
+      "scale": 0.24,
+      "bob": 0.010,
       "opacity": 1.0,
       "content": {
         "title": "Weltkugel",
