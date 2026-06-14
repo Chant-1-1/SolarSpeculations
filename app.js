@@ -41,15 +41,19 @@ function drawGlobe(ent) {
   g.rotateY(ent.spinAngle);
   g.sphere(R, 48, 36);
   g.pop();
-  // Wolken (eigene Drift, leicht groesserer Radius -> schweben ueber der Oberflaeche)
+  // Wolken (eigene Drift, knapp ueber der Oberflaeche). Backface-Culling -> nur vordere
+  // Haelfte, sonst scheint die transparente Rueckseite durch ("2 Kugeln"-Effekt).
   if (ent.cloudTex) {
+    const gl = g.drawingContext;
+    gl.enable(gl.CULL_FACE); gl.cullFace(gl.BACK);
     g.push();
     g.noStroke(); g.noLights();
     g.texture(ent.cloudTex);
     g.rotateX(ent.tilt);
     g.rotateY(ent.spinAngle + ent.cloudDrift);
-    g.sphere(R * 1.015, 48, 36);
+    g.sphere(R * 1.008, 48, 36);
     g.pop();
+    gl.disable(gl.CULL_FACE);
   }
 }
 let duck = 0;             // 0..1 Audio-Ducking + Bewegungs-Verlangsamung bei offenem Panel
