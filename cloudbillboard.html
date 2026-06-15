@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8" />
+<title>Wolken: Billboard-Partikel (Prototyp) — SolarSpeculations</title>
+<style>
+  body { margin: 0; background: #fff; color: #222; font-family: system-ui, sans-serif; text-align: center; }
+  h1 { font-weight: 500; font-size: 1.05rem; margin: 14px 0 2px; letter-spacing: 0.04em; }
+  p.hint { color: #777; font-size: 0.82rem; margin: 0 0 6px; }
+  #holder { display: flex; justify-content: center; }
+  #fps { position: fixed; top: 8px; right: 12px; color: #999; font-size: 0.8rem; font-family: monospace; }
+</style>
+</head>
+<body>
+  <h1>Wolken als Billboard-Partikel (wie das Vorbild)</h1>
+  <p class="hint">Tausende weiche Sprites in einer Schale, in der Tiefe gestapelt -> Volumen durch Ueberlagerung.</p>
+  <div id="fps"></div>
+  <div id="holder"></div>
+
+  <script src="lib/p5.min.js"></script>
+  <script>
+  const R = 150;            // Kugelradius
+  const N_MAX = 2600;       // max. Sprites
+  const COVER = 0.50;       // Noise-Schwelle fuer Wolkengruppen (kleiner = mehr Wolken)
+  const OPACITY = 0.17;     // Deckkraft pro Sprite (Ueberlagerung baut Dichte auf)
+  let tex, sh, field, sprites = [];
+
+  const VERT = `
+  precision highp float;
+  attribute vec3 aPosition;   // Sprite-Zentrum (Modellraum)
+  attribute vec2 aTexCoord;   // Eckpunkt 0..1
+  attribute vec3 aNormal;     // (scale, random, 0)
+  uniform mat4 uModelViewMatrix, uProjectionMatrix;
+  uniform vec3 uSunDir;       // Sonnenrichtung im Modellraum
+  varying vec2 vUv; varying float vOcc; varying float vRnd;
+  void main(){
+    vUv = aTexCoord; vRnd = aNormal.y;
+    vOcc = dot(normalize(aPosition), uSunDir) * 0.5 + 0.5;   // 1 Sonnenseite .. 0 abgewandt
+    vec4 mv = uModelViewMatrix * vec4(aPosition, 1.0);
+    mv.xy += (aTexCoord * 2.0 - 1.0) * aNormal.x;            // Billboard im View-Raum
+    gl_Position = uProjectionMatrix * mv;
+  }`;
+
+  const FRAG = `
+  precision highp float;
+  varying vec2 vUv; varying float vOcc; varying float vRnd;
+  uniform float uOpacity;
+  void main(){
+    vec2 p = vUv * 2.0 - 1.0;
+    float mask = smoothstep(1.0, 0.2, length(p));     // weicher runder Klecks
+    if(mask < 0.01) discard;
+    float light = 0.40 + 0.60 * vOcc;                 // Sonnenseite heller
+    vec3 col = mix(vec3(0.52,0.58,0.72), vec3(1.0,1.0,1.0), light);  // Schatten blaugrau -> weiss
+    float grain = 0.75 + 0.25 * fract(sin(vRnd * 91.7) * 43758.5453);
+    gl_FragColor = vec4(col, mask * uOpacity * grain);
+  }`;
+
+  function lightModel(tilt, spin){
+    let L=[-0.45,-0.5,0.74]; const m=Math.hypot(L[0],L[1],L[2]); L=L.map(v=>v/m);
+    let a=-tilt, c=Math.cos(a), s=Math.sin(a); L=[L[0], L[1]*c-L[2]*s, L[1]*s+L[2]*c];
+    a=-spin; c=Math.cos(a); s=Math.sin(a); L=[L[0]*c+L[2]*s, L[1], -L[0]*s+L[2]*c];
+    return L;
+  }
+
+  function buildSprites(){
+    sprites = [];
+    let tries = 0;
+    while(sprites.length < N_MAX && tries < N_MAX*10){
+      tries++;
+      // Richtung auf der Kugel, leicht aequatorbetont
+      const uu = (random(-1,1)) * 0.78;            // y = sin(lat), Bias zum Aequator
+      const th = random(TWO_PI);
+      const rr = Math.sqrt(Math.max(0.0,1.0-uu*uu));
+      const dir = createVector(rr*Math.cos(th), uu, rr*Math.sin(th));
+      // Noise -> Wolken gruppieren (Sprites nur wo Dichte hoch)
+      const nv = noise(dir.x*1.5+10, dir.y*1.5+10, dir.z*1.5+10);
+      if(nv < COVER) continue;
+      const dens = (nv - COVER) / (1.0 - COVER);   // 0..1 Dichte
+      const rad = R * (1.0 + 0.02 + random(0.0,0.07));  // duenne Schale knapp ueber Oberflaeche
+      const center = dir.copy().mult(rad);
+      const scale = (7.0 + random(0.0,9.0)) * (0.6 + 0.7*dens);
+      sprites.push({c: center, s: scale, r: random()});
+    }
+    // gebatchte Geometrie: 4 Vertices + 2 Dreiecke pro Sprite -> EIN Draw-Call
+    field = new p5.Geometry();
+    const corners = [[0,0],[1,0],[1,1],[0,1]];
+    for(let i=0;i<sprites.length;i++){
+      const sp = sprites[i], base = i*4;
+      for(let k=0;k<4;k++){
+        field.vertices.push(sp.c.copy());
+        field.uvs.push(corners[k][0], corners[k][1]);
+        field.vertexNormals.push(createVector(sp.s, sp.r, 0));
+      }
+      field.faces.push([base, base+1, base+2]);
+      field.faces.push([base, base+2, base+3]);
+    }
+    field.gid = 'cloudfield';   // einmal cachen
+  }
+
+  function preload(){ tex = loadImage('assets/images/entities/scene1/world.png'); }
+  function setup(){
+    const c = createCanvas(560, 560, WEBGL); c.parent('holder');
+    noiseSeed(7);
+    sh = createShader(VERT, FRAG);
+    buildSprites();
+    noStroke();
+  }
+  function draw(){
+    clear();
+    const gl = drawingContext;
+    const spin = millis()/1000 * -0.12, tilt = 0.0;
+    const Lm = lightModel(tilt, spin);
+    // Oberflaeche
+    gl.enable(gl.DEPTH_TEST); gl.depthMask(true);
+    push(); rotateX(tilt); rotateY(spin); texture(tex); sphere(R, 56, 40); pop();
+    // Wolken-Billboards: Tiefentest an (Kugel verdeckt Rueckseite), kein Tiefenschreiben, Alpha-Blend
+    blendMode(BLEND);
+    gl.depthMask(false);
+    push();
+    shader(sh);
+    sh.setUniform('uSunDir', Lm);
+    sh.setUniform('uOpacity', OPACITY);
+    rotateX(tilt); rotateY(spin);
+    model(field);
+    pop();
+    resetShader();
+    gl.depthMask(true);
+    document.getElementById('fps').textContent = Math.round(frameRate()) + ' fps · ' + sprites.length + ' sprites';
+  }
+  </script>
+</body>
+</html>
