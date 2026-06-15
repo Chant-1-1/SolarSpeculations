@@ -22,11 +22,11 @@
   <script src="lib/p5.min.js"></script>
   <script>
   const R = 178;
-  const CLOUD_OP   = 0.25;           // Wolken-Deckkraft (weiter reduziert)
+  const CLOUD_OP   = 0.15;           // Wolken-Deckkraft (sehr dezent)
   const WATER_LIFT = 0.0;            // aus -> rohes Wasser aus earth_day (Farben kommen aus der Textur)
   const RELIEF     = 0.85;
   const GLOSS      = 240.0;
-  const SPECGAIN   = 0.95;
+  const SPECGAIN   = 0.0;            // Sonnen-Glanzfleck aus (kein Hotspot)
   const AMBIENT    = 0.20;
   const SUN_COL    = [1.0, 0.97, 0.90];
   const NIGHT_COL  = [0.04, 0.05, 0.09];
@@ -77,21 +77,25 @@
   const CLOUD_FRAG = `
   precision highp float;
   varying vec2 vUv; varying vec3 vModelPos; varying vec3 vN0;
-  uniform sampler2D uClouds;
+  uniform sampler2D uClouds, uLandSpec;
   uniform vec3 uLight, uCam;
   uniform float uCloudOp;
   void main(){
     vec3 N0 = normalize(vN0);
     vec3 L = normalize(uLight);
     vec3 Vd = normalize(uCam - vModelPos);
+    float water = texture2D(uLandSpec, vUv).r;                // hoch=Wasser, niedrig=Land
     vec3 c = texture2D(uClouds, vUv).rgb;
     float lum = max(max(c.r, c.g), c.b);
-    float a = smoothstep(0.16, 0.62, lum);
+    float lo = mix(0.48, 0.16, water);                        // ueber Land hoehere Schwelle -> nur kleine dichte Kerne
+    float hi = mix(0.82, 0.60, water);
+    float a = smoothstep(lo, hi, lum);
     if(a < 0.01) discard;
     float term = smoothstep(-0.05, 0.28, dot(N0, L));
     vec3 ccol = mix(vec3(0.55,0.60,0.68), vec3(1.0), 0.3 + 0.7*term);
     float rim = smoothstep(0.0, 0.22, dot(N0, Vd));            // Rueckseite/Rand ausblenden
-    float al = a * (0.10 + 0.90*term) * rim * uCloudOp;
+    float landScale = mix(0.30, 1.0, water);                   // ueber Land zusaetzlich schwaecher
+    float al = a * (0.10 + 0.90*term) * rim * landScale * uCloudOp;
     gl_FragColor = vec4(ccol, al);
   }`;
 
@@ -119,7 +123,7 @@
     clear();
     const gl = drawingContext; gl.enable(gl.DEPTH_TEST); gl.depthMask(true);
     const spin = millis()/1000 * -0.10, tilt = 0.20;
-    const cspin = spin * 1.18;                                  // Wolken etwas schneller -> Drift
+    const cspin = spin;                                         // Wolken an Oberflaeche gekoppelt (fuer Land-Maske)
     const cam = toModel([0,0,camZ], tilt, spin);
     const L  = toModel(norm3(SUN_WORLD), tilt, spin);
     const Lc = toModel(norm3(SUN_WORLD), tilt, cspin);
@@ -137,7 +141,7 @@
     blendMode(BLEND);
     gl.enable(gl.CULL_FACE); gl.cullFace(gl.FRONT); gl.depthMask(false);
     shader(cloudSh);
-    cloudSh.setUniform('uClouds', clouds);
+    cloudSh.setUniform('uClouds', clouds); cloudSh.setUniform('uLandSpec', smap);
     cloudSh.setUniform('uLight', Lc); cloudSh.setUniform('uCam', toModel([0,0,camZ], tilt, cspin));
     cloudSh.setUniform('uCloudOp', CLOUD_OP);
     push(); rotateX(tilt); rotateY(cspin); sphere(R*1.012, 96, 64); pop();
