@@ -22,7 +22,7 @@
   <script src="lib/p5.min.js"></script>
   <script>
   const R = 178;
-  const CLOUD_OP   = 0.45;           // Wolken-Deckkraft (premultiplied -> hoeher noetig fuer Sichtbarkeit)
+  const CLOUD_OP   = 0.50;           // Wolken-Deckkraft (premultiplied -> hoeher noetig fuer Sichtbarkeit)
   const WATER_LIFT = 0.0;            // additiver Lift (flach) -> aus
   const WATER_GAIN = 2.0;            // Wasser-Albedo multiplikativ verstaerken -> heller UND Struktur bleibt sichtbar
   const RELIEF     = 0.85;
@@ -104,8 +104,8 @@
     float det  = fbm(d*7.0 + 11.0) * 0.5 + 0.5;                      // wispy Detail
     float raw = base*0.70 + det*0.30;
     float pole = 1.0 - smoothstep(0.80, 0.99, abs(N0.y));            // Pole klar
-    float lo = mix(0.74, 0.64, water);                              // hoehere Schwelle -> weniger/kleinere Wolken (ueber Land noch hoeher)
-    float a = smoothstep(lo, lo + 0.16, raw) * pole;
+    float lo = mix(0.75, 0.67, water);                              // hohe Schwelle -> nur wenige Wolken (~1/5)
+    float a = smoothstep(lo, lo + 0.11, raw) * pole;                // schmalere Rampe -> die wenigen Wolken bleiben dicht/sichtbar
     a *= clamp(det*0.6 + 0.5, 0.0, 1.0);                            // Kanten ausfransen
     if(a < 0.01) discard;
     float term = smoothstep(-0.05, 0.28, dot(N0, L));
