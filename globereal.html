@@ -22,7 +22,7 @@
   <script src="lib/p5.min.js"></script>
   <script>
   const R = 178;
-  const CLOUD_OP   = 0.45;           // Wolken-Deckkraft (reduziert)
+  const CLOUD_OP   = 0.25;           // Wolken-Deckkraft (weiter reduziert)
   const WATER_LIFT = 0.0;            // aus -> rohes Wasser aus earth_day (Farben kommen aus der Textur)
   const RELIEF     = 0.85;
   const GLOSS      = 240.0;
@@ -31,7 +31,7 @@
   const SUN_COL    = [1.0, 0.97, 0.90];
   const NIGHT_COL  = [0.04, 0.05, 0.09];
   const ATMO_COL   = [0.42, 0.60, 0.95];
-  const SUN_WORLD  = [0.55, 0.30, 0.55];
+  const SUN_WORLD  = [0.55, 0.30, 0.78];  // ueberwiegend frontal (~40 Grad seitlich) -> meist Tag, schmale Nacht-Sichel
 
   let day, nmap, smap, clouds, night, surfSh, cloudSh, camZ;
 
