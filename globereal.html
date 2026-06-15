@@ -104,7 +104,7 @@
     float det  = fbm(d*7.0 + 11.0) * 0.5 + 0.5;                      // wispy Detail
     float raw = base*0.70 + det*0.30;
     float pole = 1.0 - smoothstep(0.80, 0.99, abs(N0.y));            // Pole klar
-    float lo = mix(0.75, 0.67, water);                              // hohe Schwelle -> nur wenige Wolken (~1/5)
+    float lo = mix(0.82, 0.74, water);                              // sehr hohe Schwelle -> nur ganz wenige Wolken
     float a = smoothstep(lo, lo + 0.11, raw) * pole;                // schmalere Rampe -> die wenigen Wolken bleiben dicht/sichtbar
     a *= clamp(det*0.6 + 0.5, 0.0, 1.0);                            // Kanten ausfransen
     if(a < 0.01) discard;
