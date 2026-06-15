@@ -92,10 +92,12 @@ void main(){
   float n = mix(noise(fc - flow * p1 * 4.0), noise(fc - flow * p2 * 4.0), abs(p1 - 0.5) * 2.0);
   float shim = smoothstep(0.45, 0.95, n);
   vec3 col = base.rgb + water * shim * spd * 0.06 * vec3(0.6, 0.75, 0.92);
-  // Realer Wolkenschatten: vom Oberflaechenpunkt Richtung Licht zur Wolkenhoehe -> Wolke dort?
-  vec3 sdir = normalize(vDir + uLightModel * 0.06);
-  float sh = smoothstep(0.52, 0.82, cloudNoise(sdir, uTime));
-  col *= 1.0 - 0.18 * sh;
+  // Ganz leichter Wolkenschatten: Richtung Licht zur Wolkenhoehe versetzt abgetastet
+  // -> faellt vom Licht weg, gleiche Wolkenform wie sichtbar (gleicher Schwellwert), dezent.
+  vec3 sdir = normalize(vDir + uLightModel * 0.085);
+  float slat = 1.0 - smoothstep(0.5, 0.9, abs(sdir.y));
+  float sh = smoothstep(0.60, 0.82, cloudNoise(sdir, uTime)) * slat;
+  col *= 1.0 - 0.16 * sh;
   gl_FragColor = vec4(col, base.a);
 }`;
 
