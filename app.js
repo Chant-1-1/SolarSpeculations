@@ -285,6 +285,7 @@ class Entity {
       this.cloudVel = def.globe.cloudDrift != null ? def.globe.cloudDrift : 0.05;  // Wolken-Eigendrift
       this.spinAngle = 0;
       this.spinVel = this.baseVel;
+      this.tiltVel = 0;            // Pitch-Schwung (Hoch/Runter-Drehung)
       this.cloudDrift = 0;
     }
     this.path = def.path || [{ x: 0.5, y: 0.5 }];
@@ -327,8 +328,12 @@ class Entity {
     // 3D-Kugel: dreht von selbst; Schwung klingt sanft auf Normaltempo ab
     if (this.isGlobe) {
       if (heldEntity !== this) {
+        // Yaw (links/rechts): klingt auf Normaltempo ab
         this.spinAngle += this.spinVel * dt;
         this.spinVel += (this.baseVel - this.spinVel) * Math.min(1, dt * 1.2);
+        // Pitch (hoch/runter): Schwung klingt auf 0 ab -> Neigung bleibt stehen, wo losgelassen
+        this.tilt += this.tiltVel * dt;
+        this.tiltVel += (0 - this.tiltVel) * Math.min(1, dt * 1.2);
       }
       this.cloudDrift += this.cloudVel * dt;   // Wolken ziehen immer (auch im Stillstand)
     }
@@ -670,7 +675,7 @@ function mousePressed() {
     const ent = allEntities[i];
     if (currentSceneAlphaFor(ent) > 0.4 && ent.contains(mouseX, mouseY)) {
       // 3D-Kugel: greifen (Drehung anhalten, dann per Ziehen steuern)
-      if (ent.isGlobe) { heldEntity = ent; ent.spinVel = 0; }
+      if (ent.isGlobe) { heldEntity = ent; ent.spinVel = 0; ent.tiltVel = 0; }
       // Frame-Sequenz: Halten pausiert
       else if (ent.frames && ent.frames.length) heldEntity = ent;
       else openPanel(ent);
@@ -683,9 +688,14 @@ function mousePressed() {
 function mouseDragged() {
   if (heldEntity && heldEntity.isGlobe) {
     const ent = heldEntity;
-    const dAng = (mouseX - pmouseX) / Math.max(ent.radius, 1) * 1.3;
-    ent.spinAngle += dAng;
-    ent.spinVel = dAng / Math.max(deltaTime / 1000, 0.001);   // Schwung fuers Loslassen
+    const k = 1.3 / Math.max(ent.radius, 1);
+    const dYaw = (mouseX - pmouseX) * k;     // horizontal -> links/rechts
+    const dPit = (mouseY - pmouseY) * k;     // vertikal   -> hoch/runter
+    ent.spinAngle += dYaw;
+    ent.tilt += dPit;
+    const dtc = Math.max(deltaTime / 1000, 0.001);
+    ent.spinVel = dYaw / dtc;                // Schwung fuers Loslassen (beide Achsen)
+    ent.tiltVel = dPit / dtc;
   }
 }
 
