@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8" />
+<title>Foto-Globus (Prototyp) — SolarSpeculations</title>
+<style>
+  body { margin: 0; background: #fff; color: #222; font-family: system-ui, sans-serif; text-align: center; }
+  h1 { font-weight: 500; font-size: 1.05rem; margin: 14px 0 2px; letter-spacing: 0.04em; }
+  p.hint { color: #777; font-size: 0.82rem; margin: 0 0 6px; }
+  #holder { display: flex; justify-content: center; }
+  #fps { position: fixed; top: 8px; right: 12px; color: #aaa; font-size: 0.8rem; font-family: monospace; }
+</style>
+</head>
+<body>
+  <h1>Foto-Globus: Albedo + Relief + Glanz + Sonnenlicht</h1>
+  <p class="hint">Unsere Welt, photoreal beleuchtet. Tag/Nacht-Kante, Ozean-Glitzern, Atmosphaeren-Rand. (noch ohne Wolken)</p>
+  <div id="fps"></div>
+  <div id="holder"></div>
+
+  <script src="lib/p5.min.js"></script>
+  <script>
+  const R = 175;                     // Kugelradius
+  // --- Tuning ---
+  const RELIEF    = 0.65;            // Staerke der Relief-Stoerung (Normal-Map)
+  const SHININESS = 200.0;           // Glanz-Schaerfe (Ozean) -> enges Glitzern
+  const SPECGAIN  = 0.9;             // Glanz-Helligkeit
+  const AMBIENT   = 0.22;            // Grundhelligkeit (Nacht-/Schattenseite Tag)
+  const SUN_COL   = [1.0, 0.96, 0.88];
+  const NIGHT_COL = [0.05, 0.07, 0.12];  // sehr dunkles Blau auf der Nachtseite
+  const ATMO_COL  = [0.45, 0.62, 0.95];  // Atmosphaeren-Blau am Rand
+  const SUN_WORLD = [0.55, 0.38, 0.48];  // Sonne vorn-rechts-oben -> Grossteil beleuchtet, enger Glanzfleck
+
+  let alb, nmap, smap, sh, camZ;
+
+  const VERT = `
+  precision highp float;
+  attribute vec3 aPosition; attribute vec2 aTexCoord;
+  uniform mat4 uModelViewMatrix, uProjectionMatrix;
+  varying vec2 vUv; varying vec3 vModelPos; varying vec3 vN0;
+  void main(){
+    vUv = aTexCoord;
+    vModelPos = aPosition;
+    vN0 = normalize(aPosition);
+    gl_Position = uProjectionMatrix * uModelViewMatrix * vec4(aPosition, 1.0);
+  }`;
+
+  const FRAG = `
+  precision highp float;
+  varying vec2 vUv; varying vec3 vModelPos; varying vec3 vN0;
+  uniform sampler2D uAlbedo, uNormalMap, uSpec;
+  uniform vec3 uLight;      // Sonnenrichtung im Modellraum (normalisiert)
+  uniform vec3 uCam;        // Kameraposition im Modellraum
+  uniform float uRelief, uGloss, uSpecGain, uAmbient;
+  uniform vec3 uSunCol, uNightCol, uAtmoCol;
+  void main(){
+    vec3 N0 = normalize(vN0);
+    // Tangentenbasis der Kugel (Ost / Nord)
+    vec3 T = normalize(vec3(N0.z, 0.0, -N0.x) + vec3(1e-5));
+    vec3 B = cross(N0, T);
+    vec3 nm = texture2D(uNormalMap, vUv).rgb * 2.0 - 1.0;
+    vec3 N = normalize(N0 + (T * nm.x + B * nm.y) * uRelief);   // Relief stoeren
+    vec3 L = normalize(uLight);
+    vec3 Vd = normalize(uCam - vModelPos);
+    vec3 alb = texture2D(uAlbedo, vUv).rgb;
+    float spec = texture2D(uSpec, vUv).r;
+    float diff = max(dot(N, L), 0.0);
+    float term = smoothstep(-0.12, 0.22, dot(N0, L));          // Tag/Nacht-Kante (geometrisch)
+    // Glanz (Blinn-Phong), v.a. Ozean
+    vec3 Hh = normalize(L + Vd);
+    float sp = pow(max(dot(N, Hh), 0.0), uGloss) * spec * uSpecGain * term;
+    vec3 dayCol = alb * (uAmbient + diff) * uSunCol + sp * uSunCol;
+    vec3 nightCol = alb * uNightCol;
+    vec3 col = mix(nightCol, dayCol, term);
+    // Atmosphaeren-Rand (Fresnel), vor allem Tagseite
+    float fres = pow(1.0 - max(dot(N0, Vd), 0.0), 3.0);
+    col += uAtmoCol * fres * (0.20 + 0.80 * term);
+    gl_FragColor = vec4(col, 1.0);
+  }`;
+
+  // Weltvektor -> Modellraum der Kugel (Rx(-tilt) dann Ry(-spin)), wie lightInModel
+  function toModel(v, tilt, spin){
+    let L = v.slice();
+    let a = -tilt, c = Math.cos(a), s = Math.sin(a); L = [L[0], L[1]*c - L[2]*s, L[1]*s + L[2]*c];
+    a = -spin; c = Math.cos(a); s = Math.sin(a); L = [L[0]*c + L[2]*s, L[1], -L[0]*s + L[2]*c];
+    return L;
+  }
+  function norm3(v){ const m = Math.hypot(v[0],v[1],v[2]) || 1; return [v[0]/m, v[1]/m, v[2]/m]; }
+
+  function preload(){
+    alb  = loadImage('assets/images/entities/scene1/world.png');
+    nmap = loadImage('assets/images/entities/scene1/world_normal.png');
+    smap = loadImage('assets/images/entities/scene1/world_spec.png');
+  }
+  function setup(){
+    const c = createCanvas(600, 600, WEBGL); c.parent('holder');
+    sh = createShader(VERT, FRAG);
+    camZ = (height / 2) / Math.tan(Math.PI / 6);   // p5-Default-Kamera
+    noStroke();
+  }
+  function draw(){
+    clear();
+    const spin = millis()/1000 * -0.12, tilt = 0.18;
+    const L = toModel(norm3(SUN_WORLD), tilt, spin);
+    const cam = toModel([0, 0, camZ], tilt, spin);
+    shader(sh);
+    sh.setUniform('uAlbedo', alb);
+    sh.setUniform('uNormalMap', nmap);
+    sh.setUniform('uSpec', smap);
+    sh.setUniform('uLight', L);
+    sh.setUniform('uCam', cam);
+    sh.setUniform('uRelief', RELIEF);
+    sh.setUniform('uGloss', SHININESS);
+    sh.setUniform('uSpecGain', SPECGAIN);
+    sh.setUniform('uAmbient', AMBIENT);
+    sh.setUniform('uSunCol', SUN_COL);
+    sh.setUniform('uNightCol', NIGHT_COL);
+    sh.setUniform('uAtmoCol', ATMO_COL);
+    push(); rotateX(tilt); rotateY(spin); sphere(R, 96, 64); pop();
+    resetShader();
+    document.getElementById('fps').textContent = Math.round(frameRate()) + ' fps';
+  }
+  </script>
+</body>
+</html>

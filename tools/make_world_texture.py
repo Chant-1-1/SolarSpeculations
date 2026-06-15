@@ -1,9 +1,15 @@
-"""Erzeugt eine equirectangulare Weltkarten-Textur (2:1) fuer die WebGL-Kugel.
+"""Erzeugt ein PHOTOREALES Satelliten-Texturset (equirektangular 2:1) fuer die WebGL-Kugel.
 Aufruf:  python tools/make_world_texture.py
-Ausgabe: assets/images/entities/scene1/world.png  (Albedo, OHNE Beleuchtung)
+Ausgabe (assets/images/entities/scene1/):
+  world.png         -> Albedo im Satelliten-Look (Biome, Tiefenfarben, feines Korn)  -- OHNE Beleuchtung
+  world_normal.png  -> Tangent-Space-Normal-Map aus dem Hoehenfeld (Relief -> Sonne wirft Schatten)
+  world_spec.png    -> Specular/Glanz-Maske (Ozean hell = glaenzt, Land dunkel = matt)
+  clouds.png        -> separate Wolkenschicht (unveraendert)
+  flow.png          -> divergenzfreies Stroemungs-Wirbelfeld (unveraendert, Stil 3)
 
-Die Beleuchtung macht WebGL zur Laufzeit -> hier nur die Grundfarben (Land/Meer/Eis/Wolken).
-Inselplatzierung/Look wie gehabt (Metaballs, Aequatorguertel, fleckige Tiefe, Eis+Schollen, Wolken).
+Die Beleuchtung (Sonne, Tag/Nacht, Glanz, Relief) macht der WebGL-Shader zur Laufzeit mit
+world.png + world_normal.png + world_spec.png. Hier nur die fotorealen Daten.
+Inselplatzierung/Seed wie gehabt -> es bleibt UNSERE Welt, nur photoreal.
 """
 import numpy as np
 from PIL import Image
@@ -19,34 +25,46 @@ ISLAND_SPECS = [
     (3, 0.12, 0.16, 2),
     (8, 0.045, 0.075, 1),
 ]
-LAT_BAND = 0.22        # enger -> Inseln staerker um den Aequator
-COAST_NOISE = 0.32     # mehr Kuesten-Fransigkeit (realistischer)
-WARP = 0.28            # staerkere organische Verformung
+LAT_BAND = 0.22        # Inseln um den Aequator
+COAST_NOISE = 0.32     # Kuesten-Fransigkeit
+WARP = 0.28            # organische Verformung
 LAND = 0.45
 SHELF = 0.30
 
-ICE_LAT = 1.02         # niedriger -> groessere, klar sichtbare Polkappen (~58 Grad)
-ICE_DYN = 0.16         # weniger Schwankung -> Kappe nicht zu loechrig
+ICE_LAT = 1.02         # Polkappen ~58 Grad
+ICE_DYN = 0.16
 N_FLOES = 16
 FLOE_R = (0.03, 0.06)
-CLOUD_COVER = 0.42     # Bedeckung; mit kleiner Frequenz -> kleine, gestreute Wolken
-CLOUD_ALPHA = 0.85     # max Deckkraft der separaten Wolkenschicht
+CLOUD_COVER = 0.42
+CLOUD_ALPHA = 0.85
 
-C_SHOAL = np.array([ 66, 130, 162]) / 255
-C_SEA   = np.array([ 26,  78, 140]) / 255
-C_ABYSS = np.array([ 28,  68, 118]) / 255
-C_BEACH = np.array([208, 198, 150]) / 255
-C_LOW   = np.array([ 72, 140,  74]) / 255
-C_HIGH  = np.array([122, 150,  92]) / 255
-C_ICE   = np.array([238, 244, 250]) / 255
+# --- Foto-Palette (sRGB 0..255) ---
+# Ozean: dunkel-marineblau in der Tiefe -> tuerkis am Schelf (Satelliten-Tiefenfarben)
+C_TRENCH = np.array([  8,  26,  52]) / 255   # Tiefsee-Becken (dunkelstes Blau)
+C_ABYSS  = np.array([ 16,  46,  86]) / 255   # tiefster Ozean
+C_DEEP   = np.array([ 26,  66, 110]) / 255
+C_SEA    = np.array([ 40,  98, 144]) / 255
+C_SHELF  = np.array([ 74, 150, 166]) / 255   # flacher Schelf, tuerkis
+C_SHOAL  = np.array([120, 184, 184]) / 255   # ganz flach an der Kueste
+# Land-Biome
+C_BEACH  = np.array([204, 192, 150]) / 255   # Kuestensand
+C_TROP   = np.array([ 38,  86,  40]) / 255   # tropisches Gruen (Aequator, feucht)
+C_VEG    = np.array([ 74, 104,  54]) / 255   # gemaessigtes Gruen
+C_DRY    = np.array([150, 132,  82]) / 255   # trockenes Grasland
+C_DESERT = np.array([176, 146,  98]) / 255   # Wueste/aride Zone
+C_ROCK   = np.array([122, 108,  92]) / 255   # Hochland/Fels
+C_PEAK   = np.array([225, 228, 230]) / 255   # Schnee auf Gipfeln
+C_ICE    = np.array([234, 242, 249]) / 255   # Polkappe
+C_ICE_SH = np.array([196, 214, 234]) / 255   # blaeulicher Eis-Schatten
 
-COAST_PX = 55          # Breite der Kuesten-Ablenkungszone (px) fuer die Stroemung
-OUTFILE = os.path.join(os.path.dirname(__file__), "..", "assets", "images", "entities", "scene1", "world.png")
-CLOUDFILE = os.path.join(os.path.dirname(__file__), "..", "assets", "images", "entities", "scene1", "clouds.png")
-FLOWFILE = os.path.join(os.path.dirname(__file__), "..", "assets", "images", "entities", "scene1", "flow.png")
+OUTFILE    = os.path.join(os.path.dirname(__file__), "..", "assets", "images", "entities", "scene1", "world.png")
+NORMALFILE = os.path.join(os.path.dirname(__file__), "..", "assets", "images", "entities", "scene1", "world_normal.png")
+SPECFILE   = os.path.join(os.path.dirname(__file__), "..", "assets", "images", "entities", "scene1", "world_spec.png")
+CLOUDFILE  = os.path.join(os.path.dirname(__file__), "..", "assets", "images", "entities", "scene1", "clouds.png")
+FLOWFILE   = os.path.join(os.path.dirname(__file__), "..", "assets", "images", "entities", "scene1", "flow.png")
 # ==============================================
 
-# equirectangulares Gitter -> 3D-Punkte auf der Einheitskugel
+# equirektangulares Gitter -> 3D-Punkte auf der Einheitskugel
 j, i = np.mgrid[0:H, 0:W]
 lon = (i + 0.5) / W * 2 * np.pi - np.pi
 lat = np.pi / 2 - (j + 0.5) / H * np.pi
@@ -68,6 +86,7 @@ def snoise3(X, Y, Z, seed, octaves, base_freq):
     return val / tot
 
 def vnoise3(X, Y, Z, period, seed):
+    period = int(round(period))
     rng = np.random.default_rng(seed)
     g = rng.random((period + 2, period + 2, period + 2))
     fx = (X * 0.5 + 0.5) * period; fy = (Y * 0.5 + 0.5) * period; fz = (Z * 0.5 + 0.5) * period
@@ -96,7 +115,7 @@ def smooth(a, e0, e1):
 def gc(lo1, la1, lo2, la2):
     return np.arccos(np.clip(np.sin(la1)*np.sin(la2) + np.cos(la1)*np.cos(la2)*np.cos(lo2-lo1), -1, 1))
 
-# Inseln + Schollen platzieren (deterministisch)
+# Inseln + Schollen platzieren (deterministisch, wie gehabt)
 rng = np.random.default_rng(SEED)
 islands = []
 for count, rmin, rmax, nlob in ISLAND_SPECS:
@@ -126,14 +145,18 @@ def metaballs(X, Y, Z, lobes):
         out = np.maximum(out, np.exp(-2.2 * a2 / (lr*lr)))
     return out
 
-# --- Warp + Felder ---
+# --- Warp + Grundfelder ---
 wx = snoise3(px, py, pz, 200, 3, 3.0); wy = snoise3(px, py, pz, 210, 3, 3.0); wz = snoise3(px, py, pz, 220, 3, 3.0)
 xw = px + WARP*wx; yw = py + WARP*wy; zw = pz + WARP*wz
 nrm = np.sqrt(xw*xw + yw*yw + zw*zw) + 1e-9; xw /= nrm; yw /= nrm; zw /= nrm
 
 coast = snoise3(px, py, pz, 40, 5, 6.0)
-depthn = snoise3(px, py, pz, 70, 3, 1.7)
+depthn = snoise3(px, py, pz, 70, 3, 1.7)        # grossraeumige Ozean-Variation
+basinn = snoise3(px, py, pz, 55, 2, 0.9)        # SEHR grossraeumig -> Tiefsee-Becken
 polarn = snoise3(px, py, pz, 90, 4, 5.0)
+moist = fbm3(px, py, pz, 130, 4, 2.4) * 0.5 + 0.5   # Feuchte -> Vegetation vs. Wueste
+mtn   = fbm3(xw, yw, zw, 500, 5, 7.0) * 0.5 + 0.5   # Gebirgs-Detail
+grain = fbm3(px, py, pz, 800, 3, 40.0)              # feines Satelliten-Korn (hochfrequent)
 
 shape = np.zeros((H, W))
 for (_, _, _, lobes) in islands:
@@ -141,58 +164,113 @@ for (_, _, _, lobes) in islands:
 shape_c = shape + COAST_NOISE * coast
 land = shape_c > LAND
 
+# ============ ALBEDO (Satelliten-Look) ============
 col = np.zeros((H, W, 3))
-shelf_t = np.clip((LAND - shape_c) / SHELF, 0, 1)
-shallow = np.clip(shelf_t / 0.4, 0, 1)[..., None]
-basin = np.clip(0.5 + 0.7 * depthn, 0, 1)[..., None]
-offshore = np.clip((shelf_t - 0.4) / 0.6, 0, 1)[..., None]
-ocean = (C_SHOAL + (C_SEA - C_SHOAL) * shallow) * (1 - offshore) + (C_SEA + (C_ABYSS - C_SEA) * basin) * offshore
+
+# --- Ozean: glatte Bathymetrie aus dem Inselfeld (KEIN Kuesten-Rauschen -> keine Streifen) ---
+bath = np.clip((LAND - shape) / SHELF, 0, 1)               # 0 = an Land .. 1 = offen/tief
+shw  = 1.0 - bath                                          # Flachheit: 1 an Kueste, 0 offen Meer
+shelf_t = bath                                             # (fuer Hoehenfeld weiter unten)
+deepv = np.clip(0.5 + 0.6 * depthn, 0, 1)[...,None]        # grossraeumige Abyss-Variation (dunkel)
+ocean = C_ABYSS[None,None,:] * (1 - deepv) + C_DEEP[None,None,:] * deepv
+w_sea   = smooth(shw, 0.30, 0.55)[...,None]                # mittleres Wasser
+ocean = ocean * (1 - w_sea) + C_SEA[None,None,:] * w_sea
+w_shelf = smooth(shw, 0.60, 0.82)[...,None]                # Schelf (tuerkis)
+ocean = ocean * (1 - w_shelf) + C_SHELF[None,None,:] * w_shelf
+w_shoal = smooth(shw, 0.86, 0.97)[...,None]                # ganz flach an der Kueste
+ocean = ocean * (1 - w_shoal) + C_SHOAL[None,None,:] * w_shoal
+# Tiefsee-Becken: nur im offenen Ozean (nicht an Schelfen) Richtung sehr dunkel abdunkeln
+openmask = (1.0 - smooth(shw, 0.0, 0.30))                  # 1 = offenes Meer, 0 = Schelf/Kueste
+trench = smooth(basinn * 0.5 + 0.5, 0.52, 0.86) * openmask
+ocean = ocean * (1 - trench[...,None]) + C_TRENCH[None,None,:] * trench[...,None]
 col[~land] = ocean[~land]
-h = np.clip((shape_c - LAND) / 0.45, 0, 1)[..., None]
-land_col = np.where(h < 0.12, C_BEACH, C_LOW + (C_HIGH - C_LOW) * h)
+
+# --- Land: Biome aus Hoehe + Feuchte + Breite ---
+h = np.clip((shape_c - LAND) / 0.45, 0, 1)                  # 0 Kueste .. 1 Inselkern
+elev_land = h * (0.55 + 0.45 * mtn)                         # Hoehe mit Gebirgs-Detail
+trop = np.clip(1.0 - np.abs(lat) / 0.5, 0, 1)               # 1 am Aequator -> tropisch
+# Grundvegetation: trocken<->feucht, tropisch<->gemaessigt
+veg = (C_DRY[None,None,:] * (1 - moist[...,None]) + C_VEG[None,None,:] * moist[...,None])
+veg = veg * (1 - trop[...,None]) + C_TROP[None,None,:] * trop[...,None]
+arid = smooth(0.5 - moist, 0.0, 0.18)[...,None]             # sehr trocken -> Wueste
+veg = veg * (1 - arid) + C_DESERT[None,None,:] * arid
+# Hoehe schichten: Strand -> Vegetation -> Fels -> Schnee
+land_col = np.where(elev_land[...,None] < 0.10, C_BEACH[None,None,:], veg)
+rock_t = smooth(elev_land, 0.45, 0.72)[...,None]
+land_col = land_col * (1 - rock_t) + C_ROCK[None,None,:] * rock_t
+snow_t = smooth(elev_land, 0.80, 0.92)[...,None] * (1.0 - 0.7*trop[...,None])  # am Aequator kaum Schnee
+land_col = land_col * (1 - snow_t) + C_PEAK[None,None,:] * snow_t
 col[land] = land_col[land]
 
+# --- Eis: Kappen + Schollen, mit blaeulichem Schatten ---
 cap = np.abs(lat) > (ICE_LAT - ICE_DYN * np.clip(polarn, -1, 1))
 ff = np.zeros((H, W))
 for (v, lr) in floes:
     a2 = 2.0 * np.clip(1.0 - (px*v[0]+py*v[1]+pz*v[2]), 0, 2)
     ff = np.maximum(ff, np.exp(-2.2 * a2 / (lr*lr)))
 ice = cap | ((ff + 0.18 * coast) > 0.5)
-col[ice] = C_ICE
+ice_tone = np.clip(0.5 + 0.7 * polarn, 0, 1)[...,None]      # Eis-Struktur
+ice_col = C_ICE_SH[None,None,:] + (C_ICE - C_ICE_SH)[None,None,:] * ice_tone
+col[ice] = ice_col[ice]
 
-# Oberflaeche OHNE Wolken speichern (kraeftige Albedo; Beleuchtung macht WebGL)
+# --- feines Korn ueberall (Satelliten-Textur, sehr subtil) ---
+col *= (1.0 + 0.05 * grain[...,None])
 col = np.clip(col, 0, 1)
 Image.fromarray((col * 255).astype(np.uint8), "RGB").save(OUTFILE)
 
-# Separate Wolkenschicht (RGBA: weiss + Alpha) -> zieht in app.js eigenstaendig ueber den Globus
-craw = fbm3(px, py, pz, 300, 4, 6) * 0.5 + 0.5   # kleinere Wolkenfetzen
+# ============ HOEHENFELD -> NORMAL-MAP ============
+# signiertes Hoehenfeld: 0.5 = Meeresspiegel; Land hoch, Ozean (leicht) tief
+elev = np.full((H, W), 0.5)
+elev[~land] = 0.5 - 0.06 * shelf_t[~land]                   # Ozeanboden fast flach (Glanz macht den Rest)
+elev[land]  = 0.5 + 0.5 * elev_land[land]
+elev[ice]   = np.maximum(elev[ice], 0.5 + 0.04)             # Eis leicht erhaben
+elev = ndimage.gaussian_filter(elev, sigma=1.0)             # glaetten gegen Treppen
+
+# Gradient (equirektangular: x=lon umlaufend, y=lat). Relief vor allem auf Land.
+gy, gx = np.gradient(elev)
+relief = 9.0
+nx = -gx * relief
+ny = -gy * relief
+nz = np.ones_like(elev)
+ln = np.sqrt(nx*nx + ny*ny + nz*nz) + 1e-9
+normal = np.dstack([nx/ln, ny/ln, nz/ln]) * 0.5 + 0.5       # tangent-space, in 0..1
+Image.fromarray((normal * 255).astype(np.uint8), "RGB").save(NORMALFILE)
+
+# ============ SPECULAR-MASKE ============
+# Ozean glaenzt stark (Sonnen-Glitzer), Eis mittel, Land matt.
+spec = np.full((H, W), 0.06)
+spec[~land] = 0.85
+spec[ice]   = 0.35
+spec = ndimage.gaussian_filter(spec, sigma=0.8)
+Image.fromarray((np.clip(spec,0,1) * 255).astype(np.uint8), "L").save(SPECFILE)
+
+# ============ Wolken (unveraendert) ============
+craw = fbm3(px, py, pz, 300, 4, 6) * 0.5 + 0.5
 cloud = smooth(craw, 1 - CLOUD_COVER, 1 - CLOUD_COVER + 0.13)
 calpha = (cloud * CLOUD_ALPHA * 255).astype(np.uint8)
 white = np.full((H, W), 255, np.uint8)
 Image.fromarray(np.dstack([white, white, white, calpha]), "RGBA").save(CLOUDFILE)
 
-# --- Stroemungs-Flowmap: divergenzfreies Wirbelfeld ---
-# Stromfunktion psi mit Wirbeln zentriert auf Inseln + Polen. Das Feld flow = rot(psi)
-# ist quellenfrei; seine Stagnationspunkte (die "Urspruenge") liegen genau auf den
-# Inseln und Polen -> unter Land/Eis versteckt. Im Wasser zirkuliert die Stroemung herum.
+# ============ Stroemungs-Flowmap (unveraendert, Stil 3) ============
 psi = np.zeros((H, W))
 rng2 = np.random.default_rng(SEED + 99)
 for (ilon, ilat, R, lobes) in islands:
     sgn = 1.0 if rng2.random() < 0.5 else -1.0
     d = gc(lon, lat, ilon, ilat)
-    psi += sgn * (R / 0.14) * np.exp(-(d * d) / (0.42 ** 2))   # Wirbel um die Insel
+    psi += sgn * (R / 0.14) * np.exp(-(d * d) / (0.42 ** 2))
 dN, dS = np.pi/2 - lat, np.pi/2 + lat
-psi += 1.3 * np.exp(-(dN * dN) / (0.55 ** 2))                  # Nordpol-Wirbel
-psi += -1.3 * np.exp(-(dS * dS) / (0.55 ** 2))                 # Suedpol-Wirbel
+psi += 1.3 * np.exp(-(dN * dN) / (0.55 ** 2))
+psi += -1.3 * np.exp(-(dS * dS) / (0.55 ** 2))
 gj, gi = np.gradient(psi)
-fx = -gj + 0.5                                                 # rot(psi) + sanfter Grunddrift
+fx = -gj + 0.5
 fy = gi
 fln = np.sqrt(fx*fx + fy*fy) + 1e-6
 fx, fy = fx/fln, fy/fln
 fx[land], fy[land] = 0, 0
-spd = np.ones((H, W))                                          # gleichmaessig subtil
+spd = np.ones((H, W))
 flow = np.dstack([(fx*0.5+0.5)*255, (fy*0.5+0.5)*255, spd*255]).astype(np.uint8)
 Image.fromarray(flow, "RGB").save(FLOWFILE)
 
-print("gespeichert:", os.path.normpath(OUTFILE), "+ clouds.png + flow.png", (W, H),
+print("gespeichert:", os.path.normpath(OUTFILE))
+print("  + world_normal.png, world_spec.png, clouds.png, flow.png", (W, H),
       "| Inseln:", len(islands), "| Schollen:", len(floes))
