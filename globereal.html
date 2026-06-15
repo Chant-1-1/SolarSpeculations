@@ -27,7 +27,9 @@
   const WATER_GAIN = 2.0;            // Wasser-Albedo multiplikativ verstaerken -> heller UND Struktur bleibt sichtbar
   const RELIEF     = 0.85;
   const GLOSS      = 240.0;
-  const SPECGAIN   = 0.0;            // Sonnen-Glanzfleck aus (kein Hotspot)
+  const SPECGAIN   = 0.0;            // enger Sonnen-Glanzfleck aus (kein Hotspot)
+  const SHEEN      = 0.14;           // dezenter BREITER Wasser-Glanz (Intensitaet)
+  const SHEEN_POW  = 7.0;            // klein = breite, weiche Keule (kein Punkt)
   const AMBIENT    = 0.20;
   const SUN_COL    = [1.0, 0.97, 0.90];
   const NIGHT_COL  = [0.04, 0.05, 0.09];
@@ -49,7 +51,7 @@
   varying vec2 vUv; varying vec3 vModelPos; varying vec3 vN0;
   uniform sampler2D uDay, uNormalMap, uSpec, uNight;
   uniform vec3 uLight, uCam, uSunCol, uNightCol, uAtmoCol;
-  uniform float uRelief, uGloss, uSpecGain, uAmbient, uWaterLift, uWaterGain;
+  uniform float uRelief, uGloss, uSpecGain, uAmbient, uWaterLift, uWaterGain, uSheen, uSheenPow;
   void main(){
     vec3 N0 = normalize(vN0);
     vec3 T = normalize(vec3(N0.z, 0.0, -N0.x) + vec3(1e-5));
@@ -70,6 +72,8 @@
     vec3 lights = texture2D(uNight, vUv).rgb;                 // Stadtlichter
     vec3 nightCol = alb * uNightCol + lights * 1.25;
     vec3 col = mix(nightCol, dayCol, term);
+    float sheen = pow(max(dot(N, Hh), 0.0), uSheenPow) * spec * term * uSheen;  // breiter, weicher Wasser-Schimmer
+    col += sheen * vec3(0.70, 0.80, 1.00);
     float fres = pow(1.0 - max(dot(N0, Vd), 0.0), 3.0);       // Atmosphaeren-Rand
     col += uAtmoCol * fres * (0.18 + 0.82 * term);
     gl_FragColor = vec4(col, 1.0);
@@ -138,6 +142,7 @@
     surfSh.setUniform('uRelief', RELIEF); surfSh.setUniform('uGloss', GLOSS);
     surfSh.setUniform('uSpecGain', SPECGAIN); surfSh.setUniform('uAmbient', AMBIENT);
     surfSh.setUniform('uWaterLift', WATER_LIFT); surfSh.setUniform('uWaterGain', WATER_GAIN);
+    surfSh.setUniform('uSheen', SHEEN); surfSh.setUniform('uSheenPow', SHEEN_POW);
     push(); rotateX(tilt); rotateY(spin); sphere(R, 96, 64); pop();
     // Wolken (eigene, leicht groessere Sphere; Rueckseite weg, kein Tiefenschreiben)
     blendMode(BLEND);
