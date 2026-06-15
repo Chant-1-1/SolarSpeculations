@@ -29,14 +29,14 @@ def smooth(a, e0, e1):
     t = np.clip((a - e0) / (e1 - e0), 0, 1)
     return t * t * (3 - 2 * t)
 
-# --- Masken: Wasser (blaeulich, b>r) vs. Land (warm, r>b) vs. Eis (hell) ---
-rb = r - b                                                   # >0 = warm (Land), <0 = blau (Wasser)
-print("  r-b Perzentile: p50={:.3f} p90={:.3f} p98={:.3f} | max={:.3f}".format(
-    np.percentile(rb, 50), np.percentile(rb, 90), np.percentile(rb, 98), rb.max()))
+# --- Masken: Wasser (blau dominiert) vs. Land (nicht-blau, z.B. gruen) vs. Eis (hell) ---
+nonblue = np.maximum(r, g) - b                               # >0 = nicht-blau (Land), <0 = blau (Wasser)
+print("  nonblue Perzentile: p50={:.3f} p90={:.3f} p98={:.3f} | max={:.3f}".format(
+    np.percentile(nonblue, 50), np.percentile(nonblue, 90), np.percentile(nonblue, 98), nonblue.max()))
 print("  lum Perzentile: p50={:.3f} p95={:.3f} p99={:.3f}".format(
     np.percentile(lum, 50), np.percentile(lum, 95), np.percentile(lum, 99)))
 ice  = smooth(lum, 0.52, 0.68)                               # helle Pole/Eis
-land = (1.0 - ice) * smooth(rb, -0.045, -0.005)              # deutlich weniger blau als Ozean -> Insel
+land = (1.0 - ice) * smooth(nonblue, 0.002, 0.03)            # nicht-blau & nicht Eis -> Insel (auch dunkel/gruen)
 water = np.clip(1.0 - ice - land, 0.0, 1.0)
 
 # --- SPECULAR: Wasser glaenzt, Land matt, Eis leicht ---
