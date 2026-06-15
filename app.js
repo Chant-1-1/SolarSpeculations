@@ -27,190 +27,183 @@ const GLOBE_BUF = 600;    // Aufloesung dieses Layers (px)
 const GLOBE_R_FRAC = 0.37; // sphere(R)-Radius als Anteil von GLOBE_BUF
 let globeProjFrac = null;  // tatsaechlich projizierter Kugelradius-Anteil (zur Laufzeit gemessen)
 
-// Vertex: Standard-p5-WEBGL, reicht UV durch
-// Gemeinsames 3D-Noise + Wolkendichte: in BEIDEN Shadern genutzt -> Wolke & Schatten sind
-// per Konstruktion synchron. Drift (relativ zur Kugel) + Morph stecken in cloudDensity().
-const CLOUD_GLSL = `
-float hash3(vec3 p){ return fract(sin(dot(p, vec3(127.1,311.7,74.7)))*43758.5453); }
-float vnoise3(vec3 p){
-  vec3 i=floor(p), f=fract(p); vec3 u=f*f*(3.-2.*f);
-  return mix(mix(mix(hash3(i+vec3(0.,0.,0.)),hash3(i+vec3(1.,0.,0.)),u.x),
-                 mix(hash3(i+vec3(0.,1.,0.)),hash3(i+vec3(1.,1.,0.)),u.x),u.y),
-             mix(mix(hash3(i+vec3(0.,0.,1.)),hash3(i+vec3(1.,0.,1.)),u.x),
-                 mix(hash3(i+vec3(0.,1.,1.)),hash3(i+vec3(1.,1.,1.)),u.x),u.y),u.z);
-}
-float fbm3(vec3 p){ float v=0.,a=0.5; for(int k=0;k<4;k++){ v+=a*vnoise3(p); p*=2.0; a*=0.5; } return v; }
-// Rohes Wolken-Rauschen 0..~1 an Modellrichtung p zur Zeit t (Drift relativ zur Kugel + Morph).
-// Roh (ohne Schwelle) -> die interne Variation steuert spaeter die Deckkraft (Kerne weiss, Raender transparent).
-float cloudNoise(vec3 p, float t){
-  float ang = t * 0.04;
-  float c = cos(ang), s = sin(ang);
-  vec3 d = vec3(p.x*c + p.z*s, p.y, -p.x*s + p.z*c);
-  return fbm3(d * 3.2 + vec3(t*0.02, t*0.035, t*0.015));
-}`;
-
-const OCEAN_VERT = `
+// ===== FOTO-GLOBUS-SHADER (echte Satellitentextur, beleuchtet) =====
+// Albedo (earth_day) + Normal-Map (Relief) + Specular (Ozean-Glanz) + Wasser-Gain (heller,
+// Struktur bleibt) + breiter Wasser-Schimmer + gerichtetes Sonnenlicht + Tag/Nacht-Terminator
+// + Atmosphaeren-Fresnel-Rand. Beleuchtung im MODELLRAUM via uLight/uCam (toModelVec).
+const SURF_VERT = `
 precision highp float;
-attribute vec3 aPosition;
-attribute vec2 aTexCoord;
-uniform mat4 uModelViewMatrix;
-uniform mat4 uProjectionMatrix;
-varying vec2 vUV;
-varying vec3 vDir;
-void main() {
-  vUV = aTexCoord;
-  vDir = normalize(aPosition);
-  gl_Position = uProjectionMatrix * uModelViewMatrix * vec4(aPosition, 1.0);
-}`;
+attribute vec3 aPosition; attribute vec2 aTexCoord;
+uniform mat4 uModelViewMatrix, uProjectionMatrix;
+varying vec2 vUv; varying vec3 vModelPos; varying vec3 vN0;
+void main(){ vUv=aTexCoord; vModelPos=aPosition; vN0=normalize(aPosition);
+  gl_Position = uProjectionMatrix * uModelViewMatrix * vec4(aPosition,1.0); }`;
 
-// Oberflaeche: Albedo + Meeresstroemung + REALER Wolkenschatten (gleiche Wolkenfunktion)
-const OCEAN_FRAG = `
+const SURF_FRAG = `
 precision highp float;
-varying vec2 vUV;
-varying vec3 vDir;
-uniform sampler2D uTex;
-uniform sampler2D uFlow;
-uniform float uTime;
-uniform vec3 uLightModel;
-float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
-float noise(vec2 p){
-  vec2 i = floor(p), f = fract(p);
-  float a = hash(i), b = hash(i+vec2(1.,0.)), c = hash(i+vec2(0.,1.)), d = hash(i+vec2(1.,1.));
-  vec2 u = f*f*(3.-2.*f);
-  return mix(mix(a,b,u.x), mix(c,d,u.x), u.y);
-}
-` + CLOUD_GLSL + `
+varying vec2 vUv; varying vec3 vModelPos; varying vec3 vN0;
+uniform sampler2D uDay, uNormalMap, uSpec;
+uniform vec3 uLight, uCam, uSunCol, uNightCol, uAtmoCol;
+uniform float uRelief, uGloss, uSpecGain, uAmbient, uWaterGain, uSheen, uSheenPow;
 void main(){
-  vec4 base = texture2D(uTex, vUV);
-  float water = step(base.b, 0.62) * step(base.r, base.b - 0.04) * step(base.g, base.b);
-  vec3 fdat = texture2D(uFlow, vUV).rgb;
-  vec2 flow = fdat.rg * 2.0 - 1.0;
-  float spd = fdat.b;
-  vec2 fc = vUV * vec2(38.0, 19.0);
-  float t = uTime * 0.05;
-  float p1 = fract(t), p2 = fract(t + 0.5);
-  float n = mix(noise(fc - flow * p1 * 4.0), noise(fc - flow * p2 * 4.0), abs(p1 - 0.5) * 2.0);
-  float shim = smoothstep(0.45, 0.95, n);
-  vec3 col = base.rgb + water * shim * spd * 0.06 * vec3(0.6, 0.75, 0.92);
-  // Wolkenschatten: deutlich Richtung Licht versetzt, damit er seitlich neben der Wolke
-  // sichtbar wird (sie verdeckt sonst ihren eigenen Schatten). Gleiche Wolkenform.
-  vec3 sdir = normalize(vDir + uLightModel * 0.20);
-  float slat = 1.0 - smoothstep(0.5, 0.9, abs(sdir.y));
-  float sh = smoothstep(0.58, 0.80, cloudNoise(sdir, uTime)) * slat;
-  col *= 1.0 - 0.40 * sh;
-  gl_FragColor = vec4(col, base.a);
+  vec3 N0 = normalize(vN0);
+  vec3 T = normalize(vec3(N0.z, 0.0, -N0.x) + vec3(1e-5));
+  vec3 B = cross(N0, T);
+  vec3 nm = texture2D(uNormalMap, vUv).rgb * 2.0 - 1.0;
+  vec3 N = normalize(N0 + (T*nm.x + B*nm.y) * uRelief);
+  vec3 L = normalize(uLight);
+  vec3 Vd = normalize(uCam - vModelPos);
+  vec3 alb = texture2D(uDay, vUv).rgb;
+  float spec = texture2D(uSpec, vUv).r;
+  alb *= mix(1.0, uWaterGain, spec);                         // Wasser verstaerken -> heller + Struktur
+  float diff = max(dot(N, L), 0.0);
+  float term = smoothstep(-0.12, 0.22, dot(N0, L));          // Tag/Nacht-Kante
+  vec3 Hh = normalize(L + Vd);
+  float sp = pow(max(dot(N, Hh), 0.0), uGloss) * spec * uSpecGain * term;   // (uSpecGain=0 -> kein Hotspot)
+  vec3 dayCol = alb * (uAmbient + diff) * uSunCol + sp * uSunCol;
+  vec3 nightCol = alb * uNightCol;                           // dunkle Nachtseite, keine Lichter
+  vec3 col = mix(nightCol, dayCol, term);
+  float sheen = pow(max(dot(N, Hh), 0.0), uSheenPow) * spec * term * uSheen;   // dezenter breiter Schimmer
+  col += sheen * vec3(0.70, 0.80, 1.00);
+  float fres = pow(1.0 - max(dot(N0, Vd), 0.0), 3.0);        // Atmosphaeren-Rand
+  col += uAtmoCol * fres * (0.18 + 0.82 * term);
+  gl_FragColor = vec4(col, 1.0);
 }`;
 
-const CLOUD_VERT = `
-precision highp float;
-attribute vec3 aPosition;
-uniform mat4 uModelViewMatrix;
-uniform mat4 uProjectionMatrix;
-varying vec3 vDir;
-varying float vFacing;
-void main(){
-  vDir = normalize(aPosition);
-  vFacing = clamp((mat3(uModelViewMatrix) * vDir).z, 0.0, 1.0);   // 1 = mittig, 0 = Rand
-  gl_Position = uProjectionMatrix * uModelViewMatrix * vec4(aPosition, 1.0);
-}`;
-
-// Wolkenkugel: illustrativ/gemalt. Deckkraft folgt der Dichte ueber einen BREITEN Bereich
-// -> dichte Kerne voll weiss, duennere Stellen durchscheinend (natuerliche Variation).
+// Wolken: PROZEDURAL (animiertes 3D-Noise), dynamisch (Drift+Morph ueber uTime), Land-Maske via
+// Specular (ueber Land hoehere Schwelle + schwaecher), Pol-Fade. WICHTIG: p5 blendMode(BLEND)
+// ist PREMULTIPLIED -> vormultipliziert ausgeben (ccol*al, al), sonst bei Bedeckung opak weiss.
+const CLOUD_VERT = SURF_VERT;
 const CLOUD_FRAG = `
 precision highp float;
-varying vec3 vDir;
-varying float vFacing;
-uniform float uTime;
-uniform vec3 uLightModel;
-` + CLOUD_GLSL + `
+varying vec2 vUv; varying vec3 vModelPos; varying vec3 vN0;
+uniform sampler2D uLandSpec;
+uniform vec3 uLight, uCam;
+uniform float uCloudOp, uTime;
+float hash(vec3 p){ return fract(sin(dot(p, vec3(127.1,311.7,74.7)))*43758.5453); }
+float vnoise(vec3 p){ vec3 i=floor(p), f=fract(p); vec3 u=f*f*(3.0-2.0*f);
+  return mix(mix(mix(hash(i+vec3(0.,0.,0.)),hash(i+vec3(1.,0.,0.)),u.x),mix(hash(i+vec3(0.,1.,0.)),hash(i+vec3(1.,1.,0.)),u.x),u.y),
+             mix(mix(hash(i+vec3(0.,0.,1.)),hash(i+vec3(1.,0.,1.)),u.x),mix(hash(i+vec3(0.,1.,1.)),hash(i+vec3(1.,1.,1.)),u.x),u.y),u.z); }
+float fbm(vec3 p){ float v=0.0,a=0.5; for(int k=0;k<5;k++){ v+=a*vnoise(p); p*=2.0; a*=0.5; } return v; }
 void main(){
-  float latFade = 1.0 - smoothstep(0.5, 0.9, abs(vDir.y));   // weniger an den Polen
-  float rim = smoothstep(0.10, 0.40, vFacing);               // Rand sauber ausblenden (nicht flach)
-  float raw = cloudNoise(vDir, uTime);
-  // breiter Schwellbereich -> Deckkraft variiert: dichte Stellen weisser, duenne durchscheinend.
-  // Hoeherer Schwellwert = weniger Wolken; Deckkraft gedeckelt -> ueberall scheint etwas Blau durch.
-  float al = smoothstep(0.60, 0.82, raw) * latFade * rim * 0.72;
-  if (al < 0.012) discard;
-  // sanftes Volumen-Shading: Seite zum Licht etwas heller
-  float dl = cloudNoise(normalize(vDir + uLightModel * 0.07), uTime);
-  float shade = clamp(0.90 + (raw - dl) * 0.8, 0.80, 1.0);
-  vec3 col = mix(vec3(0.84, 0.87, 0.92), vec3(0.97, 0.98, 0.99), shade);
-  gl_FragColor = vec4(col, al);
+  vec3 N0 = normalize(vN0);
+  vec3 L = normalize(uLight);
+  vec3 Vd = normalize(uCam - vModelPos);
+  float water = texture2D(uLandSpec, vUv).r;                 // hoch=Wasser, niedrig=Land
+  float t = uTime;
+  float ca = cos(t*0.010), sa = sin(t*0.010);
+  vec3 d = vec3(N0.x*ca + N0.z*sa, N0.y, -N0.x*sa + N0.z*ca); // Drift
+  float base = fbm(d*2.6 + vec3(0.0, t*0.012, 0.0)) * 0.5 + 0.5;
+  float det  = fbm(d*7.0 + 11.0) * 0.5 + 0.5;
+  float raw = base*0.70 + det*0.30;
+  float pole = 1.0 - smoothstep(0.80, 0.99, abs(N0.y));
+  float lo = mix(0.82, 0.74, water);                         // hohe Schwelle -> wenige Wolken
+  float a = smoothstep(lo, lo + 0.11, raw) * pole;
+  a *= clamp(det*0.6 + 0.5, 0.0, 1.0);
+  if(a < 0.01) discard;
+  float term = smoothstep(-0.05, 0.28, dot(N0, L));
+  vec3 ccol = mix(vec3(0.55,0.60,0.68), vec3(1.0), 0.3 + 0.7*term);
+  float rim = smoothstep(0.0, 0.22, dot(N0, Vd));
+  float landScale = mix(0.30, 1.0, water);
+  float al = a * (0.10 + 0.90*term) * rim * landScale * uCloudOp;
+  gl_FragColor = vec4(ccol * al, al);                        // VORMULTIPLIZIERT
 }`;
 
 function ensureGlobeBuffer() {
   if (!globeBuf) {
     globeBuf = createGraphics(GLOBE_BUF, GLOBE_BUF, WEBGL);
-    oceanShader = globeBuf.createShader(OCEAN_VERT, OCEAN_FRAG);
+    oceanShader = globeBuf.createShader(SURF_VERT, SURF_FRAG);
     cloudShader = globeBuf.createShader(CLOUD_VERT, CLOUD_FRAG);
   }
 }
 
-// Lichtrichtung (zur Lichtquelle) ins Modellsystem der Kugel transformieren,
-// damit Wolkenschatten/-shading korrekt fallen, waehrend sich die Kugel dreht.
-function lightInModel(tilt, spin) {
-  let L = [-0.45, -0.5, 0.74];
-  const m = Math.hypot(L[0], L[1], L[2]); L = L.map(v => v / m);
-  // Rx(-tilt)
-  let a = -tilt, cy = Math.cos(a), sy = Math.sin(a);
-  L = [L[0], L[1] * cy - L[2] * sy, L[1] * sy + L[2] * cy];
-  // Ry(-spin)
-  a = -spin; const cx = Math.cos(a), sx = Math.sin(a);
-  L = [L[0] * cx + L[2] * sx, L[1], -L[0] * sx + L[2] * cx];
+// ---- Foto-Globus: Beleuchtungs-Tuning (Werte aus globereal.html, von Lukas freigegeben) ----
+const SUN_WORLD   = [0.55, 0.30, 0.78];   // Weltrichtung zur Sonne: ueberwiegend frontal -> meist Tagseite
+const G_SUNCOL    = [1.0, 0.97, 0.90];
+const G_NIGHTCOL  = [0.04, 0.05, 0.09];   // dunkle Nachtseite (keine Stadtlichter)
+const G_ATMOCOL   = [0.42, 0.60, 0.95];   // Atmosphaeren-Blau am Rand
+const G_RELIEF    = 0.85;
+const G_GLOSS     = 240.0;                 // enger Glanz
+const G_SPECGAIN  = 0.0;                   // Sonnen-Hotspot AUS
+const G_AMBIENT   = 0.20;
+const G_WATER_GAIN = 2.0;                  // Wasser heller + Struktur
+const G_SHEEN      = 0.14;                 // dezenter breiter Wasser-Schimmer
+const G_SHEEN_POW  = 7.0;
+const G_CLOUD_OP   = 0.50;                 // Wolken-Deckkraft (premultiplied)
+
+function norm3(v){ const m = Math.hypot(v[0], v[1], v[2]) || 1; return [v[0]/m, v[1]/m, v[2]/m]; }
+// Weltvektor -> Modellsystem der Kugel: Rx(-tilt) dann Ry(-spin). Fuer Licht UND Kamera,
+// damit Beleuchtung/Glanz/Schimmer korrekt liegen, waehrend sich die Kugel dreht.
+function toModelVec(v, tilt, spin) {
+  let L = v.slice();
+  let a = -tilt, c = Math.cos(a), s = Math.sin(a); L = [L[0], L[1]*c - L[2]*s, L[1]*s + L[2]*c];
+  a = -spin; c = Math.cos(a); s = Math.sin(a);      L = [L[0]*c + L[2]*s, L[1], -L[0]*s + L[2]*c];
   return L;
 }
 
-// rendert die 3D-Kugel als EINE Sphere: Albedo + Meeresstroemung + driftende Wolken
-// laufen alle im Ozean-Shader (keine zweite Kugel -> kein Doppelrand). Unlit = kraeftige Farben.
-// Tag/Nacht-Plastizitaet kommt als 2D-Schatten in Entity.draw().
+// rendert die FOTO-Kugel: Albedo + Normal-Relief + Specular + Sonnenlicht + Tag/Nacht + Atmosphaere
+// (Oberflaechen-Shader), darueber prozedurale dynamische Wolken (eigene, leicht groessere Kugel).
 function drawGlobe(ent) {
   const g = globeBuf;
   const R = GLOBE_BUF * GLOBE_R_FRAC;
+  const camZ = (GLOBE_BUF / 2) / Math.tan(Math.PI / 6);   // p5-Default-Kamera des Buffers
   g.clear();
   const gl = g.drawingContext;
-  gl.enable(gl.DEPTH_TEST);   // nur Vorderseite zeigen -> keine durchscheinende Rueckseite
+  gl.enable(gl.DEPTH_TEST); gl.depthMask(true);
   const tNow = millis() / 1000;
-  const Lm = lightInModel(ent.tilt, ent.spinAngle);   // Lichtrichtung im Kugel-Modellsystem
+  const tilt = ent.tilt, spin = ent.spinAngle;
+  const L = toModelVec(norm3(SUN_WORLD), tilt, spin);   // Sonne im Modellraum
+  const cam = toModelVec([0, 0, camZ], tilt, spin);     // Kamera im Modellraum
+
+  // Oberflaeche
   g.push();
   g.noStroke();
-  if (oceanShader) {
+  if (oceanShader && ent.normTex && ent.specTex) {
     g.shader(oceanShader);
-    oceanShader.setUniform('uTex', ent.tex);
-    if (ent.flowTex) oceanShader.setUniform('uFlow', ent.flowTex);
-    oceanShader.setUniform('uTime', tNow);
-    oceanShader.setUniform('uLightModel', Lm);
+    oceanShader.setUniform('uDay', ent.tex);
+    oceanShader.setUniform('uNormalMap', ent.normTex);
+    oceanShader.setUniform('uSpec', ent.specTex);
+    oceanShader.setUniform('uLight', L); oceanShader.setUniform('uCam', cam);
+    oceanShader.setUniform('uSunCol', G_SUNCOL); oceanShader.setUniform('uNightCol', G_NIGHTCOL);
+    oceanShader.setUniform('uAtmoCol', G_ATMOCOL);
+    oceanShader.setUniform('uRelief', G_RELIEF); oceanShader.setUniform('uGloss', G_GLOSS);
+    oceanShader.setUniform('uSpecGain', G_SPECGAIN); oceanShader.setUniform('uAmbient', G_AMBIENT);
+    oceanShader.setUniform('uWaterGain', G_WATER_GAIN);
+    oceanShader.setUniform('uSheen', G_SHEEN); oceanShader.setUniform('uSheenPow', G_SHEEN_POW);
   } else {
     g.noLights(); g.texture(ent.tex);
   }
-  g.rotateX(ent.tilt);
-  g.rotateY(ent.spinAngle);
-  g.sphere(R, 64, 48);
+  g.rotateX(tilt);
+  g.rotateY(spin);
+  g.sphere(R, 96, 64);
   g.pop();
   if (oceanShader) g.resetShader();
 
-  // projizierten OBERFLAECHEN-Radius messen (vor der groesseren Wolkenkugel) -> Halo/Schatten
+  // projizierten OBERFLAECHEN-Radius messen (vor der groesseren Wolkenkugel) -> Halo
   if (globeProjFrac === null) {
-    const cx = GLOBE_BUF / 2, cy = GLOBE_BUF / 2;
+    const cx = GLOBE_BUF / 2, cyy = GLOBE_BUF / 2;
     let r = GLOBE_BUF / 2;
-    for (let x = cx; x < GLOBE_BUF; x++) { if (g.get(x, cy)[3] < 10) { r = x - cx; break; } }
+    for (let x = cx; x < GLOBE_BUF; x++) { if (g.get(x, cyy)[3] < 10) { r = x - cx; break; } }
     globeProjFrac = r / GLOBE_BUF;
   }
 
-  // Wolken auf separater, etwas groesserer Kugel (prozedural, animiert) -> schweben darueber.
-  // Drift + Morph stecken im Shader (cloudDensity), daher nur spinAngle als Geometrie-Drehung.
-  // Backface-Culling (nur vordere Halbkugel) + Tiefentest -> keine durchscheinende Rueckseite.
-  if (cloudShader && ent.cloudTex) {
+  // Wolken: prozedural, dynamisch (Drift+Morph via uTime), leicht groessere Kugel.
+  // Backface-Culling (nur vordere Halbkugel) + kein Tiefenschreiben + PREMULTIPLIED Alpha.
+  if (cloudShader && ent.specTex) {
+    g.blendMode(BLEND);
     gl.enable(gl.CULL_FACE);
     gl.cullFace(gl.FRONT);
     gl.depthMask(false);
     g.push();
     g.noStroke();
     g.shader(cloudShader);
-    cloudShader.setUniform('uTime', tNow);
-    cloudShader.setUniform('uLightModel', Lm);
-    g.rotateX(ent.tilt);
-    g.rotateY(ent.spinAngle);
-    g.sphere(R * 1.05, 72, 54);                   // schwebt knapp ueber der Oberflaeche
+    cloudShader.setUniform('uLandSpec', ent.specTex);
+    cloudShader.setUniform('uLight', L); cloudShader.setUniform('uCam', cam);
+    cloudShader.setUniform('uCloudOp', G_CLOUD_OP);
+    cloudShader.setUniform('uTime', tNow);                 // Wolken driften unabhaengig vom Spin
+    g.rotateX(tilt);
+    g.rotateY(spin);
+    g.sphere(R * 1.012, 96, 64);                   // schwebt knapp ueber der Oberflaeche
     g.pop();
     g.resetShader();
     gl.depthMask(true);
@@ -256,8 +249,8 @@ async function buildWorld() {
     if (def.frames) ent.frames = await loadFrames(def.frames);  // Animations-Sequenz
     if (def.globe) {
       ent.tex = await tryLoadImage(def.globe.texture);
-      if (def.globe.clouds) ent.cloudTex = await tryLoadImage(def.globe.clouds);
-      if (def.globe.flow) ent.flowTex = await tryLoadImage(def.globe.flow);
+      if (def.globe.normal) ent.normTex = await tryLoadImage(def.globe.normal);
+      if (def.globe.spec) ent.specTex = await tryLoadImage(def.globe.spec);
       ensureGlobeBuffer();
     }
     allEntities.push(ent);
@@ -286,7 +279,7 @@ class Entity {
     // 3D-Kugel (WebGL): freie Drehung mit Schwung
     this.isGlobe = !!def.globe;
     if (this.isGlobe) {
-      this.tex = null; this.cloudTex = null; this.flowTex = null;
+      this.tex = null; this.normTex = null; this.specTex = null;
       this.baseVel = def.globe.baseVel != null ? def.globe.baseVel : 0.3;  // rad/s Normaltempo
       this.tilt = def.globe.tilt != null ? def.globe.tilt : 0.35;
       this.cloudVel = def.globe.cloudDrift != null ? def.globe.cloudDrift : 0.05;  // Wolken-Eigendrift
@@ -382,15 +375,7 @@ class Entity {
       tint(255, 255 * alpha);
       image(globeBuf, 0, 0, sz, sz);
       noTint();
-      // Tag/Nacht-Schatten (nur Terminator, weich; auf die Kugel geclippt)
-      ctx.save();
-      ctx.beginPath(); ctx.arc(0, 0, r * 0.99, 0, Math.PI * 2); ctx.clip();
-      let term = ctx.createRadialGradient(-r * 0.45, -r * 0.4, r * 0.1, -r * 0.4, -r * 0.35, r * 2.0);
-      term.addColorStop(0, 'rgba(0,0,0,0)');
-      term.addColorStop(0.5, 'rgba(0,0,0,0)');
-      term.addColorStop(1, `rgba(3,8,24,${0.7 * alpha})`);
-      ctx.fillStyle = term; ctx.fillRect(-r, -r, 2 * r, 2 * r);
-      ctx.restore();
+      // Tag/Nacht-Kante + Atmosphaeren-Rand laufen jetzt IM Shader (kein 2D-Overlay noetig).
       handled = true;
     }
 
