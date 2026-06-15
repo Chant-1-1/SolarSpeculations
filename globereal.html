@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8" />
+<title>Foto-Globus (echte Textur) — SolarSpeculations</title>
+<style>
+  body { margin: 0; background: #fff; color: #222; font-family: system-ui, sans-serif; text-align: center; }
+  h1 { font-weight: 500; font-size: 1.05rem; margin: 14px 0 2px; letter-spacing: 0.04em; }
+  p.hint { color: #777; font-size: 0.82rem; margin: 0 0 6px; }
+  #holder { display: flex; justify-content: center; }
+  #fps { position: fixed; top: 8px; right: 12px; color: #aaa; font-size: 0.8rem; font-family: monospace; }
+  small.cred { display:block; color:#bbb; font-size:0.7rem; margin-top:8px; }
+</style>
+</head>
+<body>
+  <h1>Foto-Globus mit echter Satellitentextur</h1>
+  <p class="hint">Beleuchtet: Sonne, Tag/Nacht mit Stadtlichtern, Ozean-Glanz, Relief, Wolken, Atmosphaere.</p>
+  <div id="fps"></div>
+  <div id="holder"></div>
+  <small class="cred">Texturen: Planet Pixel Emporium / NASA (via three.js examples) — Quellenangabe noch ergaenzen.</small>
+
+  <script src="lib/p5.min.js"></script>
+  <script>
+  const R = 178;
+  const CLOUD_OP   = 0.9;            // Wolken-Deckkraft
+  const RELIEF     = 0.85;
+  const GLOSS      = 240.0;
+  const SPECGAIN   = 0.95;
+  const AMBIENT    = 0.20;
+  const SUN_COL    = [1.0, 0.97, 0.90];
+  const NIGHT_COL  = [0.04, 0.05, 0.09];
+  const ATMO_COL   = [0.42, 0.60, 0.95];
+  const SUN_WORLD  = [0.55, 0.30, 0.55];
+
+  let day, nmap, smap, clouds, night, surfSh, cloudSh, camZ;
+
+  const SURF_VERT = `
+  precision highp float;
+  attribute vec3 aPosition; attribute vec2 aTexCoord;
+  uniform mat4 uModelViewMatrix, uProjectionMatrix;
+  varying vec2 vUv; varying vec3 vModelPos; varying vec3 vN0;
+  void main(){ vUv=aTexCoord; vModelPos=aPosition; vN0=normalize(aPosition);
+    gl_Position = uProjectionMatrix * uModelViewMatrix * vec4(aPosition,1.0); }`;
+
+  const SURF_FRAG = `
+  precision highp float;
+  varying vec2 vUv; varying vec3 vModelPos; varying vec3 vN0;
+  uniform sampler2D uDay, uNormalMap, uSpec, uNight;
+  uniform vec3 uLight, uCam, uSunCol, uNightCol, uAtmoCol;
+  uniform float uRelief, uGloss, uSpecGain, uAmbient;
+  void main(){
+    vec3 N0 = normalize(vN0);
+    vec3 T = normalize(vec3(N0.z, 0.0, -N0.x) + vec3(1e-5));
+    vec3 B = cross(N0, T);
+    vec3 nm = texture2D(uNormalMap, vUv).rgb * 2.0 - 1.0;
+    vec3 N = normalize(N0 + (T*nm.x + B*nm.y) * uRelief);
+    vec3 L = normalize(uLight);
+    vec3 Vd = normalize(uCam - vModelPos);
+    vec3 alb = texture2D(uDay, vUv).rgb;
+    float spec = texture2D(uSpec, vUv).r;
+    float diff = max(dot(N, L), 0.0);
+    float term = smoothstep(-0.12, 0.22, dot(N0, L));
+    vec3 Hh = normalize(L + Vd);
+    float sp = pow(max(dot(N, Hh), 0.0), uGloss) * spec * uSpecGain * term;
+    vec3 dayCol = alb * (uAmbient + diff) * uSunCol + sp * uSunCol;
+    vec3 lights = texture2D(uNight, vUv).rgb;                 // Stadtlichter
+    vec3 nightCol = alb * uNightCol + lights * 1.25;
+    vec3 col = mix(nightCol, dayCol, term);
+    float fres = pow(1.0 - max(dot(N0, Vd), 0.0), 3.0);       // Atmosphaeren-Rand
+    col += uAtmoCol * fres * (0.18 + 0.82 * term);
+    gl_FragColor = vec4(col, 1.0);
+  }`;
+
+  const CLOUD_VERT = SURF_VERT;
+  const CLOUD_FRAG = `
+  precision highp float;
+  varying vec2 vUv; varying vec3 vModelPos; varying vec3 vN0;
+  uniform sampler2D uClouds;
+  uniform vec3 uLight, uCam;
+  uniform float uCloudOp;
+  void main(){
+    vec3 N0 = normalize(vN0);
+    vec3 L = normalize(uLight);
+    vec3 Vd = normalize(uCam - vModelPos);
+    vec3 c = texture2D(uClouds, vUv).rgb;
+    float lum = max(max(c.r, c.g), c.b);
+    float a = smoothstep(0.16, 0.62, lum);
+    if(a < 0.01) discard;
+    float term = smoothstep(-0.05, 0.28, dot(N0, L));
+    vec3 ccol = mix(vec3(0.55,0.60,0.68), vec3(1.0), 0.3 + 0.7*term);
+    float rim = smoothstep(0.0, 0.22, dot(N0, Vd));            // Rueckseite/Rand ausblenden
+    float al = a * (0.10 + 0.90*term) * rim * uCloudOp;
+    gl_FragColor = vec4(ccol, al);
+  }`;
+
+  function toModel(v, tilt, spin){
+    let L=v.slice(); let a=-tilt,c=Math.cos(a),s=Math.sin(a); L=[L[0],L[1]*c-L[2]*s,L[1]*s+L[2]*c];
+    a=-spin; c=Math.cos(a); s=Math.sin(a); L=[L[0]*c+L[2]*s, L[1], -L[0]*s+L[2]*c]; return L;
+  }
+  function norm3(v){ const m=Math.hypot(v[0],v[1],v[2])||1; return [v[0]/m,v[1]/m,v[2]/m]; }
+
+  function preload(){
+    day    = loadImage('assets/images/entities/scene1/earth_day.jpg');
+    nmap   = loadImage('assets/images/entities/scene1/earth_normal.jpg');
+    smap   = loadImage('assets/images/entities/scene1/earth_spec.jpg');
+    clouds = loadImage('assets/images/entities/scene1/earth_clouds.png');
+    night  = loadImage('assets/images/entities/scene1/earth_night.png');
+  }
+  function setup(){
+    const c = createCanvas(600, 600, WEBGL); c.parent('holder');
+    surfSh  = createShader(SURF_VERT, SURF_FRAG);
+    cloudSh = createShader(CLOUD_VERT, CLOUD_FRAG);
+    camZ = (height/2) / Math.tan(Math.PI/6);
+    noStroke();
+  }
+  function draw(){
+    clear();
+    const gl = drawingContext; gl.enable(gl.DEPTH_TEST); gl.depthMask(true);
+    const spin = millis()/1000 * -0.10, tilt = 0.20;
+    const cspin = spin * 1.18;                                  // Wolken etwas schneller -> Drift
+    const cam = toModel([0,0,camZ], tilt, spin);
+    const L  = toModel(norm3(SUN_WORLD), tilt, spin);
+    const Lc = toModel(norm3(SUN_WORLD), tilt, cspin);
+    // Oberflaeche
+    shader(surfSh);
+    surfSh.setUniform('uDay', day); surfSh.setUniform('uNormalMap', nmap);
+    surfSh.setUniform('uSpec', smap); surfSh.setUniform('uNight', night);
+    surfSh.setUniform('uLight', L); surfSh.setUniform('uCam', cam);
+    surfSh.setUniform('uSunCol', SUN_COL); surfSh.setUniform('uNightCol', NIGHT_COL); surfSh.setUniform('uAtmoCol', ATMO_COL);
+    surfSh.setUniform('uRelief', RELIEF); surfSh.setUniform('uGloss', GLOSS);
+    surfSh.setUniform('uSpecGain', SPECGAIN); surfSh.setUniform('uAmbient', AMBIENT);
+    push(); rotateX(tilt); rotateY(spin); sphere(R, 96, 64); pop();
+    // Wolken (eigene, leicht groessere Sphere; Rueckseite weg, kein Tiefenschreiben)
+    blendMode(BLEND);
+    gl.enable(gl.CULL_FACE); gl.cullFace(gl.FRONT); gl.depthMask(false);
+    shader(cloudSh);
+    cloudSh.setUniform('uClouds', clouds);
+    cloudSh.setUniform('uLight', Lc); cloudSh.setUniform('uCam', toModel([0,0,camZ], tilt, cspin));
+    cloudSh.setUniform('uCloudOp', CLOUD_OP);
+    push(); rotateX(tilt); rotateY(cspin); sphere(R*1.012, 96, 64); pop();
+    resetShader();
+    gl.disable(gl.CULL_FACE); gl.depthMask(true);
+    document.getElementById('fps').textContent = Math.round(frameRate()) + ' fps';
+  }
+  </script>
+</body>
+</html>
