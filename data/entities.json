@@ -19,7 +19,7 @@
       ],
       "loop": "loop",
       "speed": 0.01,
-      "scale": 0.24,
+      "scale": 0.20,
       "bob": 0.010,
       "opacity": 1.0,
       "content": {

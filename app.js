@@ -152,7 +152,7 @@ function drawGlobe(ent) {
   gl.enable(gl.DEPTH_TEST); gl.depthMask(true);
   const tNow = millis() / 1000;
   const tilt = ent.tilt, spin = ent.spinAngle;
-  const L = toModelVec(norm3(SUN_WORLD), tilt, spin);   // Sonne im Modellraum
+  const L = toModelVec(currentSunWorld(), tilt, spin);   // Sonne im Modellraum (folgt der kreisenden Sonne)
   const cam = toModelVec([0, 0, camZ], tilt, spin);     // Kamera im Modellraum
 
   // Oberflaeche
@@ -717,14 +717,27 @@ function bakeGlobeCalm(g, w, h) {
   ctx.fillStyle = grad; ctx.fillRect(0, 0, w, h);
 }
 
-// Sonne (oben rechts, konsistent mit der Globus-Beleuchtung) + Mond (links, gleiche Lichtquelle, mit Phase)
+// --- Sonne + Mond umkreisen die Erde (Bildmitte). Erd-Beleuchtung folgt der Sonne (currentSunWorld). ---
+const SUN_ORBIT_SPEED = 0.03, MOON_ORBIT_SPEED = 0.10;   // rad/s (Sonne langsam, Mond sichtbar kreisend)
+const SUN_ORBIT_R = 0.42, MOON_ORBIT_R = 0.30;           // Orbit-Radius * min(w,h)
+const SUN_START = 0.5;                                    // Start-Winkel (~ oben-rechts wie zuvor)
+const SUN_KXY = 0.6, SUN_KZ = 0.78;                       // seitlicher vs. frontaler Lichtanteil (KZ hoch -> meist Tag)
+
+// Weltrichtung zur Sonne aus dem Orbit-Winkel; +y_SUN = oben (empirisch), passt zur sichtbaren Sonnenposition
+function currentSunWorld() {
+  const a = millis() / 1000 * SUN_ORBIT_SPEED + SUN_START;
+  return norm3([Math.cos(a) * SUN_KXY, -Math.sin(a) * SUN_KXY, SUN_KZ]);   // -sin: Erdlicht oben, wenn Sonne oben
+}
+
 function drawSunMoon() {
-  const mm = Math.min(width, height);
-  const sx = width * 0.86, sy = height * 0.15;
-  drawSun(sx, sy, mm * 0.026);
-  const mx = width * 0.14, my = height * 0.68, mr = mm * 0.05;
+  const mm = Math.min(width, height), cx = width / 2, cy = height / 2;
+  const sa = millis() / 1000 * SUN_ORBIT_SPEED + SUN_START;
+  const ma = millis() / 1000 * MOON_ORBIT_SPEED;
+  const sx = cx + Math.cos(sa) * SUN_ORBIT_R * mm, sy = cy - Math.sin(sa) * SUN_ORBIT_R * mm; // sin>0 -> oben
+  const mx = cx + Math.cos(ma) * MOON_ORBIT_R * mm, my = cy - Math.sin(ma) * MOON_ORBIT_R * mm;
+  drawSun(sx, sy, mm * 0.05);                              // groesser
   let ldx = sx - mx, ldy = sy - my; const ln = Math.hypot(ldx, ldy) || 1;  // Lichtrichtung Mond -> Sonne
-  drawMoon(mx, my, mr, ldx / ln, ldy / ln);
+  drawMoon(mx, my, mm * 0.032, ldx / ln, ldy / ln);        // kleiner, Phase folgt der Sonne
 }
 
 function drawSun(x, y, r) {
