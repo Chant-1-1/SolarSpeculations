@@ -282,6 +282,7 @@ class Entity {
       this.tex = null; this.normTex = null; this.specTex = null;
       this.baseVel = def.globe.baseVel != null ? def.globe.baseVel : 0.3;  // rad/s Normaltempo
       this.tilt = def.globe.tilt != null ? def.globe.tilt : 0.35;
+      this.baseTilt = this.tilt;   // Ausgangs-Neigung, zu der der Pitch zurueckschwingt
       this.cloudVel = def.globe.cloudDrift != null ? def.globe.cloudDrift : 0.05;  // Wolken-Eigendrift
       this.spinAngle = 0;
       this.spinVel = this.baseVel;
@@ -331,9 +332,10 @@ class Entity {
         // Yaw (links/rechts): klingt auf Normaltempo ab
         this.spinAngle += this.spinVel * dt;
         this.spinVel += (this.baseVel - this.spinVel) * Math.min(1, dt * 1.2);
-        // Pitch (hoch/runter): Schwung klingt auf 0 ab -> Neigung bleibt stehen, wo losgelassen
+        // Pitch (hoch/runter): nach dem Loslassen zurueck zur Ausgangs-Neigung schwingen (gedaempfte Feder)
+        this.tiltVel += (this.baseTilt - this.tilt) * 22.0 * dt;
+        this.tiltVel *= Math.max(0, 1 - 4.5 * dt);
         this.tilt += this.tiltVel * dt;
-        this.tiltVel += (0 - this.tiltVel) * Math.min(1, dt * 1.2);
       }
       this.cloudDrift += this.cloudVel * dt;   // Wolken ziehen immer (auch im Stillstand)
     }
@@ -690,7 +692,7 @@ function mouseDragged() {
     const ent = heldEntity;
     const k = 1.3 / Math.max(ent.radius, 1);
     const dYaw = (mouseX - pmouseX) * k;     // horizontal -> links/rechts
-    const dPit = (mouseY - pmouseY) * k;     // vertikal   -> hoch/runter
+    const dPit = -(mouseY - pmouseY) * k;    // vertikal -> hoch/runter (invertiert = natuerliche Richtung)
     ent.spinAngle += dYaw;
     ent.tilt += dPit;
     const dtc = Math.max(deltaTime / 1000, 0.001);
