@@ -4,8 +4,9 @@
     {
       "id": "scene1",
       "name": "Weltkugel-Test",
-      "background": "assets/images/backgrounds/space_hudf.jpg",
-      "backgroundTint": "#06080e",
+      "background": "",
+      "backgroundTint": "#05060b",
+      "space": true,
       "ambient": "",
       "ambientVolume": -12,
       "reverbSend": { "bus": "long", "amount": 0.4 }

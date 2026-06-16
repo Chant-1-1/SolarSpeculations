@@ -635,9 +635,10 @@ function drawSpace() {
 
 // Tiefer Raum: Void + faint Nebel + Staub + dezente Milchstrasse (Noise in Quarter-Res, hochskaliert)
 function drawDeepSpace(g, w, h) {
-  const VOID = [7, 9, 16];
+  const VOID = [5, 6, 11];
   const NEB = [[40, 30, 52], [20, 40, 55], [55, 38, 30], [34, 22, 42]];   // entsaettigt: lila/teal/braun/magenta
-  const NEB_CAP = 0.45, DUST_CAP = 0.5, MW_CAP = 0.18, VIGN = 0.5;
+  // RUHIG/realistisch (Erdnaehe): Nebel nur ein Hauch, Milchstrasse aus, viel Schwarz
+  const NEB_CAP = 0.10, DUST_CAP = 0.18, MW_CAP = 0.0, VIGN = 0.55;
   const DS = 4;
   const sw = Math.max(2, Math.round(w / DS)), sh = Math.max(2, Math.round(h / DS));
   const buf = createGraphics(sw, sh); buf.pixelDensity(1);
@@ -674,7 +675,7 @@ function drawDeepSpace(g, w, h) {
 // Sternenfeld: viele schwache, wenige helle (Potenzgesetz), Blackbody-Farbe, Glow + Spikes fuer die hellsten
 function buildStarfield(g, w, h) {
   g.noStroke(); twinkleStars = [];
-  const N = Math.floor(w * h / 2400);   // ~1 Stern / 2400 px^2 (zurueckhaltend, Erde bleibt Hauptmotiv)
+  const N = Math.floor(w * h / 8000);   // SEHR SPARSAM: ~1 Stern / 8000 px^2 (ruhiger, realistischer Himmel; Zahl hoeher = noch weniger)
   const ctx = g.drawingContext;
   for (let i = 0; i < N; i++) {
     const x = Math.random() * w, y = Math.random() * h;
@@ -683,11 +684,11 @@ function buildStarfield(g, w, h) {
     const temp = Math.pow(Math.random(), 0.55); let c;  // meist blau-weiss, wenige warm
     if (temp < 0.5) { const tt = temp / 0.5; c = [255, lerp(185, 245, tt), lerp(140, 235, tt)]; }
     else { const tt = (temp - 0.5) / 0.5; c = [lerp(255, 205, tt), lerp(245, 228, tt), 255]; }
-    if (bMag < 0.85) {
+    if (bMag < 0.92) {                                   // nur die obersten ~8% bekommen Glow -> ruhiger
       const dia = bMag < 0.5 ? 1.0 : 1.5;
       g.fill(c[0], c[1], c[2], alpha); g.ellipse(x, y, dia, dia);
     } else {
-      const core = map(bMag, 0.85, 1, 1.6, 3.2), glow = map(bMag, 0.85, 1, 5, 15);
+      const core = map(bMag, 0.92, 1, 1.6, 3.0), glow = map(bMag, 0.92, 1, 4, 12);
       const grad = ctx.createRadialGradient(x, y, 0, x, y, glow);
       grad.addColorStop(0, `rgba(${c[0] | 0},${c[1] | 0},${c[2] | 0},${(alpha / 255) * 0.9})`);
       grad.addColorStop(0.25, `rgba(${c[0] | 0},${c[1] | 0},${c[2] | 0},${(alpha / 255) * 0.32})`);
