@@ -597,10 +597,127 @@ async function startExperience() {
   loop();
 }
 
+// ============ WELTRAUM-HINTERGRUND (Nebel + Sterne + ruhige Zone, EINMAL gecacht) ============
+// Synthese aus drei Subagenten-Rezepten: dunkler Void + faint Nebel (Quarter-Res-Noise hochskaliert)
+// + realistisches Sternenfeld (Potenzgesetz-Helligkeit, Blackbody-Farbe, Glow) + Vignette/ruhige
+// Zone hinter dem Globus. Statisch -> einmal in einen Buffer rendern, pro Frame nur ein image().
+let spaceBuf = null;          // gecachter Backdrop (mit Overscan-Rand)
+const SPACE_MARGIN = 26;      // Overscan, damit der langsame Drift keine Kante zeigt
+let twinkleStars = [];        // wenige helle Sterne, die live funkeln
+let spaceResizeTimer = null;
+
+function buildSpace() {
+  if (spaceBuf) spaceBuf.remove();
+  const bw = vw() + SPACE_MARGIN * 2, bh = vh() + SPACE_MARGIN * 2;
+  spaceBuf = createGraphics(bw, bh);
+  spaceBuf.pixelDensity(1);
+  drawDeepSpace(spaceBuf, bw, bh);    // Void + Nebel + Staub + Milchstrasse + Vignette
+  buildStarfield(spaceBuf, bw, bh);   // Sterne darueber, fuellt twinkleStars
+  bakeGlobeCalm(spaceBuf, bw, bh);    // ruhige, leicht abgedunkelte Zone hinter dem Globus
+}
+
+function drawSpace() {
+  if (!spaceBuf) buildSpace();
+  const t = millis() * 0.00002;
+  const dx = Math.sin(t) * 7, dy = Math.cos(t * 0.7) * 5;   // sehr langsamer Drift (<= ~7px)
+  image(spaceBuf, width / 2 + dx, height / 2 + dy, spaceBuf.width, spaceBuf.height); // imageMode CENTER
+  if (twinkleStars.length) {
+    push(); blendMode(ADD); noStroke();
+    const now = millis() * 0.002;
+    for (const s of twinkleStars) {
+      const a = constrain(s.a + Math.sin(now + s.ph) * 40, 0, 255);
+      fill(s.c[0], s.c[1], s.c[2], a * 0.6);
+      ellipse(s.x - SPACE_MARGIN + dx, s.y - SPACE_MARGIN + dy, s.r);
+    }
+    blendMode(BLEND); pop();
+  }
+}
+
+// Tiefer Raum: Void + faint Nebel + Staub + dezente Milchstrasse (Noise in Quarter-Res, hochskaliert)
+function drawDeepSpace(g, w, h) {
+  const VOID = [7, 9, 16];
+  const NEB = [[40, 30, 52], [20, 40, 55], [55, 38, 30], [34, 22, 42]];   // entsaettigt: lila/teal/braun/magenta
+  const NEB_CAP = 0.45, DUST_CAP = 0.5, MW_CAP = 0.18, VIGN = 0.5;
+  const DS = 4;
+  const sw = Math.max(2, Math.round(w / DS)), sh = Math.max(2, Math.round(h / DS));
+  const buf = createGraphics(sw, sh); buf.pixelDensity(1);
+  noiseSeed(7); noiseDetail(5, 0.55);
+  buf.loadPixels();
+  for (let py = 0; py < sh; py++) for (let px = 0; px < sw; px++) {
+    const u = px / sw, v = py / sh;
+    let r = VOID[0], gg = VOID[1], b = VOID[2];
+    const wx = noise(u * 2.2, v * 2.2, 0.1), wy = noise(u * 2.2 + 3.3, v * 2.2 + 1.7, 0.1);
+    let neb = noise(u * 2.6 + (wx - 0.5) * 0.9, v * 2.6 + (wy - 0.5) * 0.9, 0.1);
+    neb = Math.pow(Math.max(0, (neb - 0.5) / 0.5), 1.7);
+    const cn = noise(u * 0.8, v * 0.8, 10) * 3, i0 = Math.min(3, Math.floor(cn)), i1 = Math.min(3, i0 + 1), fr = cn - Math.floor(cn);
+    const nA = neb * NEB_CAP;
+    r += lerp(NEB[i0][0], NEB[i1][0], fr) * nA; gg += lerp(NEB[i0][1], NEB[i1][1], fr) * nA; b += lerp(NEB[i0][2], NEB[i1][2], fr) * nA;
+    let dust = noise(u * 3.4 + 5, v * 3.4 + 9, 20); dust = Math.pow(Math.max(0, (dust - 0.55) / 0.45), 2);
+    const dA = dust * DUST_CAP; r *= (1 - dA); gg *= (1 - dA); b *= (1 - dA);
+    const diag = u * 0.9 + v, dd = Math.abs(diag - 0.95);
+    const mA = Math.exp(-(dd * dd) / (2 * 0.16 * 0.16)) * (0.4 + 0.6 * noise(u * 5, v * 5, 30)) * MW_CAP;
+    r += 150 * mA; gg += 150 * mA; b += 175 * mA;
+    const k = 4 * (py * sw + px);
+    buf.pixels[k] = Math.min(255, r); buf.pixels[k + 1] = Math.min(255, gg); buf.pixels[k + 2] = Math.min(255, b); buf.pixels[k + 3] = 255;
+  }
+  buf.updatePixels();
+  g.background(VOID[0], VOID[1], VOID[2]);
+  if (g.drawingContext) g.drawingContext.imageSmoothingEnabled = true;
+  g.image(buf, 0, 0, w, h);
+  const ctx = g.drawingContext;
+  const vg = ctx.createRadialGradient(w * 0.5, h * 0.48, h * 0.18, w * 0.5, h * 0.5, w * 0.72);
+  vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,' + VIGN + ')');
+  ctx.fillStyle = vg; ctx.fillRect(0, 0, w, h);
+  buf.remove();
+}
+
+// Sternenfeld: viele schwache, wenige helle (Potenzgesetz), Blackbody-Farbe, Glow + Spikes fuer die hellsten
+function buildStarfield(g, w, h) {
+  g.noStroke(); twinkleStars = [];
+  const N = Math.floor(w * h / 2400);   // ~1 Stern / 2400 px^2 (zurueckhaltend, Erde bleibt Hauptmotiv)
+  const ctx = g.drawingContext;
+  for (let i = 0; i < N; i++) {
+    const x = Math.random() * w, y = Math.random() * h;
+    const bMag = Math.pow(Math.random(), 3.2);          // viele schwach, wenige hell
+    const alpha = 30 + bMag * 225;
+    const temp = Math.pow(Math.random(), 0.55); let c;  // meist blau-weiss, wenige warm
+    if (temp < 0.5) { const tt = temp / 0.5; c = [255, lerp(185, 245, tt), lerp(140, 235, tt)]; }
+    else { const tt = (temp - 0.5) / 0.5; c = [lerp(255, 205, tt), lerp(245, 228, tt), 255]; }
+    if (bMag < 0.85) {
+      const dia = bMag < 0.5 ? 1.0 : 1.5;
+      g.fill(c[0], c[1], c[2], alpha); g.ellipse(x, y, dia, dia);
+    } else {
+      const core = map(bMag, 0.85, 1, 1.6, 3.2), glow = map(bMag, 0.85, 1, 5, 15);
+      const grad = ctx.createRadialGradient(x, y, 0, x, y, glow);
+      grad.addColorStop(0, `rgba(${c[0] | 0},${c[1] | 0},${c[2] | 0},${(alpha / 255) * 0.9})`);
+      grad.addColorStop(0.25, `rgba(${c[0] | 0},${c[1] | 0},${c[2] | 0},${(alpha / 255) * 0.32})`);
+      grad.addColorStop(1, `rgba(${c[0] | 0},${c[1] | 0},${c[2] | 0},0)`);
+      ctx.fillStyle = grad; ctx.beginPath(); ctx.arc(x, y, glow, 0, Math.PI * 2); ctx.fill();
+      g.fill(255, 255, 255, alpha); g.ellipse(x, y, core, core);
+      if (twinkleStars.length < 18 && Math.random() < 0.4)
+        twinkleStars.push({ x, y, r: core, c, a: alpha, ph: Math.random() * Math.PI * 2 });
+    }
+  }
+}
+
+// ruhige, leicht abgedunkelte Zone hinter dem (mittig sitzenden) Globus -> Sterne stoeren den Halo nicht
+function bakeGlobeCalm(g, w, h) {
+  const cx = w / 2, cy = h / 2, gr = Math.min(vw(), vh()) * 0.19;
+  const ctx = g.drawingContext;
+  const grad = ctx.createRadialGradient(cx, cy, gr * 0.6, cx, cy, gr * 1.7);
+  grad.addColorStop(0, 'rgba(5,7,13,0.6)'); grad.addColorStop(1, 'rgba(5,7,13,0)');
+  ctx.fillStyle = grad; ctx.fillRect(0, 0, w, h);
+}
+
 function draw() {
   const dt = Math.min(0.05, deltaTime / 1000); // s, gedeckelt gegen Tab-Sprung
-  const base = hexToRgb(scenes[currentScene]?.backgroundTint || '#ffffff');
-  background(base[0], base[1], base[2]);
+  const sc0 = scenes[currentScene];
+  if (sc0 && sc0.space) {
+    drawSpace();
+  } else {
+    const base = hexToRgb(sc0?.backgroundTint || '#ffffff');
+    background(base[0], base[1], base[2]);
+  }
 
   // Hintergruende (mit Crossfade)
   drawBackground(currentScene, nextScene >= 0 ? 1 - sceneFade : 1);
@@ -653,8 +770,8 @@ function drawBackground(index, alpha) {
     if (ir > cr) { h = height; w = height * ir; } else { w = width; h = width / ir; }
     tint(255, 255 * alpha);
     image(sc.bg, width / 2, height / 2, w, h);
-  } else {
-    // einfarbiger Hintergrund aus backgroundTint
+  } else if (!sc.space) {
+    // einfarbiger Hintergrund aus backgroundTint (bei Weltraum-Szenen liegt der Backdrop schon)
     const tintCol = hexToRgb(sc.backgroundTint || '#ffffff');
     noStroke();
     fill(tintCol[0], tintCol[1], tintCol[2], 255 * alpha);
@@ -767,4 +884,8 @@ function keyPressed() {
   else if (keyCode === RIGHT_ARROW) goToScene((currentScene + 1) % scenes.length);
 }
 
-function windowResized() { resizeCanvas(vw(), vh()); }
+function windowResized() {
+  resizeCanvas(vw(), vh());
+  if (spaceResizeTimer) clearTimeout(spaceResizeTimer);
+  spaceResizeTimer = setTimeout(buildSpace, 180);   // gecachten Weltraum-Backdrop neu bauen (entprellt)
+}
