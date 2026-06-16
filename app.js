@@ -601,36 +601,42 @@ async function startExperience() {
 // Synthese aus drei Subagenten-Rezepten: dunkler Void + faint Nebel (Quarter-Res-Noise hochskaliert)
 // + realistisches Sternenfeld (Potenzgesetz-Helligkeit, Blackbody-Farbe, Glow) + Vignette/ruhige
 // Zone hinter dem Globus. Statisch -> einmal in einen Buffer rendern, pro Frame nur ein image().
-let spaceBuf = null;          // gecachter Backdrop (mit Overscan-Rand)
-const SPACE_MARGIN = 26;      // Overscan, damit der langsame Drift keine Kante zeigt
+let spaceBuf = null;          // gecachter Backdrop (QUADRATISCH = Diagonale -> deckt jede Drehung ab)
+const STAR_COUPLE = 0.04;     // wie stark die Sterne mit der Erde mitdrehen (ganz leicht, selbe Achse)
 let twinkleStars = [];        // wenige helle Sterne, die live funkeln
 let spaceResizeTimer = null;
 
 function buildSpace() {
   if (spaceBuf) spaceBuf.remove();
-  const bw = vw() + SPACE_MARGIN * 2, bh = vh() + SPACE_MARGIN * 2;
-  spaceBuf = createGraphics(bw, bh);
+  const D = Math.ceil(Math.sqrt(vw() * vw() + vh() * vh())) + 4;   // Diagonale: Buffer deckt jede Rotation ab
+  spaceBuf = createGraphics(D, D);
   spaceBuf.pixelDensity(1);
-  drawDeepSpace(spaceBuf, bw, bh);    // Void + Nebel + Staub + Milchstrasse + Vignette
-  buildStarfield(spaceBuf, bw, bh);   // Sterne darueber, fuellt twinkleStars
-  bakeGlobeCalm(spaceBuf, bw, bh);    // ruhige, leicht abgedunkelte Zone hinter dem Globus
+  drawDeepSpace(spaceBuf, D, D);    // Void + Nebel + Vignette (radial -> drehinvariant)
+  buildStarfield(spaceBuf, D, D);   // Sterne darueber, fuellt twinkleStars
+  bakeGlobeCalm(spaceBuf, D, D);    // ruhige, leicht abgedunkelte Zone hinter dem Globus (Buffer-Mitte = Bildmitte)
 }
 
 function drawSpace() {
   if (!spaceBuf) buildSpace();
-  const t = millis() * 0.00002;
-  const dx = Math.sin(t) * 7, dy = Math.cos(t * 0.7) * 5;   // sehr langsamer Drift (<= ~7px)
-  image(spaceBuf, width / 2 + dx, height / 2 + dy, spaceBuf.width, spaceBuf.height); // imageMode CENTER
+  // ganz leichte Drehung um die Bildmitte, gekoppelt an die Erddrehung (selbe Achse, Radius "hinter" dem Blick)
+  const gl = allEntities.find(e => e.isGlobe);
+  const ang = (gl ? gl.spinAngle : millis() / 1000 * -0.1) * STAR_COUPLE;
+  push();
+  imageMode(CENTER);
+  translate(width / 2, height / 2);
+  rotate(ang);
+  image(spaceBuf, 0, 0);   // Buffer-Mitte auf Bildmitte
   if (twinkleStars.length) {
-    push(); blendMode(ADD); noStroke();
-    const now = millis() * 0.002;
+    blendMode(ADD); noStroke();
+    const now = millis() * 0.002, cx = spaceBuf.width / 2, cy = spaceBuf.height / 2;
     for (const s of twinkleStars) {
       const a = constrain(s.a + Math.sin(now + s.ph) * 40, 0, 255);
       fill(s.c[0], s.c[1], s.c[2], a * 0.6);
-      ellipse(s.x - SPACE_MARGIN + dx, s.y - SPACE_MARGIN + dy, s.r);
+      ellipse(s.x - cx, s.y - cy, s.r);   // Buffer-Koords relativ zur Mitte (im rotierten Frame)
     }
-    blendMode(BLEND); pop();
+    blendMode(BLEND);
   }
+  pop();
 }
 
 // Tiefer Raum: Void + faint Nebel + Staub + dezente Milchstrasse (Noise in Quarter-Res, hochskaliert)
@@ -666,7 +672,8 @@ function drawDeepSpace(g, w, h) {
   if (g.drawingContext) g.drawingContext.imageSmoothingEnabled = true;
   g.image(buf, 0, 0, w, h);
   const ctx = g.drawingContext;
-  const vg = ctx.createRadialGradient(w * 0.5, h * 0.48, h * 0.18, w * 0.5, h * 0.5, w * 0.72);
+  const diag = Math.hypot(vw(), vh());
+  const vg = ctx.createRadialGradient(w * 0.5, h * 0.5, Math.min(vw(), vh()) * 0.22, w * 0.5, h * 0.5, diag * 0.46);
   vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,' + VIGN + ')');
   ctx.fillStyle = vg; ctx.fillRect(0, 0, w, h);
   buf.remove();
