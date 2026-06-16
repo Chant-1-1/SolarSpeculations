@@ -374,7 +374,7 @@ class Entity {
       // weicher Atmosphaeren-Halo (ragt ueber den Kugelrand hinaus, hinter der Kugel)
       let halo = ctx.createRadialGradient(0, 0, r * 0.82, 0, 0, r * 1.35);
       halo.addColorStop(0, 'rgba(130,175,235,0)');
-      halo.addColorStop(0.42, `rgba(130,175,235,${0.45 * alpha})`);
+      halo.addColorStop(0.42, `rgba(130,175,235,${0.25 * alpha})`);
       halo.addColorStop(1, 'rgba(130,175,235,0)');
       ctx.fillStyle = halo; ctx.fillRect(-r * 1.5, -r * 1.5, r * 3, r * 3);
       // Kugel-Bild
@@ -602,7 +602,7 @@ async function startExperience() {
 // + realistisches Sternenfeld (Potenzgesetz-Helligkeit, Blackbody-Farbe, Glow) + Vignette/ruhige
 // Zone hinter dem Globus. Statisch -> einmal in einen Buffer rendern, pro Frame nur ein image().
 let spaceBuf = null;          // gecachter Backdrop (QUADRATISCH = Diagonale -> deckt jede Drehung ab)
-const STAR_COUPLE = 0.04;     // wie stark die Sterne mit der Erde mitdrehen (ganz leicht, selbe Achse)
+const STAR_COUPLE = 0.06;     // wie stark die Sterne mit der Erde mitdrehen (leicht, selbe Achse)
 let twinkleStars = [];        // wenige helle Sterne, die live funkeln
 let spaceResizeTimer = null;
 
@@ -717,6 +717,58 @@ function bakeGlobeCalm(g, w, h) {
   ctx.fillStyle = grad; ctx.fillRect(0, 0, w, h);
 }
 
+// Sonne (oben rechts, konsistent mit der Globus-Beleuchtung) + Mond (links, gleiche Lichtquelle, mit Phase)
+function drawSunMoon() {
+  const mm = Math.min(width, height);
+  const sx = width * 0.86, sy = height * 0.15;
+  drawSun(sx, sy, mm * 0.026);
+  const mx = width * 0.14, my = height * 0.68, mr = mm * 0.05;
+  let ldx = sx - mx, ldy = sy - my; const ln = Math.hypot(ldx, ldy) || 1;  // Lichtrichtung Mond -> Sonne
+  drawMoon(mx, my, mr, ldx / ln, ldy / ln);
+}
+
+function drawSun(x, y, r) {
+  const ctx = drawingContext;
+  push(); noStroke();
+  blendMode(ADD);                                   // glueht auf dem dunklen Weltraum
+  let glow = ctx.createRadialGradient(x, y, 0, x, y, r * 7);
+  glow.addColorStop(0.0, 'rgba(255,246,214,0.85)');
+  glow.addColorStop(0.10, 'rgba(255,232,168,0.45)');
+  glow.addColorStop(0.35, 'rgba(255,205,120,0.12)');
+  glow.addColorStop(1.0, 'rgba(255,190,100,0)');
+  ctx.fillStyle = glow; ctx.fillRect(x - r * 7, y - r * 7, r * 14, r * 14);
+  blendMode(BLEND);
+  let core = ctx.createRadialGradient(x, y, 0, x, y, r);
+  core.addColorStop(0, 'rgba(255,255,252,1)');
+  core.addColorStop(0.65, 'rgba(255,247,220,1)');
+  core.addColorStop(1, 'rgba(255,236,190,0.95)');
+  ctx.fillStyle = core; ctx.beginPath(); ctx.arc(x, y, r, 0, TWO_PI); ctx.fill();
+  pop();
+}
+
+function drawMoon(x, y, r, ldx, ldy) {
+  const ctx = drawingContext;
+  push(); noStroke();
+  ctx.save();
+  ctx.beginPath(); ctx.arc(x, y, r, 0, TWO_PI); ctx.clip();
+  // Phase: lineare Beleuchtung entlang Lichtrichtung (ferne Sonne -> Terminator durch die Scheibe)
+  let g = ctx.createLinearGradient(x - ldx * r, y - ldy * r, x + ldx * r, y + ldy * r);
+  g.addColorStop(0.0, 'rgba(22,22,28,1)');          // Nachtseite (Hauch Erdschein)
+  g.addColorStop(0.45, 'rgba(58,58,64,1)');
+  g.addColorStop(0.60, 'rgba(132,132,134,1)');
+  g.addColorStop(1.0, 'rgba(222,222,216,1)');        // Sonnenseite
+  ctx.fillStyle = g; ctx.fillRect(x - r, y - r, r * 2, r * 2);
+  // Maria/Krater: ein paar weiche dunkle Flecken
+  const maria = [[-0.25, -0.20, 0.30], [0.18, 0.05, 0.22], [-0.05, 0.35, 0.18], [0.35, -0.30, 0.14]];
+  for (const m of maria) {
+    let mg = ctx.createRadialGradient(x + m[0] * r, y + m[1] * r, 0, x + m[0] * r, y + m[1] * r, m[2] * r);
+    mg.addColorStop(0, 'rgba(0,0,0,0.22)'); mg.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = mg; ctx.fillRect(x - r, y - r, r * 2, r * 2);
+  }
+  ctx.restore();
+  pop();
+}
+
 function draw() {
   const dt = Math.min(0.05, deltaTime / 1000); // s, gedeckelt gegen Tab-Sprung
   const sc0 = scenes[currentScene];
@@ -730,6 +782,7 @@ function draw() {
   // Hintergruende (mit Crossfade)
   drawBackground(currentScene, nextScene >= 0 ? 1 - sceneFade : 1);
   if (nextScene >= 0) drawBackground(nextScene, sceneFade);
+  if (sc0 && sc0.space) drawSunMoon();   // Sonne + Mond im Weltraum (hinter den Entities/Globus)
 
   // Crossfade fortschreiben
   if (nextScene >= 0) {
