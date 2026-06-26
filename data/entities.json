@@ -31,7 +31,7 @@
     },
 
     {
-      "_kommentar": "SCENE 2 (die station) - Phase 1: nur Bild/Bewegung, alle interactive:false, kein content. 'variants' = Ordner mit Bild-Varianten: Engine probiert <ordner>/<name>1.png, <name>2.png, ... (sonst bare 1.png,2.png), jede Instanz waehlt zufaellig eine; bei drift/loop pro Respawn neu. Leerer Ordner -> prozeduraler Platzhalter. Krill + Laternenfisch werden PROZEDURAL gezeichnet (drawScene2Fauna), nicht als Bild-Entities. Pfade spaeter mit dev/pathdesigner.html feinjustieren.",
+      "_kommentar": "SCENE 2 (die station) - Phase 1: nur Bild/Bewegung, alle interactive:false. 'variants'=Ordner mit Bild-Varianten. Bewegungs-Felder (aus Locomotion-Recherche): swim ('pulse'=Qualle Schub/Gleiten, 'jet'=Kalmar), ease (langsames Ebben/Hovern), weave (seitl. Pendeln), jitter (feines Station-Keeping), faceForward/facing (Sprite zeigt nach vorn), layer (Station>Kreaturen). Krill+Fischschwaerme sind PROZEDURAL (drawScene2Fauna).",
       "id": "whale",
       "scene": "scene2",
       "variants": "assets/images/entities/scene2/whale/",
@@ -40,16 +40,17 @@
       "interactive": false,
       "label": "",
       "path": [
-        { "x": 0.18, "y": 0.82 },
-        { "x": 0.50, "y": 0.86 },
-        { "x": 0.82, "y": 0.82 },
-        { "x": 0.50, "y": 0.80 }
+        { "x": -0.15, "y": 0.80 },
+        { "x": 0.30, "y": 0.83 },
+        { "x": 0.70, "y": 0.81 },
+        { "x": 1.15, "y": 0.84 }
       ],
-      "loop": "loop",
-      "speed": 0.006,
+      "loop": "drift",
+      "speed": 0.004,
       "scale": 0.24,
-      "bob": 0.004,
-      "opacity": 0.45
+      "bob": 0.009,
+      "ease": 0.65,
+      "opacity": 0.5
     },
     {
       "id": "station",
@@ -79,9 +80,12 @@
         { "x": 0.30, "y": 0.40 }
       ],
       "loop": "pingpong",
-      "speed": 0.020,
+      "swim": "pulse",
+      "pulsePeriod": 2.4,
+      "weave": 0.025,
+      "speed": 0.045,
       "scale": 0.06,
-      "bob": 0.020,
+      "bob": 0.015,
       "opacity": 0.65
     },
     {
@@ -95,25 +99,33 @@
         { "x": 0.66, "y": 0.44 }
       ],
       "loop": "pingpong",
-      "speed": 0.014,
+      "swim": "pulse",
+      "pulsePeriod": 3.1,
+      "weave": 0.022,
+      "weaveSpeed": 0.33,
+      "speed": 0.035,
       "scale": 0.07,
-      "bob": 0.025,
+      "bob": 0.018,
       "opacity": 0.60
     },
     {
       "id": "squid",
       "scene": "scene2",
       "variants": "assets/images/entities/scene2/squid/",
+      "faceForward": true,
+      "facing": "left",
       "interactive": false,
       "label": "",
       "path": [
-        { "x": 0.05, "y": 0.66 },
-        { "x": 0.40, "y": 0.58 },
-        { "x": 0.75, "y": 0.62 },
-        { "x": 0.98, "y": 0.54 }
+        { "x": 0.05, "y": 0.50 },
+        { "x": 0.40, "y": 0.56 },
+        { "x": 0.75, "y": 0.52 },
+        { "x": 0.98, "y": 0.58 }
       ],
       "loop": "drift",
-      "speed": 0.070,
+      "swim": "jet",
+      "pulsePeriod": 1.8,
+      "speed": 0.045,
       "scale": 0.07,
       "bob": 0.010,
       "opacity": 0.60
@@ -126,12 +138,14 @@
       "label": "",
       "path": [
         { "x": 0.30, "y": 0.60 },
-        { "x": 0.34, "y": 0.66 }
+        { "x": 0.325, "y": 0.635 }
       ],
       "loop": "pingpong",
-      "speed": 0.015,
+      "ease": 0.9,
+      "jitter": 0.003,
+      "speed": 0.007,
       "scale": 0.05,
-      "bob": 0.010,
+      "bob": 0.004,
       "opacity": 0.80
     },
     {
@@ -141,19 +155,20 @@
       "faceForward": true,
       "facing": "left",
       "flipVariants": [2],
-      "ease": 0.7,
+      "ease": 0.85,
+      "jitter": 0.004,
       "interactive": false,
       "label": "",
       "path": [
-        { "x": 0.50, "y": 0.36 },
-        { "x": 0.70, "y": 0.56 },
-        { "x": 0.50, "y": 0.76 },
-        { "x": 0.30, "y": 0.56 }
+        { "x": 0.28, "y": 0.40 },
+        { "x": 0.33, "y": 0.45 },
+        { "x": 0.28, "y": 0.50 },
+        { "x": 0.23, "y": 0.45 }
       ],
       "loop": "loop",
-      "speed": 0.026,
+      "speed": 0.008,
       "scale": 0.018,
-      "bob": 0.004,
+      "bob": 0.006,
       "opacity": 0.90
     },
     {
@@ -163,19 +178,20 @@
       "faceForward": true,
       "facing": "left",
       "flipVariants": [2],
-      "ease": 0.7,
+      "ease": 0.85,
+      "jitter": 0.004,
       "interactive": false,
       "label": "",
       "path": [
-        { "x": 0.50, "y": 0.30 },
-        { "x": 0.76, "y": 0.56 },
-        { "x": 0.50, "y": 0.82 },
-        { "x": 0.24, "y": 0.56 }
+        { "x": 0.72, "y": 0.45 },
+        { "x": 0.77, "y": 0.50 },
+        { "x": 0.72, "y": 0.55 },
+        { "x": 0.67, "y": 0.50 }
       ],
       "loop": "loop",
-      "speed": 0.022,
+      "speed": 0.007,
       "scale": 0.020,
-      "bob": 0.004,
+      "bob": 0.006,
       "opacity": 0.85
     },
     {
@@ -185,19 +201,20 @@
       "faceForward": true,
       "facing": "left",
       "flipVariants": [2],
-      "ease": 0.7,
+      "ease": 0.85,
+      "jitter": 0.004,
       "interactive": false,
       "label": "",
       "path": [
-        { "x": 0.50, "y": 0.42 },
-        { "x": 0.64, "y": 0.56 },
-        { "x": 0.50, "y": 0.70 },
-        { "x": 0.36, "y": 0.56 }
+        { "x": 0.66, "y": 0.615 },
+        { "x": 0.705, "y": 0.66 },
+        { "x": 0.66, "y": 0.705 },
+        { "x": 0.615, "y": 0.66 }
       ],
       "loop": "loop",
-      "speed": 0.030,
+      "speed": 0.009,
       "scale": 0.015,
-      "bob": 0.004,
+      "bob": 0.006,
       "opacity": 0.90
     },
     {
@@ -207,19 +224,20 @@
       "faceForward": true,
       "facing": "left",
       "flipVariants": [2],
-      "ease": 0.7,
+      "ease": 0.85,
+      "jitter": 0.004,
       "interactive": false,
       "label": "",
       "path": [
-        { "x": 0.42, "y": 0.34 },
-        { "x": 0.72, "y": 0.50 },
-        { "x": 0.58, "y": 0.74 },
-        { "x": 0.28, "y": 0.60 }
+        { "x": 0.32, "y": 0.61 },
+        { "x": 0.37, "y": 0.66 },
+        { "x": 0.32, "y": 0.71 },
+        { "x": 0.27, "y": 0.66 }
       ],
       "loop": "loop",
-      "speed": 0.024,
+      "speed": 0.0075,
       "scale": 0.018,
-      "bob": 0.004,
+      "bob": 0.006,
       "opacity": 0.80
     }
   ]

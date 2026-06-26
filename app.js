@@ -337,6 +337,8 @@ class Entity {
     this.u = Math.random() * 0.6;     // Startposition gestreut
     this.dir = 1;                      // fuer pingpong
     this.faceDir = 1;                  // horizontale Blickrichtung (faceForward): +1 rechts, -1 links
+    this.swimPhase = Math.random() * TWO_PI;  // eigene Phase fuer Schwimm-Rhythmus (de-synchronisiert)
+    this.dartT = 0;                    // Rest-Zeit eines seltenen Kalmar-Dashes
     this.respawnAlpha = 1;            // fuer drift-Ein-/Ausblenden
     this.bobPhase = Math.random() * TWO_PI;
     this.highlight = 0;               // 0..1 weiches Hervorheben beim Klick
@@ -356,8 +358,24 @@ class Entity {
     // Bewegung verlangsamt sich, wenn ein Panel offen ist
     const slow = 1 - 0.85 * duck;
     let step = (this.def.speed || 0.03) * dt * slow;
-    // 'ease' (0..1): langsames Ebben/Fluten des Tempos -> die Kreatur treibt zeitweise fast still
-    if (this.def.ease) {
+    // Schwimm-Rhythmus (aus der Recherche): asymmetrische Tempo-Huellkurven statt konstanter Fahrt.
+    const tNow = millis() / 1000;
+    if (this.def.swim === 'pulse') {
+      // Qualle: kurzer Schub, dann langes passives Ausgleiten (Energie-Recapture) -> Ratschen
+      const T = this.def.pulsePeriod || 2.6;
+      const pp = (((tNow / T) + this.swimPhase) % 1 + 1) % 1;
+      this.pulse = pp < 0.22 ? Math.sin(pp / 0.22 * Math.PI) : 0.18 * Math.exp(-(pp - 0.22) * 4.0);
+      step *= this.pulse * 3.2;                                       // Spitze ~3x, Boden ~0
+    } else if (this.def.swim === 'jet') {
+      // Kalmar: schneller Jet-Stoss + langes Ausgleiten; sehr selten ein crisper Dash
+      const T = this.def.pulsePeriod || 1.8;
+      const saw = (((tNow / T) + this.swimPhase) % 1 + 1) % 1;
+      const env = saw < 0.18 ? saw / 0.18 : Math.pow(1 - (saw - 0.18) / 0.82, 1.6);
+      step *= 0.25 + 0.9 * env;
+      if (this.dartT <= 0 && Math.random() < 0.003) this.dartT = 0.5;  // ~alle 5-10s ein Dash
+      if (this.dartT > 0) { step *= 3.0; this.dartT -= dt; }
+    } else if (this.def.ease) {
+      // langsames Ebben/Fluten -> die Kreatur treibt zeitweise fast still (Hover/Kriechen)
       step *= 1 - this.def.ease * (0.5 + 0.5 * Math.sin(this.bobPhase * 0.3 + this.u * 5.0));
     }
 
@@ -399,11 +417,20 @@ class Entity {
     this.highlight += (target - this.highlight) * min(1, dt * 4);
   }
 
-  // normierte Position (0..1) entlang des Pfades
+  // normierte Position (0..1) entlang des Pfades (+ bob, + optionales Pendeln/Zittern)
   normPos() {
     const p = pointAt(this.path, this.u, this.closed);
-    const bob = (this.def.bob || 0) * Math.sin(this.bobPhase);
-    return { x: p.x, y: p.y + bob };
+    let ox = 0, oy = (this.def.bob || 0) * Math.sin(this.bobPhase);
+    const tt = millis() / 1000;
+    // 'weave': langsames seitliches Pendeln (Qualle driftet nicht schnurgerade)
+    if (this.def.weave) ox += this.def.weave * Math.sin(tt * (this.def.weaveSpeed || 0.45) + this.swimPhase);
+    // 'jitter': feines Station-Keeping-Zittern (Sea Devils / Seespinne sind nie ganz eingefroren)
+    if (this.def.jitter) {
+      const j = this.def.jitter;
+      ox += j * (0.6 * Math.sin(tt * 0.5 + this.swimPhase) + 0.4 * Math.sin(tt * 0.31 + this.swimPhase * 2.3));
+      oy += j * 0.7 * Math.sin(tt * 0.7 + this.swimPhase * 1.7);
+    }
+    return { x: p.x + ox, y: p.y + oy };
   }
 
   draw() {
@@ -425,6 +452,8 @@ class Entity {
 
     let alpha = (this.def.opacity != null ? this.def.opacity : 1) * this.respawnAlpha;
     alpha *= currentSceneAlphaFor(this);
+    // Tiefen-Verdunkelung: je tiefer das Tier, desto dunkler/schemenhafter (Station ausgenommen)
+    const dk = this.def.placeholder === 'island' ? 1 : depthDim(np.y);
 
     push();
     translate(x, y);
@@ -470,7 +499,7 @@ class Entity {
       // nach vorne ausrichten: Sprite horizontal spiegeln, sodass die Vorderseite in Bewegungsrichtung zeigt
       // (facing = native Blickrichtung der Grafik: 'left' -> Kunst zeigt nach links)
       if (this.def.faceForward) scale(this.faceDir * (this.def.facing === 'left' ? -1 : 1), 1);
-      tint(255, 255 * alpha);
+      tint(255 * dk, 255 * dk, 255 * dk, 255 * alpha);     // dunkler/schemenhafter mit der Tiefe
       image(drawImg, 0, 0, sz, sz * ratio);
       pop();
       drawingContext.shadowBlur = 0;
@@ -481,8 +510,8 @@ class Entity {
       drawIslandPlaceholder(sz, wlLocalY, alpha);
     } else if (!handled) {
       // Platzhalter-Form: weicher Leuchtkleks (treibende Kreaturen-Leuchtpunkte)
-      // global ~10% gedimmt -> Leuchtpunkte etwas reduziert (Station/Stein + Scene 1 unberuehrt)
-      const a = alpha * 0.9;
+      // global ~10% gedimmt + Tiefen-Verdunkelung (Station/Stein + Scene 1 unberuehrt)
+      const a = alpha * 0.9 * dk;
       noStroke();
       const c = this.color;
       for (let i = 3; i >= 0; i--) {
@@ -538,6 +567,16 @@ function pointAt(pts, p, closed) {
   const idx = k => closed ? ((k % n) + n) % n : Math.max(0, Math.min(n - 1, k));
   const a = pts[idx(i - 1)], b = pts[idx(i)], c = pts[idx(i + 1)], d = pts[idx(i + 2)];
   return { x: catmull(a.x, b.x, c.x, d.x, t), y: catmull(a.y, b.y, c.y, d.y, t) };
+}
+
+// Tiefen-Verdunkelung: normierte Bildschirm-y -> Helligkeitsfaktor. 1.0 an der Wasserlinie,
+// ~0.28 am dunklen Grund (smoothstep -> oberes Mittelwasser bleibt lesbar, nur die Tiefe kippt
+// in Schemen/Silhouette). Gemeinsam fuer Sprites, Platzhalter-Leuchtklekse und prozedurale Fauna.
+function depthDim(ny) {
+  let t = (ny - WATERLINE_FRAC) / (1.0 - WATERLINE_FRAC);
+  t = t < 0 ? 0 : t > 1 ? 1 : t;
+  t = t * t * (3 - 2 * t);          // smoothstep
+  return 1.0 - 0.72 * t;            // 1.0 .. 0.28
 }
 
 function colorFromId(id) {
@@ -1203,79 +1242,112 @@ function drawWater(alpha = 1) {
   pop();
 }
 
-// ===== PROZEDURALE KLEINFAUNA (Scene 2): Krill-Wolke + kleiner Fischschwarm (KEINE Bilder) =====
-// Wird ueber dem Wasser-Backdrop, unter den Bild-Entities gezeichnet (drawSceneBackdrop) und
-// blendet mit dem Szenen-Crossfade (alpha). Positionen normiert (resize-fest), Update pro Frame.
-let krillParts = [];    // feine Glitzer-Partikel
-let fishSchools = [];   // mehrere kleine Schwaerme (je ein langsam wanderndes Zentrum)
+// ===== PROZEDURALE KLEINFAUNA (Scene 2): Krill-Schwarm + Fisch-Boids (KEINE Bilder) =====
+// Ueber dem Wasser-Backdrop, unter den Bild-Entities gezeichnet (drawSceneBackdrop), blendet mit
+// dem Crossfade (alpha). Bewegung aus der Locomotion-Recherche: Krill = dichte Gauss-Wolke mit
+// Kohaesions-Feder + metachronalem Schimmer + Diel-Heben; Fische = Boids (Separation/Alignment/
+// Kohaesion + Wander), klein+viel, schwarze Silhouetten, tiefer = fester schwarz, eine Schule
+// migriert vertikal. Positionen normiert (resize-fest).
+let krillSwarm = null;   // { parts:[{hx,hy,x,y,r,a,ph,jx,jy}] }
+let fishSchools = [];    // [{ fish:[{x,y,vx,vy,sc}], cx0,cy0,amp,sp,sizeFactor,cruise,deep,ph }]
 
 function buildScene2Fauna() {
-  krillParts = [];
-  for (let i = 0; i < 75; i++) {                                       // ~50% weniger Leuchtpunkte
-    krillParts.push({
-      x: 0.16 + Math.random() * 0.68, y: 0.40 + Math.random() * 0.24,   // Mittelwasser
-      r: 0.6 + Math.random() * 1.5, a: 22 + Math.random() * 60,         // sehr fein, dezent
-      ph: Math.random() * TWO_PI,                                       // Glitzer-Phase
-      vx: (Math.random() - 0.5) * 0.006, vy: (Math.random() - 0.5) * 0.003
+  // Krill: dichte Gauss-Wolke; jede Partikel federt zu ihrem Home-Offset (dichter Kern, duenner Rand)
+  const kp = [];
+  for (let i = 0; i < 150; i++) {
+    const gx = (Math.random() + Math.random() + Math.random()) / 3 - 0.5;   // ~Gauss
+    const gy = (Math.random() + Math.random() + Math.random()) / 3 - 0.5;
+    kp.push({
+      hx: gx * 0.15, hy: gy * 0.10, x: 0.5 + gx * 0.15, y: 0.53 + gy * 0.10,
+      r: 1.0 + Math.random() * 1.2, a: 28 + Math.random() * 55,
+      ph: Math.random() * TWO_PI, jx: Math.random() * TWO_PI, jy: Math.random() * TWO_PI
     });
   }
-  // mehrere Schwaerme UNTERSCHIEDLICHER Groesse; einer schwimmt tiefer durchs Bild
+  krillSwarm = { parts: kp };
+
+  // Fischschwaerme: klein+viel; verschiedene Groessen; einer schwimmt tiefer (vertikale Migration)
   fishSchools = [];
-  const SCHOOLS = [
-    { n: 12, spread: 0.045, cy0: 0.43, amp: 0.15, sp: 0.034, sz: 0.0026 },  // klein, Mittelwasser
-    { n: 34, spread: 0.100, cy0: 0.37, amp: 0.20, sp: 0.028, sz: 0.0032 },  // gross, oberes Mittelwasser
-    { n: 20, spread: 0.075, cy0: 0.70, amp: 0.27, sp: 0.040, sz: 0.0028 }   // mittel, TIEFER durchs Bild
+  const CFG = [
+    { n: 18, cx0: 0.30, cy0: 0.45, amp: 0.16, sp: 0.034, sz: 0.0020, cruise: 0.020, deep: false },
+    { n: 40, cx0: 0.55, cy0: 0.38, amp: 0.20, sp: 0.026, sz: 0.0024, cruise: 0.018, deep: false },
+    { n: 26, cx0: 0.50, cy0: 0.70, amp: 0.26, sp: 0.040, sz: 0.0022, cruise: 0.016, deep: true }
   ];
-  for (const c of SCHOOLS) {
+  for (const c of CFG) {
     const fish = [];
     for (let i = 0; i < c.n; i++) {
+      const a = Math.random() * TWO_PI, rr = Math.random() * 0.04;
       fish.push({
-        ox: (Math.random() - 0.5) * c.spread, oy: (Math.random() - 0.5) * c.spread * 0.5,
-        ph: Math.random() * TWO_PI, sc: 0.7 + Math.random() * 0.6,
-        px: 0, py: 0, sz: 1
+        x: c.cx0 + Math.cos(a) * rr, y: c.cy0 + Math.sin(a) * rr * 0.6,
+        vx: Math.cos(a) * c.cruise, vy: 0, sc: 0.7 + Math.random() * 0.6
       });
     }
-    fishSchools.push({
-      fish,
-      cx0: 0.20 + Math.random() * 0.60,                                // Basis-x
-      amp: c.amp, sp: c.sp, cy0: c.cy0,                                // Wander-Weite/-Tempo, Tiefe
-      cyAmp: 0.015 + Math.random() * 0.025,
-      sizeFactor: c.sz, ph: Math.random() * TWO_PI
-    });
+    fishSchools.push({ fish, cx0: c.cx0, cy0: c.cy0, amp: c.amp, sp: c.sp,
+      sizeFactor: c.sz, cruise: c.cruise, deep: c.deep, ph: Math.random() * TWO_PI });
   }
 }
 
 function drawScene2Fauna(alpha) {
-  if (!krillParts.length) buildScene2Fauna();
+  if (!krillSwarm) buildScene2Fauna();
   const w = width, h = height, mm = Math.min(w, h);
   const t = millis() / 1000, dt = Math.min(0.05, deltaTime / 1000);
 
   push();
   noStroke();
 
-  // Krill: feine glitzernde Partikelwolke (additiv), langsames Driften + Glitzern
+  // === Krill: dichte glitzernde Gauss-Wolke (additiv), Schwerpunkt wandert langsam + Diel-Heben ===
+  const kcx = 0.5 + 0.15 * Math.sin(t * 0.045);
+  const kcy = 0.53 + 0.05 * Math.sin(t * 0.030) + 0.03 * Math.sin(t * 0.012);   // + Diel-Migration
   blendMode(ADD);
-  for (const p of krillParts) {
-    p.x += p.vx * dt; p.y += p.vy * dt;
-    if (p.x < 0.12 || p.x > 0.88) p.vx = -p.vx;          // sanft in der Wolke gehalten
-    if (p.y < 0.36 || p.y > 0.66) p.vy = -p.vy;
-    const tw = 0.35 + 0.65 * Math.max(0.0, Math.sin(t * 1.6 + p.ph));   // Glitzern
-    fill(198, 224, 218, p.a * tw * alpha);
+  for (const p of krillSwarm.parts) {
+    const tx = kcx + p.hx + Math.sin(t * 0.9 + p.jx) * 0.0016;       // Ziel = Schwerpunkt + Home + Jitter
+    const ty = kcy + p.hy + Math.cos(t * 0.8 + p.jy) * 0.0013;
+    p.x += (tx - p.x) * 0.05; p.y += (ty - p.y) * 0.05;             // Kohaesions-Feder
+    const tw = 0.55 + 0.45 * Math.sin(t * 7.0 + p.ph);              // metachronaler Schimmer
+    const d = depthDim(p.y);
+    fill(200 * d, 226 * d, 218 * d, p.a * tw * d * alpha);
     ellipse(p.x * w, p.y * h, p.r, p.r);
   }
   blendMode(BLEND);
 
-  // kleine Fischschwaerme: WINZIGE schwarze Silhouetten, ruhig schwarmend (Schulen versch. Groesse,
-  // eine schwimmt tiefer durchs Bild). Liegen im Backdrop -> immer HINTER der Station.
-  fill(8, 12, 16, 200 * alpha);
+  // === Fischschwaerme: schwarze Silhouetten, Boids (Separation/Alignment/Kohaesion + Wander) ===
+  const perc2 = 0.06 * 0.06, sep2 = 0.022 * 0.022;
   for (const sch of fishSchools) {
-    const cx = sch.cx0 + sch.amp * Math.sin(t * sch.sp + sch.ph);     // wanderndes Zentrum
-    const cy = sch.cy0 + sch.cyAmp * Math.sin(t * sch.sp * 1.4 + sch.ph);
+    const tx = sch.cx0 + sch.amp * Math.sin(t * sch.sp + sch.ph);    // Wander-Ziel des Schwarms
+    const ty = sch.deep ? (0.70 + 0.10 * Math.sin(t * 0.012))        // tiefer Schwarm: vertikale Migration
+                        : (sch.cy0 + 0.03 * Math.sin(t * sch.sp * 1.3 + sch.ph));
+    const ebb = (0.7 + 0.3 * Math.sin(t * 0.07)) * sch.cruise;       // kollektives Ebben/Fliessen
     for (const f of sch.fish) {
-      f.px = (cx + f.ox + 0.012 * Math.sin(t * 0.5 + f.ph)) * w;
-      f.py = (cy + f.oy + 0.008 * Math.cos(t * 0.6 + f.ph)) * h;
-      f.sz = f.sc * mm * sch.sizeFactor;
-      ellipse(f.px, f.py, f.sz * 2.4, f.sz);                          // elongierte Silhouette
+      let alx = 0, aly = 0, cox = 0, coy = 0, sepx = 0, sepy = 0, nn = 0;
+      for (const g of sch.fish) {
+        if (g === f) continue;
+        const dx = g.x - f.x, dy = g.y - f.y, d2 = dx * dx + dy * dy;
+        if (d2 < perc2) {
+          alx += g.vx; aly += g.vy; cox += g.x; coy += g.y; nn++;
+          if (d2 < sep2) { const dd = Math.sqrt(d2) + 1e-5; sepx -= dx / dd; sepy -= dy / dd; }
+        }
+      }
+      let dvx = (tx - f.x) * 0.30, dvy = (ty - f.y) * 0.30;          // Wander zum Schwarm-Ziel
+      if (nn > 0) {
+        alx /= nn; aly /= nn; cox /= nn; coy /= nn;
+        dvx += alx * 1.0 + (cox - f.x) * 0.35 + sepx * 0.015;        // Alignment + Kohaesion + Separation
+        dvy += aly * 1.0 + (coy - f.y) * 0.35 + sepy * 0.015;
+      }
+      const dm = Math.hypot(dvx, dvy) + 1e-6;
+      f.vx += ((dvx / dm) * ebb - f.vx) * 0.06;                      // sanft zur Wunschrichtung -> Wende als Welle
+      f.vy += ((dvy / dm) * ebb - f.vy) * 0.06;
+      f.x += f.vx * dt; f.y += f.vy * dt;
+      f.y = Math.max(0.33, Math.min(0.96, f.y));                     // unter der Wasserlinie halten
+    }
+    // zeichnen: kleine schwarze Silhouetten, an der Schwimmrichtung ausgerichtet; tiefer = fester schwarz
+    for (const f of sch.fish) {
+      const depthT = Math.max(0, Math.min(1, (f.y - WATERLINE_FRAC) / (1 - WATERLINE_FRAC)));
+      fill(8, 12, 16, 200 * alpha * (1 + 0.25 * depthT));
+      const len = f.sc * mm * sch.sizeFactor;
+      push();
+      translate(f.x * w, f.y * h);
+      rotate(Math.atan2(f.vy, f.vx));
+      ellipse(0, 0, len * 2.6, len);                                // elongierte Silhouette in Schwimmrichtung
+      pop();
     }
   }
   pop();
