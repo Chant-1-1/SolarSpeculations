@@ -1036,7 +1036,7 @@ void main(){
   if(d < aa){
     // God Rays: mit der Tiefe ausblendend, additiv warm
     float gr = godrays(ruv, normalize(uLightDir), t);
-    float grFade = 1.0 - smoothstep(0.0, 0.85, depth);
+    float grFade = 1.0 - smoothstep(0.0, 0.28, depth);   // ~1/3 so lang (frueher bis 0.85)
     col += uLightColor * gr * grFade * 0.5 * below;
     // Kaustik: am staerksten direkt unter der Oberflaeche, mit Tiefe schwaecher
     float ca = caustics(ruv * vec2(aspect, 1.0) * 3.0, t);
