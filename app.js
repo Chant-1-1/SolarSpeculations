@@ -1010,39 +1010,43 @@ void main(){
   float wob = (fbm(vec2(uv.y*9.0 - t*0.08, t*0.05)) - 0.5);
   vec2 ruv = vec2(uv.x + wob*0.012*depth, uv.y);        // gebrochene UV fuer Tiefe/Kaustik
 
-  vec3 col;
+  // ===== Basisfarben IMMER berechnen (guenstig) -> erlaubt weichen Uebergang statt hartem if =====
+  // Smog-Himmel (weiss-gold, nach oben heller)
+  vec3 skyLo = vec3(0.82, 0.76, 0.58);
+  vec3 skyHi = vec3(0.96, 0.93, 0.83);
+  vec3 skyCol = mix(skyLo, skyHi, smoothstep(surfaceY, 1.0, uv.y));
+  skyCol += (fbm(vec2(uv.x*3.0, uv.y*2.0) + t*0.015) - 0.5) * 0.04;  // Hauch Smog-Struktur
+  // glaesernes Wasservolumen (Petrol/Teal -> Tiefblau -> fast Schwarz)
+  vec3 teal = vec3(0.16, 0.40, 0.42);
+  vec3 deep = vec3(0.04, 0.14, 0.24);
+  vec3 ink  = vec3(0.01, 0.03, 0.06);
+  vec3 waterCol = mix(teal, deep, smoothstep(0.0, 0.45, depth));
+  waterCol = mix(waterCol, ink, smoothstep(0.42, 1.0, depth));
 
-  if(d > 0.0){
-    // ===== UEBER WASSER: diesiger Smog-Himmel (weiss-gold, nach oben heller) =====
-    vec3 skyLo = vec3(0.82, 0.76, 0.58);
-    vec3 skyHi = vec3(0.96, 0.93, 0.83);
-    col = mix(skyLo, skyHi, smoothstep(surfaceY, 1.0, uv.y));
-    col += (fbm(vec2(uv.x*3.0, uv.y*2.0) + t*0.015) - 0.5) * 0.04;  // Hauch Smog-Struktur
-  } else {
-    // ===== UNTER WASSER: glaesernes Volumen (Petrol/Teal -> Tiefblau -> fast Schwarz) =====
-    vec3 teal = vec3(0.16, 0.40, 0.42);
-    vec3 deep = vec3(0.04, 0.14, 0.24);
-    vec3 ink  = vec3(0.01, 0.03, 0.06);
-    col = mix(teal, deep, smoothstep(0.0, 0.45, depth));
-    col = mix(col, ink, smoothstep(0.42, 1.0, depth));
+  // ===== WEICHER Wasserlinie-Uebergang (analytisches Anti-Aliasing) =====
+  // smoothstep ueber ein schmales, AUFLOESUNGS-ABHAENGIGES Band (~2.5 Buffer-Pixel) -> glatte
+  // Kante trotz halber Buffer-Aufloesung; ersetzt den harten if(d>0)-Sprung (war "pixelig").
+  float aa = 2.5 / uResolution.y;
+  float below = smoothstep(-aa, aa, -d);                 // 0 = Himmel, 1 = Wasser
+  vec3 col = mix(skyCol, waterCol, below);
 
-    // God Rays: nur unter Wasser, mit der Tiefe ausblendend, additiv warm
+  // ===== Unterwasser-Lichteffekte: nur unter Wasser, weich ueber 'below' eingeblendet =====
+  if(d < aa){
+    // God Rays: mit der Tiefe ausblendend, additiv warm
     float gr = godrays(ruv, normalize(uLightDir), t);
     float grFade = 1.0 - smoothstep(0.0, 0.85, depth);
-    col += uLightColor * gr * grFade * 0.5;
-
+    col += uLightColor * gr * grFade * 0.5 * below;
     // Kaustik: am staerksten direkt unter der Oberflaeche, mit Tiefe schwaecher
     float ca = caustics(ruv * vec2(aspect, 1.0) * 3.0, t);
     float caFade = 1.0 - smoothstep(0.0, 0.6, depth);
-    col += uLightColor * ca * caFade * 0.35;
-
+    col += uLightColor * ca * caFade * 0.35 * below;
     // Marine Snow: WENIGE, langsam sinkende, feine Specks (additiv)
     vec2 sq = vec2(uv.x*aspect, uv.y) * 38.0;
     sq.y += t*0.5;                                       // sinkt langsam
     vec2 sip = floor(sq), sfp = fract(sq);
     if(hash21(sip) > 0.965){                             // hohe Schwelle -> sparsam
       float dd = length(sfp - 0.5);
-      col += uLightColor * smoothstep(0.13, 0.0, dd) * 0.4 * (1.0 - depth*0.5);
+      col += uLightColor * smoothstep(0.13, 0.0, dd) * 0.4 * (1.0 - depth*0.5) * below;
     }
   }
 
@@ -1050,8 +1054,8 @@ void main(){
   // (kein durchgehender heller Streifen mehr -> Oberflaeche dunkler, Licht blitzt nur stellenweise)
   float aw = abs(d);
   float line = exp(-pow(aw / 0.008, 2.0));              // sehr duenne, dezente Oberflaechenlinie
-  // gedaempfte Smog-Reflexion NUR knapp unter der Oberflaeche (step gegen band=1 im Himmel)
-  float band = exp(-pow(max(0.0, -d) / 0.040, 2.0)) * step(0.0, -d);
+  // gedaempfte Smog-Reflexion knapp unter der Oberflaeche; 'below' (weich) statt hartem step
+  float band = exp(-pow(max(0.0, -d) / 0.040, 2.0)) * below;
   vec3 reflCol = vec3(0.74, 0.70, 0.58);                // gedaempfte Smog-Reflexion (dunkler)
   col = mix(col, reflCol, band * 0.10);
   // vereinzelte, wandernde Glanzreflexe: nur die Rauschspitzen (hohe Schwelle) -> selten, verstreut
