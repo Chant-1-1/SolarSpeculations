@@ -1046,15 +1046,20 @@ void main(){
     }
   }
 
-  // ===== OBERFLAECHEN-BAND (edge-on): Kamm + Fresnel/Glanz + wandernde Glints + Smog-Reflexion =====
+  // ===== OBERFLAECHEN-BAND (edge-on): DUNKLE, dezente Linie + nur VEREINZELTE Glanzreflexe =====
+  // (kein durchgehender heller Streifen mehr -> Oberflaeche dunkler, Licht blitzt nur stellenweise)
   float aw = abs(d);
-  float crest = exp(-pow(aw / 0.010, 2.0));             // duenne helle Kammlinie an d=0
-  // Fresnel-/Glanz-Saum NUR unter der Oberflaeche (step gegen band=1 im Himmel -> sonst Glint-Streifen oben)
-  float band  = exp(-pow(max(0.0, -d) / 0.045, 2.0)) * step(0.0, -d);
-  float glint = pow(vnoise(vec2(xw*26.0 - t*0.8, t*0.4)), 5.0) * band;  // wandernde Glanzlichter (edge-on)
-  vec3 reflCol = vec3(0.85, 0.80, 0.66);                // gedaempfte Smog-Reflexion
-  col = mix(col, reflCol, band * 0.18);
-  col += uLightColor * (crest*0.9 + glint*1.2);
+  float line = exp(-pow(aw / 0.008, 2.0));              // sehr duenne, dezente Oberflaechenlinie
+  // gedaempfte Smog-Reflexion NUR knapp unter der Oberflaeche (step gegen band=1 im Himmel)
+  float band = exp(-pow(max(0.0, -d) / 0.040, 2.0)) * step(0.0, -d);
+  vec3 reflCol = vec3(0.74, 0.70, 0.58);                // gedaempfte Smog-Reflexion (dunkler)
+  col = mix(col, reflCol, band * 0.10);
+  // vereinzelte, wandernde Glanzreflexe: nur die Rauschspitzen (hohe Schwelle) -> selten, verstreut
+  float gz = vnoise(vec2(xw*15.0 - t*0.5, t*0.55));
+  float spark = smoothstep(0.86, 0.99, gz);
+  spark *= spark;                                       // schaerfer -> wirklich vereinzelt
+  float sparkMask = exp(-pow(d / 0.014, 2.0));          // schmales Band um die Oberflaeche
+  col += uLightColor * (line * 0.07 + spark * sparkMask * 0.75);
 
   // sanfte Tiefen-/Rand-Vignette (zieht den Blick in die Tiefe)
   float vig = smoothstep(1.15, 0.25, length((uv - vec2(0.5, surfaceY)) * vec2(aspect*0.7, 1.0)));
@@ -1130,7 +1135,10 @@ function drawIslandPlaceholder(sz, top, alpha) {
   const ctx = drawingContext;
   const Wp = sz * 0.46;            // Breite des Steins
   const lx = -Wp / 2, rx = Wp / 2;
-  const bottom = sz * 0.40;        // unteres Ende des Steins (lokal, unter der Mitte)
+  // Hoehe haengt an der GROESSE (sz), nicht am Wasserlinie-Mitte-Abstand -> proportional skalierbar:
+  // Krone an der Wasserlinie (top), Koerper ~0.62*sz tief darunter. So bleibt die Form bei kleinerer
+  // scale gut proportioniert (statt zu schmalem Splitter) und laesst Wasser-Platz nach unten.
+  const bottom = top + sz * 0.62;  // unteres Ende des Steins (lokal)
   ctx.save();
   ctx.globalAlpha = alpha;
   // poroese Stein-Silhouette (organische Bezier-Kontur, oben an der Wasserlinie, nach unten verjuengt)
