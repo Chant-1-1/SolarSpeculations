@@ -31,11 +31,10 @@
     },
 
     {
-      "_kommentar": "SCENE 2 (die station) - Phase 1: nur Bild/Bewegung. Alle interactive:false, kein content, image:'' -> Engine-Platzhalter. imagePlanned = spaeterer Sprite-Pfad (Engine ignoriert das Feld). Pfade spaeter mit dev/pathdesigner.html feinjustieren.",
+      "_kommentar": "SCENE 2 (die station) - Phase 1: nur Bild/Bewegung, alle interactive:false, kein content. 'variants' = Ordner mit Bild-Varianten: Engine probiert <ordner>/<name>1.png, <name>2.png, ... (sonst bare 1.png,2.png), jede Instanz waehlt zufaellig eine; bei drift/loop pro Respawn neu. Leerer Ordner -> prozeduraler Platzhalter. Krill + Laternenfisch werden PROZEDURAL gezeichnet (drawScene2Fauna), nicht als Bild-Entities. Pfade spaeter mit dev/pathdesigner.html feinjustieren.",
       "id": "whale",
       "scene": "scene2",
-      "image": "",
-      "imagePlanned": "assets/images/entities/scene2/whale.png",
+      "variants": "assets/images/entities/scene2/whale/",
       "interactive": false,
       "label": "",
       "path": [
@@ -53,8 +52,7 @@
     {
       "id": "station",
       "scene": "scene2",
-      "image": "",
-      "imagePlanned": "assets/images/entities/scene2/station_cutaway.png",
+      "variants": "assets/images/entities/scene2/station/",
       "interactive": false,
       "placeholder": "island",
       "label": "",
@@ -68,48 +66,9 @@
       "opacity": 1.0
     },
     {
-      "id": "krill_cloud",
-      "scene": "scene2",
-      "image": "",
-      "imagePlanned": "assets/images/entities/scene2/krill.png",
-      "interactive": false,
-      "label": "",
-      "path": [
-        { "x": 0.12, "y": 0.46 },
-        { "x": 0.35, "y": 0.42 },
-        { "x": 0.60, "y": 0.48 },
-        { "x": 0.85, "y": 0.44 }
-      ],
-      "loop": "drift",
-      "speed": 0.012,
-      "scale": 0.12,
-      "bob": 0.020,
-      "opacity": 0.40
-    },
-    {
-      "id": "lanternfish",
-      "scene": "scene2",
-      "image": "",
-      "imagePlanned": "assets/images/entities/scene2/lanternfish.png",
-      "interactive": false,
-      "label": "",
-      "path": [
-        { "x": 0.15, "y": 0.40 },
-        { "x": 0.50, "y": 0.36 },
-        { "x": 0.85, "y": 0.40 },
-        { "x": 0.50, "y": 0.44 }
-      ],
-      "loop": "loop",
-      "speed": 0.040,
-      "scale": 0.05,
-      "bob": 0.030,
-      "opacity": 0.70
-    },
-    {
       "id": "jellyfish_1",
       "scene": "scene2",
-      "image": "",
-      "imagePlanned": "assets/images/entities/scene2/jellyfish.png",
+      "variants": "assets/images/entities/scene2/jellyfish/",
       "interactive": false,
       "label": "",
       "path": [
@@ -125,8 +84,7 @@
     {
       "id": "jellyfish_2",
       "scene": "scene2",
-      "image": "",
-      "imagePlanned": "assets/images/entities/scene2/jellyfish.png",
+      "variants": "assets/images/entities/scene2/jellyfish/",
       "interactive": false,
       "label": "",
       "path": [
@@ -142,8 +100,7 @@
     {
       "id": "squid",
       "scene": "scene2",
-      "image": "",
-      "imagePlanned": "assets/images/entities/scene2/squid.png",
+      "variants": "assets/images/entities/scene2/squid/",
       "interactive": false,
       "label": "",
       "path": [
@@ -161,8 +118,7 @@
     {
       "id": "sea_spider",
       "scene": "scene2",
-      "image": "",
-      "imagePlanned": "assets/images/entities/scene2/sea_spider.png",
+      "variants": "assets/images/entities/scene2/sea_spider/",
       "interactive": false,
       "label": "",
       "path": [
@@ -178,8 +134,7 @@
     {
       "id": "devil_1",
       "scene": "scene2",
-      "image": "",
-      "imagePlanned": "assets/images/entities/scene2/sea_devil.png",
+      "variants": "assets/images/entities/scene2/sea_devil/",
       "interactive": false,
       "label": "",
       "path": [
@@ -197,8 +152,7 @@
     {
       "id": "devil_2",
       "scene": "scene2",
-      "image": "",
-      "imagePlanned": "assets/images/entities/scene2/sea_devil.png",
+      "variants": "assets/images/entities/scene2/sea_devil/",
       "interactive": false,
       "label": "",
       "path": [
@@ -216,8 +170,7 @@
     {
       "id": "devil_3",
       "scene": "scene2",
-      "image": "",
-      "imagePlanned": "assets/images/entities/scene2/sea_devil.png",
+      "variants": "assets/images/entities/scene2/sea_devil/",
       "interactive": false,
       "label": "",
       "path": [
@@ -235,8 +188,7 @@
     {
       "id": "devil_4",
       "scene": "scene2",
-      "image": "",
-      "imagePlanned": "assets/images/entities/scene2/sea_devil.png",
+      "variants": "assets/images/entities/scene2/sea_devil/",
       "interactive": false,
       "label": "",
       "path": [

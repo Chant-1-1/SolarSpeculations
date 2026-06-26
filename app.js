@@ -247,6 +247,7 @@ async function buildWorld() {
     const img = await tryLoadImage(def.image);
     const ent = new Entity(def, img);
     if (def.frames) ent.frames = await loadFrames(def.frames);  // Animations-Sequenz
+    if (def.variants) { ent.variants = await loadVariants(def.variants); ent.pickVariant(); }  // Bild-Varianten-Ordner
     if (def.globe) {
       ent.tex = await tryLoadImage(def.globe.texture);
       if (def.globe.normal) ent.normTex = await tryLoadImage(def.globe.normal);
@@ -267,6 +268,26 @@ async function loadFrames(spec) {
   return (await Promise.all(ps)).filter(Boolean);
 }
 
+// Variant-Ordner laden (Bild-Sprites). Wie loadFrames eine NUMMERIERTE Sequenz, aber mit Abbruch
+// bei der ersten Luecke. Dateinamen-Praefix = Ordnername: ".../whale/" -> whale1.png, whale2.png, ...
+// Faellt auf bare 1.png, 2.png zurueck, falls keine Praefix-Datei existiert. Max ~12 Varianten.
+// Leeres Ergebnis -> Entity bleibt beim prozeduralen Platzhalter.
+async function loadVariants(folder) {
+  const name = folder.replace(/\/+$/, '').split('/').pop();   // Ordnername als Praefix
+  let imgs = await loadVariantSeq(folder, name);              // erst <name>1.png, <name>2.png, ...
+  if (!imgs.length) imgs = await loadVariantSeq(folder, '');  // sonst bare 1.png, 2.png, ...
+  return imgs;
+}
+async function loadVariantSeq(folder, prefix) {
+  const imgs = [];
+  for (let i = 1; i <= 12; i++) {
+    const img = await tryLoadImage(folder + prefix + i + '.png');
+    if (!img) break;                                          // erste fehlende Nummer -> Sequenz-Ende
+    imgs.push(img);
+  }
+  return imgs;
+}
+
 // =========================================================================
 //  ENTITY
 // =========================================================================
@@ -275,6 +296,7 @@ class Entity {
     this.def = def;
     this.img = img;
     this.frames = null;               // optionale Animations-Sequenz
+    this.variants = null;             // optionaler Ordner mit Bild-Varianten (zufaellig gewaehlt)
     this.spinTime = 0;                // akkumulierte Dreh-Zeit (pausierbar)
     // 3D-Kugel (WebGL): freie Drehung mit Schwung
     this.isGlobe = !!def.globe;
@@ -302,6 +324,13 @@ class Entity {
     this.radius = 40;
   }
 
+  // waehlt zufaellig eine geladene Bild-Variante als aktuelles Bild (bei drift/loop pro Respawn neu)
+  pickVariant() {
+    if (this.variants && this.variants.length) {
+      this.img = this.variants[Math.floor(Math.random() * this.variants.length)];
+    }
+  }
+
   update(dt) {
     // Bewegung verlangsamt sich, wenn ein Panel offen ist
     const slow = 1 - 0.85 * duck;
@@ -313,11 +342,12 @@ class Entity {
         if (this.u > 1) { this.u = 1; this.dir = -1; }
         if (this.u < 0) { this.u = 0; this.dir = 1; }
       } else if (this.loop === 'drift') {
-        // einmal durchlaufen, dann am Anfang neu auftauchen (mit Fade)
-        if (this.u > 1) { this.u = 0; this.respawnAlpha = 0; }
+        // einmal durchlaufen, dann am Anfang neu auftauchen (mit Fade) -> dabei neue Variante
+        if (this.u > 1) { this.u = 0; this.respawnAlpha = 0; this.pickVariant(); }
         this.respawnAlpha = min(1, this.respawnAlpha + dt * 0.8);
         if (this.u > 0.9) this.respawnAlpha = max(0, (1 - this.u) / 0.1);
       } else { // loop
+        if (this.u >= 1) this.pickVariant();   // pro Zyklus eine neue Variante (Schwarm variiert)
         this.u = (this.u % 1 + 1) % 1;
       }
     }
@@ -1134,6 +1164,74 @@ function drawWater(alpha = 1) {
   pop();
 }
 
+// ===== PROZEDURALE KLEINFAUNA (Scene 2): Krill-Wolke + kleiner Fischschwarm (KEINE Bilder) =====
+// Wird ueber dem Wasser-Backdrop, unter den Bild-Entities gezeichnet (drawSceneBackdrop) und
+// blendet mit dem Szenen-Crossfade (alpha). Positionen normiert (resize-fest), Update pro Frame.
+let krillParts = [];   // feine Glitzer-Partikel
+let fishSchool = [];   // kleiner Schwarm: Offsets um ein langsam wanderndes Zentrum
+
+function buildScene2Fauna() {
+  krillParts = [];
+  for (let i = 0; i < 150; i++) {
+    krillParts.push({
+      x: 0.16 + Math.random() * 0.68, y: 0.40 + Math.random() * 0.24,   // Mittelwasser
+      r: 0.6 + Math.random() * 1.5, a: 22 + Math.random() * 60,         // sehr fein, dezent
+      ph: Math.random() * TWO_PI,                                       // Glitzer-Phase
+      vx: (Math.random() - 0.5) * 0.006, vy: (Math.random() - 0.5) * 0.003
+    });
+  }
+  fishSchool = [];
+  for (let i = 0; i < 16; i++) {
+    fishSchool.push({
+      ox: (Math.random() - 0.5) * 0.11, oy: (Math.random() - 0.5) * 0.05,  // Offset um das Zentrum
+      ph: Math.random() * TWO_PI, s: 0.7 + Math.random() * 0.6,            // Wackel-Phase + Groesse
+      px: 0, py: 0, sz: 1
+    });
+  }
+}
+
+function drawScene2Fauna(alpha) {
+  if (!krillParts.length) buildScene2Fauna();
+  const w = width, h = height, mm = Math.min(w, h);
+  const t = millis() / 1000, dt = Math.min(0.05, deltaTime / 1000);
+
+  push();
+  noStroke();
+
+  // Krill: feine glitzernde Partikelwolke (additiv), langsames Driften + Glitzern
+  blendMode(ADD);
+  for (const p of krillParts) {
+    p.x += p.vx * dt; p.y += p.vy * dt;
+    if (p.x < 0.12 || p.x > 0.88) p.vx = -p.vx;          // sanft in der Wolke gehalten
+    if (p.y < 0.36 || p.y > 0.66) p.vy = -p.vy;
+    const tw = 0.35 + 0.65 * Math.max(0.0, Math.sin(t * 1.6 + p.ph));   // Glitzern
+    fill(198, 224, 218, p.a * tw * alpha);
+    ellipse(p.x * w, p.y * h, p.r, p.r);
+  }
+  blendMode(BLEND);
+
+  // kleiner Fischschwarm: winzige dunkel-silbrige Formen + faint Photophor-Glow, ruhig schwarmend
+  const cx = 0.5 + 0.30 * Math.sin(t * 0.05);           // wanderndes Zentrum (quer durchs Mittelwasser)
+  const cy = 0.40 + 0.035 * Math.sin(t * 0.085);
+  const dir = Math.cos(t * 0.05) >= 0 ? 1 : -1;         // Schwimmrichtung (Kopf vorne)
+  for (const f of fishSchool) {
+    f.px = (cx + f.ox + 0.018 * Math.sin(t * 0.5 + f.ph)) * w;
+    f.py = (cy + f.oy + 0.010 * Math.cos(t * 0.6 + f.ph)) * h;
+    f.sz = f.s * mm * 0.011;                             // winzig
+  }
+  for (const f of fishSchool) {                          // dunkel-silbrige Koerper (elongiert)
+    fill(150, 165, 176, 150 * alpha);
+    ellipse(f.px, f.py, f.sz * 2.4, f.sz);
+  }
+  blendMode(ADD);                                        // faint Photophor-Glow am Kopf
+  for (const f of fishSchool) {
+    fill(180, 212, 202, 80 * alpha);
+    ellipse(f.px + dir * f.sz * 0.9, f.py, f.sz * 0.8, f.sz * 0.8);
+  }
+  blendMode(BLEND);
+  pop();
+}
+
 // Platzhalter fuer das Stations-Hero, bis station_cutaway.png existiert: eine prozedurale
 // Bimsstein-Insel-Silhouette mit Blasenloechern (warm bewohnt / dunkel) + versiegelter Krone
 // ueber Wasser (Schacht + Kollektor + glattes Dach). Origin = Entity-Mitte; top = Wasserlinie lokal.
@@ -1330,7 +1428,8 @@ function drawSceneBackdrop(index, alpha) {
     return;
   }
   if (sc.underwater) {
-    drawWater(alpha);       // Shader-Wasser; faellt intern auf drawUnderwater() zurueck
+    drawWater(alpha);          // Shader-Wasser; faellt intern auf drawUnderwater() zurueck
+    drawScene2Fauna(alpha);    // prozedurale Kleinfauna (Krill + Fischschwarm) ueber dem Wasser
     return;
   }
   push();
