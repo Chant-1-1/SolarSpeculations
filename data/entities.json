@@ -28,6 +28,228 @@
         "secondaryImage": "",
         "link": { "url": "", "label": "" }
       }
+    },
+
+    {
+      "_kommentar": "SCENE 2 (die station) - Phase 1: nur Bild/Bewegung. Alle interactive:false, kein content, image:'' -> Engine-Platzhalter. imagePlanned = spaeterer Sprite-Pfad (Engine ignoriert das Feld). Pfade spaeter mit dev/pathdesigner.html feinjustieren.",
+      "id": "whale",
+      "scene": "scene2",
+      "image": "",
+      "imagePlanned": "assets/images/entities/scene2/whale.png",
+      "interactive": false,
+      "label": "",
+      "path": [
+        { "x": 0.18, "y": 0.82 },
+        { "x": 0.50, "y": 0.86 },
+        { "x": 0.82, "y": 0.82 },
+        { "x": 0.50, "y": 0.80 }
+      ],
+      "loop": "loop",
+      "speed": 0.006,
+      "scale": 0.24,
+      "bob": 0.004,
+      "opacity": 0.45
+    },
+    {
+      "id": "station",
+      "scene": "scene2",
+      "image": "",
+      "imagePlanned": "assets/images/entities/scene2/station_cutaway.png",
+      "interactive": false,
+      "placeholder": "island",
+      "label": "",
+      "path": [
+        { "x": 0.5, "y": 0.56 }
+      ],
+      "loop": "loop",
+      "speed": 0.0,
+      "scale": 0.62,
+      "bob": 0.006,
+      "opacity": 1.0
+    },
+    {
+      "id": "krill_cloud",
+      "scene": "scene2",
+      "image": "",
+      "imagePlanned": "assets/images/entities/scene2/krill.png",
+      "interactive": false,
+      "label": "",
+      "path": [
+        { "x": 0.12, "y": 0.46 },
+        { "x": 0.35, "y": 0.42 },
+        { "x": 0.60, "y": 0.48 },
+        { "x": 0.85, "y": 0.44 }
+      ],
+      "loop": "drift",
+      "speed": 0.012,
+      "scale": 0.12,
+      "bob": 0.020,
+      "opacity": 0.40
+    },
+    {
+      "id": "lanternfish",
+      "scene": "scene2",
+      "image": "",
+      "imagePlanned": "assets/images/entities/scene2/lanternfish.png",
+      "interactive": false,
+      "label": "",
+      "path": [
+        { "x": 0.15, "y": 0.40 },
+        { "x": 0.50, "y": 0.36 },
+        { "x": 0.85, "y": 0.40 },
+        { "x": 0.50, "y": 0.44 }
+      ],
+      "loop": "loop",
+      "speed": 0.040,
+      "scale": 0.05,
+      "bob": 0.030,
+      "opacity": 0.70
+    },
+    {
+      "id": "jellyfish_1",
+      "scene": "scene2",
+      "image": "",
+      "imagePlanned": "assets/images/entities/scene2/jellyfish.png",
+      "interactive": false,
+      "label": "",
+      "path": [
+        { "x": 0.30, "y": 0.58 },
+        { "x": 0.30, "y": 0.40 }
+      ],
+      "loop": "pingpong",
+      "speed": 0.020,
+      "scale": 0.06,
+      "bob": 0.020,
+      "opacity": 0.65
+    },
+    {
+      "id": "jellyfish_2",
+      "scene": "scene2",
+      "image": "",
+      "imagePlanned": "assets/images/entities/scene2/jellyfish.png",
+      "interactive": false,
+      "label": "",
+      "path": [
+        { "x": 0.70, "y": 0.62 },
+        { "x": 0.66, "y": 0.44 }
+      ],
+      "loop": "pingpong",
+      "speed": 0.014,
+      "scale": 0.07,
+      "bob": 0.025,
+      "opacity": 0.60
+    },
+    {
+      "id": "squid",
+      "scene": "scene2",
+      "image": "",
+      "imagePlanned": "assets/images/entities/scene2/squid.png",
+      "interactive": false,
+      "label": "",
+      "path": [
+        { "x": 0.05, "y": 0.66 },
+        { "x": 0.40, "y": 0.58 },
+        { "x": 0.75, "y": 0.62 },
+        { "x": 0.98, "y": 0.54 }
+      ],
+      "loop": "drift",
+      "speed": 0.070,
+      "scale": 0.07,
+      "bob": 0.010,
+      "opacity": 0.60
+    },
+    {
+      "id": "sea_spider",
+      "scene": "scene2",
+      "image": "",
+      "imagePlanned": "assets/images/entities/scene2/sea_spider.png",
+      "interactive": false,
+      "label": "",
+      "path": [
+        { "x": 0.30, "y": 0.60 },
+        { "x": 0.34, "y": 0.66 }
+      ],
+      "loop": "pingpong",
+      "speed": 0.015,
+      "scale": 0.05,
+      "bob": 0.010,
+      "opacity": 0.80
+    },
+    {
+      "id": "devil_1",
+      "scene": "scene2",
+      "image": "",
+      "imagePlanned": "assets/images/entities/scene2/sea_devil.png",
+      "interactive": false,
+      "label": "",
+      "path": [
+        { "x": 0.50, "y": 0.36 },
+        { "x": 0.70, "y": 0.56 },
+        { "x": 0.50, "y": 0.76 },
+        { "x": 0.30, "y": 0.56 }
+      ],
+      "loop": "loop",
+      "speed": 0.050,
+      "scale": 0.018,
+      "bob": 0.004,
+      "opacity": 0.90
+    },
+    {
+      "id": "devil_2",
+      "scene": "scene2",
+      "image": "",
+      "imagePlanned": "assets/images/entities/scene2/sea_devil.png",
+      "interactive": false,
+      "label": "",
+      "path": [
+        { "x": 0.50, "y": 0.30 },
+        { "x": 0.76, "y": 0.56 },
+        { "x": 0.50, "y": 0.82 },
+        { "x": 0.24, "y": 0.56 }
+      ],
+      "loop": "loop",
+      "speed": 0.040,
+      "scale": 0.020,
+      "bob": 0.004,
+      "opacity": 0.85
+    },
+    {
+      "id": "devil_3",
+      "scene": "scene2",
+      "image": "",
+      "imagePlanned": "assets/images/entities/scene2/sea_devil.png",
+      "interactive": false,
+      "label": "",
+      "path": [
+        { "x": 0.50, "y": 0.42 },
+        { "x": 0.64, "y": 0.56 },
+        { "x": 0.50, "y": 0.70 },
+        { "x": 0.36, "y": 0.56 }
+      ],
+      "loop": "loop",
+      "speed": 0.060,
+      "scale": 0.015,
+      "bob": 0.004,
+      "opacity": 0.90
+    },
+    {
+      "id": "devil_4",
+      "scene": "scene2",
+      "image": "",
+      "imagePlanned": "assets/images/entities/scene2/sea_devil.png",
+      "interactive": false,
+      "label": "",
+      "path": [
+        { "x": 0.42, "y": 0.34 },
+        { "x": 0.72, "y": 0.50 },
+        { "x": 0.58, "y": 0.74 },
+        { "x": 0.28, "y": 0.60 }
+      ],
+      "loop": "loop",
+      "speed": 0.045,
+      "scale": 0.018,
+      "bob": 0.004,
+      "opacity": 0.80
     }
   ]
 }

@@ -10,6 +10,13 @@
       "ambient": "",
       "ambientVolume": -12,
       "reverbSend": { "bus": "long", "amount": 0.4 }
+    },
+    {
+      "id": "scene2",
+      "name": "die station",
+      "background": "",
+      "backgroundTint": "#081826",
+      "underwater": true
     }
   ]
 }

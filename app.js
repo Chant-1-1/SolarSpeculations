@@ -405,6 +405,11 @@ class Entity {
       const ratio = drawImg.height / drawImg.width;
       image(drawImg, 0, 0, sz, sz * ratio);
       drawingContext.shadowBlur = 0;
+    } else if (!handled && this.def.placeholder === 'island') {
+      // prozedurale Bimsstein-Insel als Platzhalter, bis station_cutaway.png existiert.
+      // An der Wasserlinie verankert: wlLocalY ist die Wasserlinie in lokalen (entity-)Koords.
+      const wlLocalY = WATERLINE_FRAC * height - y;
+      drawIslandPlaceholder(sz, wlLocalY, alpha);
     } else if (!handled) {
       // Platzhalter-Form: weicher Leuchtkleks
       noStroke();
@@ -606,6 +611,13 @@ const STAR_COUPLE = 0.06;     // wie stark die Sterne mit der Erde mitdrehen (le
 let twinkleStars = [];        // wenige helle Sterne, die live funkeln
 let spaceResizeTimer = null;
 
+// ===== UNTERWASSER-BACKDROP (Scene 2) =====
+// Analog zum Weltraum: statischer Tiefenverlauf einmal in einen Buffer cachen, pro Frame nur
+// ein image() + die lebendigen, additiven Schichten (Gottesstrahlen, Kaustik, Marine Snow).
+let underwaterBuf = null;     // gecachter statischer Verlauf (Smog -> Wasserlinie -> Tiefe)
+let marineSnow = [];          // langsam sinkende Partikel (Position normiert 0..1, Tempo, Groesse)
+const WATERLINE_FRAC = 0.30;  // Wasserlinie im oberen Drittel (Anteil der Hoehe)
+
 function buildSpace() {
   if (spaceBuf) spaceBuf.remove();
   const D = Math.ceil(Math.sqrt(vw() * vw() + vh() * vh())) + 4;   // Diagonale: Buffer deckt jede Rotation ab
@@ -616,7 +628,8 @@ function buildSpace() {
   bakeGlobeCalm(spaceBuf, D, D);    // ruhige, leicht abgedunkelte Zone hinter dem Globus (Buffer-Mitte = Bildmitte)
 }
 
-function drawSpace() {
+// alpha (0..1) blendet den ganzen Weltraum-Backdrop ein/aus (fuer den Szenen-Crossfade).
+function drawSpace(alpha = 1) {
   if (!spaceBuf) buildSpace();
   // ganz leichte Drehung um die Bildmitte, gekoppelt an die Erddrehung (selbe Achse, Radius "hinter" dem Blick)
   const gl = allEntities.find(e => e.isGlobe);
@@ -625,13 +638,15 @@ function drawSpace() {
   imageMode(CENTER);
   translate(width / 2, height / 2);
   rotate(ang);
+  tint(255, 255 * alpha);
   image(spaceBuf, 0, 0);   // Buffer-Mitte auf Bildmitte
+  noTint();
   if (twinkleStars.length) {
     blendMode(ADD); noStroke();
     const now = millis() * 0.002, cx = spaceBuf.width / 2, cy = spaceBuf.height / 2;
     for (const s of twinkleStars) {
       const a = constrain(s.a + Math.sin(now + s.ph) * 40, 0, 255);
-      fill(s.c[0], s.c[1], s.c[2], a * 0.6);
+      fill(s.c[0], s.c[1], s.c[2], a * 0.6 * alpha);
       ellipse(s.x - cx, s.y - cy, s.r);   // Buffer-Koords relativ zur Mitte (im rotierten Frame)
     }
     blendMode(BLEND);
@@ -717,6 +732,210 @@ function bakeGlobeCalm(g, w, h) {
   ctx.fillStyle = grad; ctx.fillRect(0, 0, w, h);
 }
 
+// ============ UNTERWASSER-HINTERGRUND (Smog + Wasserlinie + Tiefe + lebendiges Licht) ============
+// Querschnitt an der Wasserlinie (oberes Drittel): oben diesig-greller weissgoldener Smog-Himmel,
+// darunter Verlauf Petrol -> Tiefblau -> nahezu Schwarz. Darueber leben Gottesstrahlen, Kaustik
+// direkt unter der Oberflaeche und langsam sinkende Marine Snow. Statik gecacht, Rest pro Frame.
+
+// statischen Verlauf einmal in einen Buffer backen (wie buildSpace) -> pro Frame nur ein image()
+function buildUnderwater() {
+  if (underwaterBuf) underwaterBuf.remove();
+  const w = vw(), h = vh();
+  underwaterBuf = createGraphics(w, h);
+  underwaterBuf.pixelDensity(1);
+  drawWaterColumn(underwaterBuf, w, h);
+}
+
+// Smog-Himmel + Wasserlinie + Tiefenverlauf + Lichtsaum + Tiefen-Vignette in einen Buffer zeichnen
+function drawWaterColumn(g, w, h) {
+  const wl = Math.round(h * WATERLINE_FRAC);   // y der Wasserlinie
+  const ctx = g.drawingContext;
+  // 1) Smog-Himmel ueber Wasser: diesig hell weissgold, zur Wasserlinie hin etwas satter
+  let sky = ctx.createLinearGradient(0, 0, 0, wl);
+  sky.addColorStop(0.0, '#f5edd6');            // grell weissgold
+  sky.addColorStop(0.55, '#ecdcb8');
+  sky.addColorStop(1.0, '#d8c79c');            // an der Wasserlinie waermer/satter
+  ctx.fillStyle = sky; ctx.fillRect(0, 0, w, wl);
+  // 2) Wassersaeule: Petrol (sonnendurchflutet) -> Tiefblau -> nahezu Schwarz in der Tiefe
+  let sea = ctx.createLinearGradient(0, wl, 0, h);
+  sea.addColorStop(0.0, '#2f6f7c');            // Petrol direkt unter der Oberflaeche
+  sea.addColorStop(0.16, '#1c4f63');
+  sea.addColorStop(0.46, '#0e2f47');           // Tiefblau
+  sea.addColorStop(1.0, '#03070d');            // nahezu schwarz
+  ctx.fillStyle = sea; ctx.fillRect(0, wl, w, h - wl);
+  // 3) heller Lichtsaum direkt unter der Wasserlinie (Sonnenlicht bricht ein)
+  let band = ctx.createLinearGradient(0, wl, 0, wl + h * 0.14);
+  band.addColorStop(0, 'rgba(226,240,224,0.55)');
+  band.addColorStop(1, 'rgba(226,240,224,0)');
+  ctx.fillStyle = band; ctx.fillRect(0, wl, w, h * 0.14);
+  // 4) Wasserlinie selbst: schmaler heller Saum
+  ctx.fillStyle = 'rgba(244,248,234,0.8)'; ctx.fillRect(0, wl - 1, w, 2);
+  // 5) Tiefen-Vignette: zieht den Blick nach unten in die Dunkelheit
+  let vg = ctx.createRadialGradient(w * 0.5, wl + h * 0.12, Math.min(w, h) * 0.18,
+                                    w * 0.5, h * 0.78, Math.hypot(w, h) * 0.62);
+  vg.addColorStop(0, 'rgba(0,0,6,0)');
+  vg.addColorStop(1, 'rgba(0,0,8,0.6)');
+  ctx.fillStyle = vg; ctx.fillRect(0, 0, w, h);
+}
+
+// Partikel-Liste fuer Marine Snow einmal anlegen (normierte Koords -> resize-fest)
+function buildMarineSnow() {
+  marineSnow = [];
+  const N = 150;
+  for (let i = 0; i < N; i++) {
+    marineSnow.push({
+      x: Math.random(), y: Math.random(),
+      vy: 0.018 + Math.random() * 0.04,   // normierte Sinkgeschwindigkeit /s (langsam)
+      vx: (Math.random() - 0.5) * 0.01,   // ganz leichtes seitliches Driften /s
+      r: 1 + Math.random() * 2.2,
+      a: 35 + Math.random() * 95,
+      ph: Math.random() * TWO_PI
+    });
+  }
+}
+
+// ein weicher Gottesstrahl (Lichtkegel) von der Wasserlinie nach unten, additiv, mit Tiefen-Fade
+function drawGodRay(x, top, topW, botW, len, a) {
+  const ctx = drawingContext;
+  const grad = ctx.createLinearGradient(0, top, 0, top + len);
+  grad.addColorStop(0, `rgba(255,250,224,${a})`);
+  grad.addColorStop(0.5, `rgba(255,247,214,${a * 0.5})`);
+  grad.addColorStop(1, 'rgba(255,247,214,0)');
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.moveTo(x - topW / 2, top);
+  ctx.lineTo(x + topW / 2, top);
+  ctx.lineTo(x + botW / 2, top + len);
+  ctx.lineTo(x - botW / 2, top + len);
+  ctx.closePath();
+  ctx.fill();
+}
+
+// flimmerndes Kaustik-Netz direkt unter der Wasserlinie (helle Knoten, additiv)
+function drawCaustics(w, wl, h, t, alpha) {
+  noStroke();
+  const bandH = h * 0.18, rows = 11;
+  for (let r = 0; r < rows; r++) {
+    const yy = wl + (r / rows) * bandH;
+    const fade = 1 - r / rows;                          // direkt unter der Linie am hellsten
+    for (let x = 0; x <= w; x += 24) {
+      // zwei ueberlagerte Sinus -> wanderndes Interferenzmuster
+      const n = Math.sin(x * 0.028 + t * 0.9 + r * 0.6) * Math.sin(x * 0.011 - t * 0.6 + r * 1.3);
+      const b = Math.max(0, n);
+      const aa = b * b * 30 * fade * alpha;
+      if (aa < 1) continue;
+      fill(202, 236, 222, aa);
+      const s = 5 + b * 7;
+      ellipse(x + Math.sin(t * 0.5 + r) * 7, yy, s, s * 0.55);
+    }
+  }
+}
+
+// kompletter Unterwasser-Backdrop bei gegebenem Alpha (0..1) -> deckend bei 1, ausblendbar fuer Crossfade
+function drawUnderwater(alpha = 1) {
+  if (!underwaterBuf) buildUnderwater();
+  if (!marineSnow.length) buildMarineSnow();
+  const w = width, h = height, wl = h * WATERLINE_FRAC;
+  const t = millis() / 1000, dt = Math.min(0.05, deltaTime / 1000);
+
+  push();
+  // statischer Verlauf (deckend bei alpha=1) als Basis
+  imageMode(CORNER);
+  tint(255, 255 * alpha);
+  image(underwaterBuf, 0, 0, w, h);
+  noTint();
+
+  // lebendige Schichten additiv darueber
+  blendMode(ADD);
+  noStroke();
+  // Gottesstrahlen: wenige weiche Kegel von der Oberflaeche, langsam wandernd + sanft pulsierend
+  const rays = 5;
+  for (let i = 0; i < rays; i++) {
+    const baseX = (i + 0.5) / rays * w;
+    const sway = Math.sin(t * 0.06 + i * 1.7) * w * 0.05;          // langsames Wandern
+    const x = baseX + sway;
+    const len = h * (0.55 + 0.18 * Math.sin(t * 0.05 + i));
+    const a = (0.05 + 0.035 * Math.sin(t * 0.4 + i * 2.1)) * alpha; // dezentes Pulsieren (0..~0.09)
+    drawGodRay(x, wl, w * 0.045, w * 0.16, len, Math.max(0, a));
+  }
+  // Kaustik direkt unter der Wasserlinie
+  drawCaustics(w, wl, h, t, alpha);
+  // Marine Snow: langsam sinkende, feine Partikel (nur unter Wasser)
+  for (const p of marineSnow) {
+    p.y += p.vy * dt;
+    p.x += p.vx * dt;
+    if (p.y > 1.03) { p.y = -0.03; p.x = Math.random(); }           // oben neu auftauchen
+    const py = p.y * h;
+    if (py < wl) continue;
+    const px = (((p.x % 1) + 1) % 1) * w;
+    fill(212, 226, 230, p.a * alpha);
+    ellipse(px, py, p.r, p.r);
+  }
+  blendMode(BLEND);
+  pop();
+}
+
+// Platzhalter fuer das Stations-Hero, bis station_cutaway.png existiert: eine prozedurale
+// Bimsstein-Insel-Silhouette mit Blasenloechern (warm bewohnt / dunkel) + versiegelter Krone
+// ueber Wasser (Schacht + Kollektor + glattes Dach). Origin = Entity-Mitte; top = Wasserlinie lokal.
+function drawIslandPlaceholder(sz, top, alpha) {
+  const ctx = drawingContext;
+  const Wp = sz * 0.46;            // Breite des Steins
+  const lx = -Wp / 2, rx = Wp / 2;
+  const bottom = sz * 0.40;        // unteres Ende des Steins (lokal, unter der Mitte)
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  // poroese Stein-Silhouette (organische Bezier-Kontur, oben an der Wasserlinie, nach unten verjuengt)
+  ctx.beginPath();
+  ctx.moveTo(lx, top + sz * 0.05);
+  ctx.bezierCurveTo(lx, top - sz * 0.015, -Wp * 0.20, top - sz * 0.02, -Wp * 0.04, top - sz * 0.01);
+  ctx.bezierCurveTo(Wp * 0.16, top - sz * 0.02, rx, top - sz * 0.005, rx, top + sz * 0.06);
+  ctx.bezierCurveTo(rx * 1.05, top + (bottom - top) * 0.5, Wp * 0.30, bottom, 0, bottom);
+  ctx.bezierCurveTo(-Wp * 0.32, bottom, lx * 1.05, top + (bottom - top) * 0.5, lx, top + sz * 0.05);
+  ctx.closePath();
+  const g = ctx.createLinearGradient(0, top, 0, bottom);
+  g.addColorStop(0, 'rgb(104,98,90)');     // poroeser Stein, vom Smog beleuchtet
+  g.addColorStop(0.45, 'rgb(58,60,62)');
+  g.addColorStop(1, 'rgb(16,22,28)');      // unten in der Tiefe
+  ctx.fillStyle = g; ctx.fill();
+  // Blasenloecher: einige warm bewohnt (Glow), einige dunkel
+  const holes = [
+    [-0.22, 0.14, 0.052, 1], [0.12, 0.10, 0.044, 1], [0.26, 0.24, 0.040, 0],
+    [-0.06, 0.30, 0.050, 1], [0.00, 0.50, 0.058, 0], [-0.28, 0.40, 0.038, 0],
+    [0.30, 0.46, 0.046, 1], [-0.16, 0.58, 0.044, 0], [0.16, 0.66, 0.038, 1],
+    [-0.02, 0.74, 0.050, 0], [0.34, 0.66, 0.034, 0]
+  ];
+  for (const [hx, hy, hr, warm] of holes) {
+    const cx = hx * Wp, cy = top + hy * (bottom - top), r = hr * sz;
+    if (warm) {
+      const wg = ctx.createRadialGradient(cx, cy, 0, cx, cy, r * 1.8);
+      wg.addColorStop(0, 'rgba(255,198,122,0.95)');
+      wg.addColorStop(0.5, 'rgba(232,150,80,0.5)');
+      wg.addColorStop(1, 'rgba(232,150,80,0)');
+      ctx.fillStyle = wg; ctx.beginPath(); ctx.arc(cx, cy, r * 1.8, 0, TWO_PI); ctx.fill();
+      ctx.fillStyle = 'rgba(255,224,176,1)'; ctx.beginPath(); ctx.arc(cx, cy, r * 0.5, 0, TWO_PI); ctx.fill();
+    } else {
+      ctx.fillStyle = 'rgba(6,10,14,0.85)'; ctx.beginPath(); ctx.arc(cx, cy, r, 0, TWO_PI); ctx.fill();
+    }
+  }
+  // Krone ueber Wasser: schlanker Schacht + Kollektor + versiegeltes glattes Dach
+  const crownW = sz * 0.15, crownH = sz * 0.085, shaftH = sz * 0.11;
+  ctx.fillStyle = 'rgb(208,212,212)';
+  ctx.fillRect(-sz * 0.011, top - shaftH, sz * 0.022, shaftH);                  // Schacht
+  ctx.fillStyle = 'rgb(240,240,230)';
+  ctx.beginPath(); ctx.arc(0, top - shaftH, sz * 0.017, 0, TWO_PI); ctx.fill(); // Kollektor (Knauf)
+  const dg = ctx.createLinearGradient(0, top - crownH, 0, top);
+  dg.addColorStop(0, 'rgb(240,238,228)');
+  dg.addColorStop(1, 'rgb(198,196,186)');
+  ctx.fillStyle = dg;
+  ctx.beginPath();
+  ctx.moveTo(-crownW / 2, top);
+  ctx.quadraticCurveTo(-crownW / 2, top - crownH, 0, top - crownH);
+  ctx.quadraticCurveTo(crownW / 2, top - crownH, crownW / 2, top);
+  ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
+
 // --- Sonne + Mond umkreisen die Erde (Bildmitte). Erd-Beleuchtung folgt der Sonne (currentSunWorld). ---
 const SUN_ORBIT_SPEED = 0.03, MOON_ORBIT_SPEED = 0.10;   // rad/s (Sonne langsam, Mond sichtbar kreisend)
 const SUN_ORBIT_R = 0.42, MOON_ORBIT_R = 0.30;           // Orbit-Radius * min(w,h)
@@ -729,7 +948,12 @@ function currentSunWorld() {
   return norm3([Math.cos(a) * SUN_KXY, -Math.sin(a) * SUN_KXY, SUN_KZ]);   // -sin: Erdlicht oben, wenn Sonne oben
 }
 
-function drawSunMoon() {
+// alpha (0..1) blendet Sonne + Mond mit der Weltraum-Szene ein/aus (Crossfade). globalAlpha
+// skaliert alle nachfolgenden Canvas-Alphas der Gradienten in drawSun/drawMoon.
+function drawSunMoon(alpha = 1) {
+  if (alpha <= 0.001) return;
+  const ctx = drawingContext, prevGA = ctx.globalAlpha;
+  ctx.globalAlpha = alpha;
   const mm = Math.min(width, height), cx = width / 2, cy = height / 2;
   const sa = millis() / 1000 * SUN_ORBIT_SPEED + SUN_START;
   const ma = millis() / 1000 * MOON_ORBIT_SPEED;
@@ -738,6 +962,7 @@ function drawSunMoon() {
   drawSun(sx, sy, mm * 0.05);                              // groesser
   let ldx = sx - mx, ldy = sy - my; const ln = Math.hypot(ldx, ldy) || 1;  // Lichtrichtung Mond -> Sonne
   drawMoon(mx, my, mm * 0.032, ldx / ln, ldy / ln);        // kleiner, Phase folgt der Sonne
+  ctx.globalAlpha = prevGA;
 }
 
 function drawSun(x, y, r) {
@@ -784,18 +1009,12 @@ function drawMoon(x, y, r, ldx, ldy) {
 
 function draw() {
   const dt = Math.min(0.05, deltaTime / 1000); // s, gedeckelt gegen Tab-Sprung
-  const sc0 = scenes[currentScene];
-  if (sc0 && sc0.space) {
-    drawSpace();
-  } else {
-    const base = hexToRgb(sc0?.backgroundTint || '#ffffff');
-    background(base[0], base[1], base[2]);
-  }
 
-  // Hintergruende (mit Crossfade)
-  drawBackground(currentScene, nextScene >= 0 ? 1 - sceneFade : 1);
-  if (nextScene >= 0) drawBackground(nextScene, sceneFade);
-  if (sc0 && sc0.space) drawSunMoon();   // Sonne + Mond im Weltraum (hinter den Entities/Globus)
+  // Hintergrund: aktuelle Szene DECKEND als Basis, naechste Szene per Alpha darueber einblenden.
+  // So ist der Crossfade ein sauberes B*f over A (kein Mittel-Abdunkeln, kein Pop am Umschalten).
+  // drawSceneBackdrop kapselt prozedural (space/underwater), Bild- und Farbhintergruende inkl. Sonne/Mond.
+  drawSceneBackdrop(currentScene, 1);
+  if (nextScene >= 0) drawSceneBackdrop(nextScene, sceneFade);
 
   // Crossfade fortschreiben
   if (nextScene >= 0) {
@@ -817,9 +1036,11 @@ function draw() {
     if (currentSceneAlphaFor(ent) <= 0.01) continue;
     ent.update(dt);
   }
-  // Hover-Erkennung (oberstes zuerst)
+  // Hover-Erkennung (oberstes zuerst). Nicht-interaktive Entities (interactive:false) erzeugen
+  // kein Hover-Label und keinen Cursor-Wechsel.
   for (let i = allEntities.length - 1; i >= 0; i--) {
     const ent = allEntities[i];
+    if (ent.def.interactive === false) continue;
     if (currentSceneAlphaFor(ent) > 0.4 && ent.contains(mouseX, mouseY)) { hoverEntity = ent; break; }
   }
   for (const ent of allEntities) {
@@ -832,9 +1053,24 @@ function draw() {
   else cursor('default');
 }
 
-function drawBackground(index, alpha) {
+// Zeichnet den KOMPLETTEN Hintergrund einer Szene bei gegebenem Alpha (0..1) -> eine Funktion
+// fuer alle Szenentypen, damit der Crossfade beliebige Kombinationen sauber ueberblendet:
+//   space     -> prozeduraler Weltraum + Sonne/Mond
+//   underwater -> prozedurale Unterwasser-Atmosphaere
+//   sc.bg      -> bildschirmfuellendes Hintergrundbild (cover)
+//   sonst      -> einfarbig aus backgroundTint
+function drawSceneBackdrop(index, alpha) {
   const sc = scenes[index];
-  if (!sc) return;
+  if (!sc || alpha <= 0.001) return;
+  if (sc.space) {
+    drawSpace(alpha);
+    drawSunMoon(alpha);     // Sonne + Mond gehoeren zur Weltraum-Szene, blenden mit (hinter den Entities)
+    return;
+  }
+  if (sc.underwater) {
+    drawUnderwater(alpha);
+    return;
+  }
   push();
   if (sc.bg) {
     // bildschirmfuellend (cover)
@@ -842,10 +1078,11 @@ function drawBackground(index, alpha) {
     const cr = width / height;
     let w, h;
     if (ir > cr) { h = height; w = height * ir; } else { w = width; h = width / ir; }
+    imageMode(CENTER);
     tint(255, 255 * alpha);
     image(sc.bg, width / 2, height / 2, w, h);
-  } else if (!sc.space) {
-    // einfarbiger Hintergrund aus backgroundTint (bei Weltraum-Szenen liegt der Backdrop schon)
+  } else {
+    // einfarbiger Hintergrund aus backgroundTint
     const tintCol = hexToRgb(sc.backgroundTint || '#ffffff');
     noStroke();
     fill(tintCol[0], tintCol[1], tintCol[2], 255 * alpha);
@@ -866,6 +1103,7 @@ function mousePressed() {
   if (!started || openEntity) return;
   for (let i = allEntities.length - 1; i >= 0; i--) {
     const ent = allEntities[i];
+    if (ent.def.interactive === false) continue;   // nicht-interaktiv: kein Panel, kein Greifen
     if (currentSceneAlphaFor(ent) > 0.4 && ent.contains(mouseX, mouseY)) {
       // 3D-Kugel: greifen (Drehung anhalten, dann per Ziehen steuern)
       if (ent.isGlobe) { heldEntity = ent; ent.spinVel = 0; ent.tiltVel = 0; }
@@ -961,5 +1199,8 @@ function keyPressed() {
 function windowResized() {
   resizeCanvas(vw(), vh());
   if (spaceResizeTimer) clearTimeout(spaceResizeTimer);
-  spaceResizeTimer = setTimeout(buildSpace, 180);   // gecachten Weltraum-Backdrop neu bauen (entprellt)
+  spaceResizeTimer = setTimeout(() => {
+    buildSpace();              // gecachten Weltraum-Backdrop neu bauen (entprellt)
+    underwaterBuf = null;      // Unterwasser-Buffer verwerfen -> drawUnderwater baut ihn in neuer Groesse neu
+  }, 180);
 }
