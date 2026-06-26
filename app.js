@@ -263,6 +263,11 @@ async function buildWorld() {
     }
     allEntities.push(ent);
   }
+  // Zeichenreihenfolge nach 'layer' (hoeher = weiter vorne gezeichnet). Die Station (Querschnitt)
+  // liegt ueber den Kreaturen, damit nie eine Kreatur VOR der Station schwimmt. Stabil sortiert
+  // (urspruengliche Reihenfolge als Tiebreak -> Kreaturen untereinander unveraendert).
+  allEntities.forEach((e, i) => { e._ord = i; });
+  allEntities.sort((a, b) => ((a.def.layer || 0) - (b.def.layer || 0)) || (a._ord - b._ord));
 }
 
 // Frame-Sequenz laden (z.B. rotierender Globus): frames = { dir, count, fps, pad }
@@ -1214,25 +1219,28 @@ function buildScene2Fauna() {
       vx: (Math.random() - 0.5) * 0.006, vy: (Math.random() - 0.5) * 0.003
     });
   }
+  // mehrere Schwaerme UNTERSCHIEDLICHER Groesse; einer schwimmt tiefer durchs Bild
   fishSchools = [];
-  for (let s = 0; s < 3; s++) {                                        // mehrere Schwaerme
+  const SCHOOLS = [
+    { n: 12, spread: 0.045, cy0: 0.43, amp: 0.15, sp: 0.034, sz: 0.0026 },  // klein, Mittelwasser
+    { n: 34, spread: 0.100, cy0: 0.37, amp: 0.20, sp: 0.028, sz: 0.0032 },  // gross, oberes Mittelwasser
+    { n: 20, spread: 0.075, cy0: 0.70, amp: 0.27, sp: 0.040, sz: 0.0028 }   // mittel, TIEFER durchs Bild
+  ];
+  for (const c of SCHOOLS) {
     const fish = [];
-    const NF = 22 + Math.floor(Math.random() * 10);                    // mehr Fische pro Schwarm
-    for (let i = 0; i < NF; i++) {
+    for (let i = 0; i < c.n; i++) {
       fish.push({
-        ox: (Math.random() - 0.5) * 0.07, oy: (Math.random() - 0.5) * 0.035,  // Offset um das Zentrum
-        ph: Math.random() * TWO_PI, sc: 0.7 + Math.random() * 0.6,            // Wackel-Phase + Groesse
+        ox: (Math.random() - 0.5) * c.spread, oy: (Math.random() - 0.5) * c.spread * 0.5,
+        ph: Math.random() * TWO_PI, sc: 0.7 + Math.random() * 0.6,
         px: 0, py: 0, sz: 1
       });
     }
     fishSchools.push({
       fish,
-      cx0: 0.22 + Math.random() * 0.56,                                // Basis-x
-      amp: 0.16 + Math.random() * 0.16,                                // Wander-Weite
-      sp: 0.030 + Math.random() * 0.030,                               // Wander-Tempo (langsam)
-      cy0: 0.36 + Math.random() * 0.22,                                // Tiefe
-      cyAmp: 0.015 + Math.random() * 0.03,
-      ph: Math.random() * TWO_PI
+      cx0: 0.20 + Math.random() * 0.60,                                // Basis-x
+      amp: c.amp, sp: c.sp, cy0: c.cy0,                                // Wander-Weite/-Tempo, Tiefe
+      cyAmp: 0.015 + Math.random() * 0.025,
+      sizeFactor: c.sz, ph: Math.random() * TWO_PI
     });
   }
 }
@@ -1257,22 +1265,18 @@ function drawScene2Fauna(alpha) {
   }
   blendMode(BLEND);
 
-  // kleine Fischschwaerme: WINZIGE dunkel-silbrige Formen + faint Photophor-Glow, ruhig schwarmend
+  // kleine Fischschwaerme: WINZIGE schwarze Silhouetten, ruhig schwarmend (Schulen versch. Groesse,
+  // eine schwimmt tiefer durchs Bild). Liegen im Backdrop -> immer HINTER der Station.
+  fill(8, 12, 16, 200 * alpha);
   for (const sch of fishSchools) {
     const cx = sch.cx0 + sch.amp * Math.sin(t * sch.sp + sch.ph);     // wanderndes Zentrum
     const cy = sch.cy0 + sch.cyAmp * Math.sin(t * sch.sp * 1.4 + sch.ph);
-    const dir = Math.cos(t * sch.sp + sch.ph) >= 0 ? 1 : -1;          // Schwimmrichtung (Kopf vorne)
     for (const f of sch.fish) {
       f.px = (cx + f.ox + 0.012 * Math.sin(t * 0.5 + f.ph)) * w;
       f.py = (cy + f.oy + 0.008 * Math.cos(t * 0.6 + f.ph)) * h;
-      f.sz = f.sc * mm * 0.0028;                                      // ~25% so gross wie zuvor
+      f.sz = f.sc * mm * sch.sizeFactor;
+      ellipse(f.px, f.py, f.sz * 2.4, f.sz);                          // elongierte Silhouette
     }
-    fill(150, 165, 176, 150 * alpha);                                // dunkel-silbrige Koerper (elongiert)
-    for (const f of sch.fish) ellipse(f.px, f.py, f.sz * 2.4, f.sz);
-    blendMode(ADD);                                                  // faint Photophor-Glow am Kopf
-    fill(180, 212, 202, 80 * alpha);
-    for (const f of sch.fish) ellipse(f.px + dir * f.sz * 0.9, f.py, f.sz * 0.8, f.sz * 0.8);
-    blendMode(BLEND);
   }
   pop();
 }

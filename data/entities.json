@@ -57,6 +57,7 @@
       "variants": "assets/images/entities/scene2/station/",
       "interactive": false,
       "placeholder": "island",
+      "layer": 1,
       "label": "",
       "path": [
         { "x": 0.5, "y": 0.56 }
