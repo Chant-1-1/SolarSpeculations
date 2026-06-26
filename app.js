@@ -411,17 +411,19 @@ class Entity {
       const wlLocalY = WATERLINE_FRAC * height - y;
       drawIslandPlaceholder(sz, wlLocalY, alpha);
     } else if (!handled) {
-      // Platzhalter-Form: weicher Leuchtkleks
+      // Platzhalter-Form: weicher Leuchtkleks (treibende Kreaturen-Leuchtpunkte)
+      // global ~10% gedimmt -> Leuchtpunkte etwas reduziert (Station/Stein + Scene 1 unberuehrt)
+      const a = alpha * 0.9;
       noStroke();
       const c = this.color;
       for (let i = 3; i >= 0; i--) {
         const r = sz * 0.5 * (0.5 + i * 0.22);
-        fill(c[0], c[1], c[2], alpha * (10 + glow * 30) * (4 - i));
+        fill(c[0], c[1], c[2], a * (10 + glow * 30) * (4 - i));
         ellipse(0, 0, r * 2);
       }
-      fill(c[0], c[1], c[2], alpha * 220);
+      fill(c[0], c[1], c[2], a * 220);
       ellipse(0, 0, sz * 0.42);
-      fill(255, alpha * 60);
+      fill(255, a * 60);
       ellipse(-sz * 0.08, -sz * 0.08, sz * 0.14);
     }
     pop();
