@@ -576,6 +576,9 @@ function setup() {
   textFont('Georgia');
   noLoop(); // erst nach Datenladen + Geste loopen
 
+  // Barrierefreiheit: bei prefers-reduced-motion das ruhige drawUnderwater() statt des bewegten Shaders
+  try { waterReduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { /* matchMedia fehlt -> Shader */ }
+
   loadData()
     .then(buildWorld)
     .then(() => {
@@ -614,9 +617,23 @@ let spaceResizeTimer = null;
 // ===== UNTERWASSER-BACKDROP (Scene 2) =====
 // Analog zum Weltraum: statischer Tiefenverlauf einmal in einen Buffer cachen, pro Frame nur
 // ein image() + die lebendigen, additiven Schichten (Gottesstrahlen, Kaustik, Marine Snow).
-let underwaterBuf = null;     // gecachter statischer Verlauf (Smog -> Wasserlinie -> Tiefe)
-let marineSnow = [];          // langsam sinkende Partikel (Position normiert 0..1, Tempo, Groesse)
+let underwaterBuf = null;     // gecachter statischer Verlauf (Smog -> Wasserlinie -> Tiefe) [Fallback]
+let marineSnow = [];          // langsam sinkende Partikel (Position normiert 0..1, Tempo, Groesse) [Fallback]
 const WATERLINE_FRAC = 0.30;  // Wasserlinie im oberen Drittel (Anteil der Hoehe)
+
+// ===== WASSER-SHADER (Scene 2) =====
+// Shader-basierter Backdrop: bewegte Oberflaeche + glaesernes Unterwasser. EIGENER WebGL-Buffer,
+// getrennt von globeBuf (schuetzt Scene-1-Shader/Tiefen-State). Faellt auf drawUnderwater() zurueck,
+// wenn createShader scheitert ODER prefers-reduced-motion gesetzt ist.
+let waterBuf = null;           // WebGL-Graphics in reduzierter Aufloesung (hochskaliert wie GLOBE_BUF)
+let waterShader = null;
+let waterShaderFailed = false; // Shader nicht nutzbar -> dauerhaft Fallback drawUnderwater()
+let waterReduceMotion = false; // prefers-reduced-motion -> Fallback (Ruhe statt Bewegung)
+let waterProbed = false;       // einmalige Sicht-Pruefung nach dem ersten Render (faengt stillen Compile-Fehler)
+const WATER_RENDER_SCALE = 0.5;// halbe Aufloesung -> ein Fragment-Pass, dann hochskaliert (60fps)
+const WATER_MAX = 860;         // Deckel fuer die laengste Buffer-Kante
+const WATER_LIGHTDIR = [0.18, 1.0];       // Richtung ZUM Licht (uv-Raum, leicht rechts wie die Scene-1-Sonne)
+const WATER_LIGHTCOL = [1.0, 0.95, 0.82]; // warm-weiss/gold (gefilterte Sonne durch den Smog)
 
 function buildSpace() {
   if (spaceBuf) spaceBuf.remove();
@@ -875,6 +892,237 @@ function drawUnderwater(alpha = 1) {
   pop();
 }
 
+// =========================================================================
+//  WASSER-SHADER (Scene 2) — bewegte Oberflaeche + glaesernes Unterwasser
+//  Integration wie der Globus: eigener createGraphics(W,H,WEBGL)-Buffer + createShader,
+//  als Vollbild-Backdrop komponiert; Entities zeichnen unveraendert im 2D-Layer darueber.
+//
+//  Die Techniken sind NACHGEBAUT (eigenes GLSL), inspiriert von diesen Shadertoy-Werken
+//  (CC BY-NC-SA; dieses Projekt ist nicht-kommerziell/edukativ — HCU-Studienprojekt):
+//    - Oberflaechen-/exp(sin)-Wellen + Fresnel/Glanz: "Seascape" von TDM            (Ms2SD1)
+//    - Lichtschaefte / God Rays:                       "Light rays"                  (lljGDt)
+//    - animierte Kaustik (Voronoi/Worley):             "Caustic Study #02: Pool"     (tX3BWl)
+//  Angepasst an unsere SEITEN-Ansicht (Querschnitt an der Wasserlinie) + Smog-Palette.
+// =========================================================================
+
+// Vertex: simpler Durchreicher fuer das Vollbild-Plane (p5 liefert aPosition + Matrizen).
+const WATER_VERT = `
+precision highp float;
+attribute vec3 aPosition;
+uniform mat4 uModelViewMatrix, uProjectionMatrix;
+void main(){ gl_Position = uProjectionMatrix * uModelViewMatrix * vec4(aPosition, 1.0); }`;
+
+// Fragment: rechnet pro Pixel ueber gl_FragCoord/uResolution (kein TexCoord noetig).
+const WATER_FRAG = `
+precision highp float;
+uniform float uTime;
+uniform vec2  uResolution;
+uniform float uWaterlineY;   // Wasserlinie als Anteil von OBEN (0=oben .. 1=unten), ~0.30
+uniform vec2  uLightDir;     // Richtung ZUM Licht (uv-Raum, y nach oben)
+uniform vec3  uLightColor;   // warm-weiss/gold (gefilterte Sonne)
+
+// ---------- Noise-Bausteine (Value-Noise + fbm, GLSL-ES-1.00 tauglich) ----------
+float hash21(vec2 p){
+  p = fract(p * vec2(123.34, 345.45));
+  p += dot(p, p + 34.345);
+  return fract(p.x * p.y);
+}
+float vnoise(vec2 p){
+  vec2 i = floor(p), f = fract(p);
+  vec2 u = f*f*(3.0-2.0*f);
+  float a=hash21(i), b=hash21(i+vec2(1.0,0.0)), c=hash21(i+vec2(0.0,1.0)), d=hash21(i+vec2(1.0,1.0));
+  return mix(mix(a,b,u.x), mix(c,d,u.x), u.y);
+}
+float fbm(vec2 p){
+  float v=0.0, a=0.5;
+  for(int i=0;i<4;i++){ v += a*vnoise(p); p = p*2.0 + vec2(1.7,9.2); a*=0.5; }
+  return v;
+}
+
+// ---------- Oberflaeche: exp(sin)-Wellen (Technik: "Seascape", TDM / Ms2SD1) ----------
+// Edge-on (1D): Summe weniger exp(sin)-Terme schaerft die Kaemme; leicht rauschmoduliert
+// gegen Periodizitaet. Liefert die animierte Hoehe der Wasserlinie an Spalte x.
+float waveHeight(float x, float t){
+  float h=0.0, amp=1.0, freq=4.0, ph=0.0;
+  for(int i=0;i<4;i++){
+    float s = sin(x*freq + t*(0.6 + 0.25*freq) + ph);
+    s = exp(s - 1.0);                                  // exp(sin): spitze Kaemme, flache Taeler
+    s *= 0.6 + 0.4*vnoise(vec2(x*freq*0.5, t*0.2));    // dezente Unruhe
+    h += s*amp;
+    amp*=0.5; freq*=1.9; ph+=1.7;
+  }
+  return h;
+}
+
+// ---------- Kaustik: animiertes Worley (Technik: "Caustic Study #02: Pool" / tX3BWl) ----------
+// Voronoi-Zellen mit wandernden Punkten; helle duenne Kanten -> tanzendes Geflecht.
+float worley(vec2 p, float t){
+  vec2 ip=floor(p), fp=fract(p);
+  float md=1.0;
+  for(int j=-1;j<=1;j++)
+  for(int i=-1;i<=1;i++){
+    vec2 g=vec2(float(i),float(j));
+    vec2 o=vec2(hash21(ip+g), hash21(ip+g+19.19));
+    o = 0.5 + 0.5*sin(t + 6.2831*o);                   // Zellpunkte wandern (Animation)
+    md = min(md, length(g+o-fp));
+  }
+  return md;
+}
+float caustics(vec2 uv, float t){
+  float c=0.0, sc=7.0, amp=1.0;
+  for(int i=0;i<3;i++){                                 // <= 3 Lagen
+    float w = worley(uv*sc + vec2(t*0.12*float(i+1), t*0.03), t*0.7);
+    c += amp * pow(max(0.0, 1.0 - w), 6.0);            // duenne helle Filamente an den Zellkanten
+    sc*=1.8; amp*=0.55;
+  }
+  return c;
+}
+
+// ---------- God Rays: Lichtschaefte (Technik: "Light rays" / lljGDt) ----------
+// Entlang der Lichtrichtung akkumulierte, von scrollendem Noise verdeckte Helligkeit
+// -> leicht schwankende Schaefte. <= 24 Samples.
+float godrays(vec2 uv, vec2 ldir, float t){
+  float acc=0.0;
+  vec2 p=uv;
+  for(int i=0;i<24;i++){
+    p += ldir * 0.02;                                   // Schritt Richtung Licht (zur Oberflaeche)
+    float m = vnoise(vec2(p.x*7.0 + t*0.10, p.y*2.2 - t*0.03));  // scrollende Verdeckung
+    acc += smoothstep(0.42, 0.95, m);
+  }
+  return acc / 24.0;
+}
+
+void main(){
+  vec2 uv = gl_FragCoord.xy / uResolution;              // 0..1, y von UNTEN
+  float aspect = uResolution.x / uResolution.y;
+  float t = uTime;
+
+  float surfaceY = 1.0 - uWaterlineY;                   // Wasserlinie als y-von-unten
+  float xw = uv.x * aspect;                             // seitenverhaeltnis-korrigiertes x
+
+  // animierte Oberflaechenhoehe (kleine Auslenkung)
+  float wave = (waveHeight(xw*2.2, t) - 0.55) * 0.022;
+  float surf = surfaceY + wave;                         // Oberflaeche an dieser Spalte
+  float d = uv.y - surf;                                // >0 ueber Wasser, <0 unter Wasser
+
+  // glaesernes Volumen: leichte horizontale Refraktions-Verzerrung, mit Tiefe zunehmend
+  float depth = clamp((surf - uv.y) / max(surf, 0.001), 0.0, 1.0); // 0 Oberflaeche .. 1 Grund
+  float wob = (fbm(vec2(uv.y*9.0 - t*0.08, t*0.05)) - 0.5);
+  vec2 ruv = vec2(uv.x + wob*0.012*depth, uv.y);        // gebrochene UV fuer Tiefe/Kaustik
+
+  vec3 col;
+
+  if(d > 0.0){
+    // ===== UEBER WASSER: diesiger Smog-Himmel (weiss-gold, nach oben heller) =====
+    vec3 skyLo = vec3(0.82, 0.76, 0.58);
+    vec3 skyHi = vec3(0.96, 0.93, 0.83);
+    col = mix(skyLo, skyHi, smoothstep(surfaceY, 1.0, uv.y));
+    col += (fbm(vec2(uv.x*3.0, uv.y*2.0) + t*0.015) - 0.5) * 0.04;  // Hauch Smog-Struktur
+  } else {
+    // ===== UNTER WASSER: glaesernes Volumen (Petrol/Teal -> Tiefblau -> fast Schwarz) =====
+    vec3 teal = vec3(0.16, 0.40, 0.42);
+    vec3 deep = vec3(0.04, 0.14, 0.24);
+    vec3 ink  = vec3(0.01, 0.03, 0.06);
+    col = mix(teal, deep, smoothstep(0.0, 0.45, depth));
+    col = mix(col, ink, smoothstep(0.42, 1.0, depth));
+
+    // God Rays: nur unter Wasser, mit der Tiefe ausblendend, additiv warm
+    float gr = godrays(ruv, normalize(uLightDir), t);
+    float grFade = 1.0 - smoothstep(0.0, 0.85, depth);
+    col += uLightColor * gr * grFade * 0.5;
+
+    // Kaustik: am staerksten direkt unter der Oberflaeche, mit Tiefe schwaecher
+    float ca = caustics(ruv * vec2(aspect, 1.0) * 3.0, t);
+    float caFade = 1.0 - smoothstep(0.0, 0.6, depth);
+    col += uLightColor * ca * caFade * 0.35;
+
+    // Marine Snow: WENIGE, langsam sinkende, feine Specks (additiv)
+    vec2 sq = vec2(uv.x*aspect, uv.y) * 38.0;
+    sq.y += t*0.5;                                       // sinkt langsam
+    vec2 sip = floor(sq), sfp = fract(sq);
+    if(hash21(sip) > 0.965){                             // hohe Schwelle -> sparsam
+      float dd = length(sfp - 0.5);
+      col += uLightColor * smoothstep(0.13, 0.0, dd) * 0.4 * (1.0 - depth*0.5);
+    }
+  }
+
+  // ===== OBERFLAECHEN-BAND (edge-on): Kamm + Fresnel/Glanz + wandernde Glints + Smog-Reflexion =====
+  float aw = abs(d);
+  float crest = exp(-pow(aw / 0.010, 2.0));             // duenne helle Kammlinie an d=0
+  // Fresnel-/Glanz-Saum NUR unter der Oberflaeche (step gegen band=1 im Himmel -> sonst Glint-Streifen oben)
+  float band  = exp(-pow(max(0.0, -d) / 0.045, 2.0)) * step(0.0, -d);
+  float glint = pow(vnoise(vec2(xw*26.0 - t*0.8, t*0.4)), 5.0) * band;  // wandernde Glanzlichter (edge-on)
+  vec3 reflCol = vec3(0.85, 0.80, 0.66);                // gedaempfte Smog-Reflexion
+  col = mix(col, reflCol, band * 0.18);
+  col += uLightColor * (crest*0.9 + glint*1.2);
+
+  // sanfte Tiefen-/Rand-Vignette (zieht den Blick in die Tiefe)
+  float vig = smoothstep(1.15, 0.25, length((uv - vec2(0.5, surfaceY)) * vec2(aspect*0.7, 1.0)));
+  col *= mix(0.78, 1.0, vig);
+
+  gl_FragColor = vec4(col, 1.0);
+}`;
+
+// eigenen WebGL-Buffer + Shader anlegen (reduzierte Aufloesung, hochskaliert). Bei Fehler -> Fallback.
+function ensureWaterBuffer() {
+  if (waterReduceMotion || waterShaderFailed || waterBuf) return;
+  try {
+    let bw = Math.round(vw() * WATER_RENDER_SCALE);
+    let bh = Math.round(vh() * WATER_RENDER_SCALE);
+    const m = Math.max(bw, bh);
+    if (m > WATER_MAX) { const k = WATER_MAX / m; bw = Math.round(bw * k); bh = Math.round(bh * k); }
+    bw = Math.max(2, bw); bh = Math.max(2, bh);
+    const buf = createGraphics(bw, bh, WEBGL);
+    buf.pixelDensity(1);                                 // feste reduzierte Aufloesung (kein Retina-Doppeln)
+    const sh = buf.createShader(WATER_VERT, WATER_FRAG);
+    waterBuf = buf; waterShader = sh; waterProbed = false;
+  } catch (e) {
+    console.warn('Wasser-Shader nicht verfuegbar -> Fallback drawUnderwater()', e);
+    waterShaderFailed = true;
+    if (waterBuf) { waterBuf.remove(); waterBuf = null; }
+    waterShader = null;
+  }
+}
+
+// Shader-Wasser als Vollbild-Backdrop (Crossfade-Alpha wie space/underwater). Faellt auf
+// drawUnderwater() zurueck bei reduced-motion, createShader-Fehler oder leerem ersten Render.
+function drawWater(alpha = 1) {
+  if (waterReduceMotion || waterShaderFailed) { drawUnderwater(alpha); return; }
+  ensureWaterBuffer();
+  if (!waterBuf || !waterShader) { drawUnderwater(alpha); return; }
+  try {
+    const g = waterBuf;
+    g.clear();
+    g.noStroke();
+    g.shader(waterShader);
+    waterShader.setUniform('uTime', millis() / 1000);
+    waterShader.setUniform('uResolution', [g.width, g.height]);
+    waterShader.setUniform('uWaterlineY', WATERLINE_FRAC);
+    waterShader.setUniform('uLightDir', WATER_LIGHTDIR);
+    waterShader.setUniform('uLightColor', WATER_LIGHTCOL);
+    g.plane(g.width + 2, g.height + 2);                  // Vollbild-Quad (kleiner Overscan gegen Randnaht)
+    g.resetShader();
+    // einmalige Sicht-Pruefung: rendert der Shader gar nichts (stiller Compile-Fehler) -> Fallback
+    if (!waterProbed) {
+      waterProbed = true;
+      const px = g.get(g.width >> 1, g.height >> 1);
+      if (!px || px[3] < 5) throw new Error('leerer Render (vermutlich Shader-Compile-Fehler)');
+    }
+  } catch (e) {
+    console.warn('Wasser-Shader Render fehlgeschlagen -> Fallback drawUnderwater()', e);
+    waterShaderFailed = true;
+    if (waterBuf) { waterBuf.remove(); waterBuf = null; }
+    waterShader = null;
+    drawUnderwater(alpha);
+    return;
+  }
+  push();
+  imageMode(CORNER);
+  tint(255, 255 * alpha);
+  image(waterBuf, 0, 0, width, height);                 // reduzierte Aufloesung hochskaliert
+  pop();
+}
+
 // Platzhalter fuer das Stations-Hero, bis station_cutaway.png existiert: eine prozedurale
 // Bimsstein-Insel-Silhouette mit Blasenloechern (warm bewohnt / dunkel) + versiegelter Krone
 // ueber Wasser (Schacht + Kollektor + glattes Dach). Origin = Entity-Mitte; top = Wasserlinie lokal.
@@ -1068,7 +1316,7 @@ function drawSceneBackdrop(index, alpha) {
     return;
   }
   if (sc.underwater) {
-    drawUnderwater(alpha);
+    drawWater(alpha);       // Shader-Wasser; faellt intern auf drawUnderwater() zurueck
     return;
   }
   push();
@@ -1202,5 +1450,6 @@ function windowResized() {
   spaceResizeTimer = setTimeout(() => {
     buildSpace();              // gecachten Weltraum-Backdrop neu bauen (entprellt)
     underwaterBuf = null;      // Unterwasser-Buffer verwerfen -> drawUnderwater baut ihn in neuer Groesse neu
+    if (waterBuf) { waterBuf.remove(); waterBuf = null; waterShader = null; }  // Wasser-Shader-Buffer in neuer Groesse neu bauen
   }, 180);
 }
