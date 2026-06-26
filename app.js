@@ -247,7 +247,14 @@ async function buildWorld() {
     const img = await tryLoadImage(def.image);
     const ent = new Entity(def, img);
     if (def.frames) ent.frames = await loadFrames(def.frames);  // Animations-Sequenz
-    if (def.variants) { ent.variants = await loadVariants(def.variants); ent.pickVariant(); }  // Bild-Varianten-Ordner
+    if (def.variants) {                                          // Bild-Varianten-Ordner
+      ent.variants = await loadVariants(def.variants);
+      // einzelne, anders ausgerichtete Varianten spiegeln (1-basierte Indizes) -> Ordner konsistent
+      if (def.flipVariants) for (const n of def.flipVariants) {
+        const k = n - 1; if (ent.variants[k]) ent.variants[k] = flipImageH(ent.variants[k]);
+      }
+      ent.pickVariant();
+    }
     if (def.globe) {
       ent.tex = await tryLoadImage(def.globe.texture);
       if (def.globe.normal) ent.normTex = await tryLoadImage(def.globe.normal);
@@ -288,6 +295,14 @@ async function loadVariantSeq(folder, prefix) {
   return imgs;
 }
 
+// horizontale Spiegelung eines Bildes -> p5.Graphics (fuer Varianten, die anders herum gezeichnet sind)
+function flipImageH(img) {
+  const g = createGraphics(img.width, img.height);
+  g.pixelDensity(1);
+  g.push(); g.translate(img.width, 0); g.scale(-1, 1); g.image(img, 0, 0); g.pop();
+  return g;
+}
+
 // =========================================================================
 //  ENTITY
 // =========================================================================
@@ -316,6 +331,7 @@ class Entity {
     this.closed = this.loop === 'loop' && this.path.length > 2;
     this.u = Math.random() * 0.6;     // Startposition gestreut
     this.dir = 1;                      // fuer pingpong
+    this.faceDir = 1;                  // horizontale Blickrichtung (faceForward): +1 rechts, -1 links
     this.respawnAlpha = 1;            // fuer drift-Ein-/Ausblenden
     this.bobPhase = Math.random() * TWO_PI;
     this.highlight = 0;               // 0..1 weiches Hervorheben beim Klick
@@ -334,7 +350,11 @@ class Entity {
   update(dt) {
     // Bewegung verlangsamt sich, wenn ein Panel offen ist
     const slow = 1 - 0.85 * duck;
-    const step = (this.def.speed || 0.03) * dt * slow;
+    let step = (this.def.speed || 0.03) * dt * slow;
+    // 'ease' (0..1): langsames Ebben/Fluten des Tempos -> die Kreatur treibt zeitweise fast still
+    if (this.def.ease) {
+      step *= 1 - this.def.ease * (0.5 + 0.5 * Math.sin(this.bobPhase * 0.3 + this.u * 5.0));
+    }
 
     if (this.path.length > 1) {
       this.u += step * this.dir;
@@ -389,6 +409,15 @@ class Entity {
     this.pos = { x, y };
     this.radius = sz * 0.5;
 
+    // Blickrichtung (faceForward): horizontale Richtung aus der Pfad-Tangente (geschwindigkeits-
+    // unabhaengig; Hysterese-Schwelle -> kein Flackern an fast senkrechten Wendepunkten)
+    if (this.def.faceForward && this.path.length > 1) {
+      const u2 = this.u + 0.01 * this.dir;
+      const uu = this.closed ? ((u2 % 1) + 1) % 1 : Math.max(0, Math.min(1, u2));
+      const dnx = pointAt(this.path, uu, this.closed).x - np.x;
+      if (Math.abs(dnx) > 1e-4) this.faceDir = dnx > 0 ? 1 : -1;
+    }
+
     let alpha = (this.def.opacity != null ? this.def.opacity : 1) * this.respawnAlpha;
     alpha *= currentSceneAlphaFor(this);
 
@@ -431,9 +460,14 @@ class Entity {
         drawingContext.shadowColor = `rgba(216,178,90,${0.6 * glow})`;
       }
       imageMode(CENTER);
-      tint(255, 255 * alpha);
       const ratio = drawImg.height / drawImg.width;
+      push();
+      // nach vorne ausrichten: Sprite horizontal spiegeln, sodass die Vorderseite in Bewegungsrichtung zeigt
+      // (facing = native Blickrichtung der Grafik: 'left' -> Kunst zeigt nach links)
+      if (this.def.faceForward) scale(this.faceDir * (this.def.facing === 'left' ? -1 : 1), 1);
+      tint(255, 255 * alpha);
       image(drawImg, 0, 0, sz, sz * ratio);
+      pop();
       drawingContext.shadowBlur = 0;
     } else if (!handled && this.def.placeholder === 'island') {
       // prozedurale Bimsstein-Insel als Platzhalter, bis station_cutaway.png existiert.
@@ -1167,12 +1201,12 @@ function drawWater(alpha = 1) {
 // ===== PROZEDURALE KLEINFAUNA (Scene 2): Krill-Wolke + kleiner Fischschwarm (KEINE Bilder) =====
 // Wird ueber dem Wasser-Backdrop, unter den Bild-Entities gezeichnet (drawSceneBackdrop) und
 // blendet mit dem Szenen-Crossfade (alpha). Positionen normiert (resize-fest), Update pro Frame.
-let krillParts = [];   // feine Glitzer-Partikel
-let fishSchool = [];   // kleiner Schwarm: Offsets um ein langsam wanderndes Zentrum
+let krillParts = [];    // feine Glitzer-Partikel
+let fishSchools = [];   // mehrere kleine Schwaerme (je ein langsam wanderndes Zentrum)
 
 function buildScene2Fauna() {
   krillParts = [];
-  for (let i = 0; i < 150; i++) {
+  for (let i = 0; i < 75; i++) {                                       // ~50% weniger Leuchtpunkte
     krillParts.push({
       x: 0.16 + Math.random() * 0.68, y: 0.40 + Math.random() * 0.24,   // Mittelwasser
       r: 0.6 + Math.random() * 1.5, a: 22 + Math.random() * 60,         // sehr fein, dezent
@@ -1180,12 +1214,25 @@ function buildScene2Fauna() {
       vx: (Math.random() - 0.5) * 0.006, vy: (Math.random() - 0.5) * 0.003
     });
   }
-  fishSchool = [];
-  for (let i = 0; i < 16; i++) {
-    fishSchool.push({
-      ox: (Math.random() - 0.5) * 0.11, oy: (Math.random() - 0.5) * 0.05,  // Offset um das Zentrum
-      ph: Math.random() * TWO_PI, s: 0.7 + Math.random() * 0.6,            // Wackel-Phase + Groesse
-      px: 0, py: 0, sz: 1
+  fishSchools = [];
+  for (let s = 0; s < 3; s++) {                                        // mehrere Schwaerme
+    const fish = [];
+    const NF = 22 + Math.floor(Math.random() * 10);                    // mehr Fische pro Schwarm
+    for (let i = 0; i < NF; i++) {
+      fish.push({
+        ox: (Math.random() - 0.5) * 0.07, oy: (Math.random() - 0.5) * 0.035,  // Offset um das Zentrum
+        ph: Math.random() * TWO_PI, sc: 0.7 + Math.random() * 0.6,            // Wackel-Phase + Groesse
+        px: 0, py: 0, sz: 1
+      });
+    }
+    fishSchools.push({
+      fish,
+      cx0: 0.22 + Math.random() * 0.56,                                // Basis-x
+      amp: 0.16 + Math.random() * 0.16,                                // Wander-Weite
+      sp: 0.030 + Math.random() * 0.030,                               // Wander-Tempo (langsam)
+      cy0: 0.36 + Math.random() * 0.22,                                // Tiefe
+      cyAmp: 0.015 + Math.random() * 0.03,
+      ph: Math.random() * TWO_PI
     });
   }
 }
@@ -1210,25 +1257,23 @@ function drawScene2Fauna(alpha) {
   }
   blendMode(BLEND);
 
-  // kleiner Fischschwarm: winzige dunkel-silbrige Formen + faint Photophor-Glow, ruhig schwarmend
-  const cx = 0.5 + 0.30 * Math.sin(t * 0.05);           // wanderndes Zentrum (quer durchs Mittelwasser)
-  const cy = 0.40 + 0.035 * Math.sin(t * 0.085);
-  const dir = Math.cos(t * 0.05) >= 0 ? 1 : -1;         // Schwimmrichtung (Kopf vorne)
-  for (const f of fishSchool) {
-    f.px = (cx + f.ox + 0.018 * Math.sin(t * 0.5 + f.ph)) * w;
-    f.py = (cy + f.oy + 0.010 * Math.cos(t * 0.6 + f.ph)) * h;
-    f.sz = f.s * mm * 0.011;                             // winzig
-  }
-  for (const f of fishSchool) {                          // dunkel-silbrige Koerper (elongiert)
-    fill(150, 165, 176, 150 * alpha);
-    ellipse(f.px, f.py, f.sz * 2.4, f.sz);
-  }
-  blendMode(ADD);                                        // faint Photophor-Glow am Kopf
-  for (const f of fishSchool) {
+  // kleine Fischschwaerme: WINZIGE dunkel-silbrige Formen + faint Photophor-Glow, ruhig schwarmend
+  for (const sch of fishSchools) {
+    const cx = sch.cx0 + sch.amp * Math.sin(t * sch.sp + sch.ph);     // wanderndes Zentrum
+    const cy = sch.cy0 + sch.cyAmp * Math.sin(t * sch.sp * 1.4 + sch.ph);
+    const dir = Math.cos(t * sch.sp + sch.ph) >= 0 ? 1 : -1;          // Schwimmrichtung (Kopf vorne)
+    for (const f of sch.fish) {
+      f.px = (cx + f.ox + 0.012 * Math.sin(t * 0.5 + f.ph)) * w;
+      f.py = (cy + f.oy + 0.008 * Math.cos(t * 0.6 + f.ph)) * h;
+      f.sz = f.sc * mm * 0.0028;                                      // ~25% so gross wie zuvor
+    }
+    fill(150, 165, 176, 150 * alpha);                                // dunkel-silbrige Koerper (elongiert)
+    for (const f of sch.fish) ellipse(f.px, f.py, f.sz * 2.4, f.sz);
+    blendMode(ADD);                                                  // faint Photophor-Glow am Kopf
     fill(180, 212, 202, 80 * alpha);
-    ellipse(f.px + dir * f.sz * 0.9, f.py, f.sz * 0.8, f.sz * 0.8);
+    for (const f of sch.fish) ellipse(f.px + dir * f.sz * 0.9, f.py, f.sz * 0.8, f.sz * 0.8);
+    blendMode(BLEND);
   }
-  blendMode(BLEND);
   pop();
 }
 

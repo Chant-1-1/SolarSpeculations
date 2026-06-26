@@ -35,6 +35,8 @@
       "id": "whale",
       "scene": "scene2",
       "variants": "assets/images/entities/scene2/whale/",
+      "faceForward": true,
+      "facing": "left",
       "interactive": false,
       "label": "",
       "path": [
@@ -135,6 +137,10 @@
       "id": "devil_1",
       "scene": "scene2",
       "variants": "assets/images/entities/scene2/sea_devil/",
+      "faceForward": true,
+      "facing": "left",
+      "flipVariants": [2],
+      "ease": 0.7,
       "interactive": false,
       "label": "",
       "path": [
@@ -144,7 +150,7 @@
         { "x": 0.30, "y": 0.56 }
       ],
       "loop": "loop",
-      "speed": 0.050,
+      "speed": 0.026,
       "scale": 0.018,
       "bob": 0.004,
       "opacity": 0.90
@@ -153,6 +159,10 @@
       "id": "devil_2",
       "scene": "scene2",
       "variants": "assets/images/entities/scene2/sea_devil/",
+      "faceForward": true,
+      "facing": "left",
+      "flipVariants": [2],
+      "ease": 0.7,
       "interactive": false,
       "label": "",
       "path": [
@@ -162,7 +172,7 @@
         { "x": 0.24, "y": 0.56 }
       ],
       "loop": "loop",
-      "speed": 0.040,
+      "speed": 0.022,
       "scale": 0.020,
       "bob": 0.004,
       "opacity": 0.85
@@ -171,6 +181,10 @@
       "id": "devil_3",
       "scene": "scene2",
       "variants": "assets/images/entities/scene2/sea_devil/",
+      "faceForward": true,
+      "facing": "left",
+      "flipVariants": [2],
+      "ease": 0.7,
       "interactive": false,
       "label": "",
       "path": [
@@ -180,7 +194,7 @@
         { "x": 0.36, "y": 0.56 }
       ],
       "loop": "loop",
-      "speed": 0.060,
+      "speed": 0.030,
       "scale": 0.015,
       "bob": 0.004,
       "opacity": 0.90
@@ -189,6 +203,10 @@
       "id": "devil_4",
       "scene": "scene2",
       "variants": "assets/images/entities/scene2/sea_devil/",
+      "faceForward": true,
+      "facing": "left",
+      "flipVariants": [2],
+      "ease": 0.7,
       "interactive": false,
       "label": "",
       "path": [
@@ -198,7 +216,7 @@
         { "x": 0.28, "y": 0.60 }
       ],
       "loop": "loop",
-      "speed": 0.045,
+      "speed": 0.024,
       "scale": 0.018,
       "bob": 0.004,
       "opacity": 0.80
