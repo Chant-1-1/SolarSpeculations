@@ -31,13 +31,14 @@
     },
 
     {
-      "_kommentar": "SCENE 2 (die station) - Phase 1: nur Bild/Bewegung, alle interactive:false. 'variants'=Ordner mit Bild-Varianten. Bewegungs-Felder (aus Locomotion-Recherche): swim ('pulse'=Qualle Schub/Gleiten, 'jet'=Kalmar), ease (langsames Ebben/Hovern), weave (seitl. Pendeln), jitter (feines Station-Keeping), faceForward/facing (Sprite zeigt nach vorn), layer (Station>Kreaturen). Krill+Fischschwaerme sind PROZEDURAL (drawScene2Fauna).",
+      "_kommentar": "SCENE 2 (die station). 'variants'=Ordner mit Bild-Varianten. Bewegungs-Felder (Locomotion-Recherche): swim ('pulse'=Qualle, 'jet'=Kalmar), ease (Ebben/Hovern), weave (seitl. Pendeln), jitter (Station-Keeping), faceForward/facing (Sprite zeigt nach vorn). TIEFE/3D: 'layer' (0..<1, hoeher=weiter vorn; Station=1 immer ganz vorn) + Groesse (scale) + Deckkraft (opacity) gestaffelt -> atmosphaerische Perspektive (fern=klein/blass, nah=gross/kraeftig). Krill+Fischschwaerme sind PROZEDURAL (drawScene2Fauna).",
       "id": "whale",
       "scene": "scene2",
       "variants": "assets/images/entities/scene2/whale/",
       "faceForward": true,
       "facing": "left",
       "interactive": false,
+      "layer": 0.1,
       "label": "",
       "path": [
         { "x": -0.15, "y": 0.80 },
@@ -46,11 +47,11 @@
         { "x": 1.15, "y": 0.84 }
       ],
       "loop": "drift",
-      "speed": 0.004,
+      "speed": 0.007,
       "scale": 0.24,
       "bob": 0.009,
       "ease": 0.65,
-      "opacity": 0.5
+      "opacity": 0.35
     },
     {
       "id": "station",
@@ -70,10 +71,55 @@
       "opacity": 1.0
     },
     {
+      "id": "sea_spider",
+      "scene": "scene2",
+      "variants": "assets/images/entities/scene2/sea_spider/",
+      "interactive": false,
+      "layer": 0.15,
+      "label": "",
+      "path": [
+        { "x": 0.30, "y": 0.60 },
+        { "x": 0.325, "y": 0.635 }
+      ],
+      "loop": "pingpong",
+      "ease": 0.9,
+      "jitter": 0.003,
+      "speed": 0.007,
+      "scale": 0.04,
+      "bob": 0.004,
+      "opacity": 0.55
+    },
+    {
+      "id": "devil_3",
+      "scene": "scene2",
+      "variants": "assets/images/entities/scene2/sea_devil/",
+      "glowLure": true,
+      "faceForward": true,
+      "facing": "left",
+      "flipVariants": [2],
+      "ease": 0.85,
+      "jitter": 0.004,
+      "interactive": false,
+      "layer": 0.2,
+      "label": "",
+      "path": [
+        { "x": 0.66, "y": 0.615 },
+        { "x": 0.705, "y": 0.66 },
+        { "x": 0.66, "y": 0.705 },
+        { "x": 0.615, "y": 0.66 }
+      ],
+      "loop": "loop",
+      "speed": 0.009,
+      "scale": 0.026,
+      "bob": 0.006,
+      "opacity": 0.60
+    },
+    {
       "id": "jellyfish_1",
       "scene": "scene2",
       "variants": "assets/images/entities/scene2/jellyfish/",
       "interactive": false,
+      "layer": 0.25,
       "label": "",
       "path": [
         { "x": 0.30, "y": 0.58 },
@@ -84,15 +130,92 @@
       "pulsePeriod": 2.4,
       "weave": 0.025,
       "speed": 0.045,
-      "scale": 0.06,
+      "scale": 0.05,
       "bob": 0.015,
-      "opacity": 0.65
+      "opacity": 0.50
+    },
+    {
+      "id": "devil_5",
+      "scene": "scene2",
+      "variants": "assets/images/entities/scene2/sea_devil/",
+      "glowLure": true,
+      "faceForward": true,
+      "facing": "left",
+      "flipVariants": [2],
+      "ease": 0.88,
+      "jitter": 0.003,
+      "interactive": false,
+      "layer": 0.3,
+      "label": "",
+      "_kommentar": "Tiefsee-Seadevil: gross, tief lauernd; Tiefen-Verdunkelung macht ihn schemenhaft.",
+      "path": [
+        { "x": 0.80, "y": 0.82 },
+        { "x": 0.87, "y": 0.87 },
+        { "x": 0.80, "y": 0.92 },
+        { "x": 0.73, "y": 0.87 }
+      ],
+      "loop": "loop",
+      "speed": 0.006,
+      "scale": 0.05,
+      "bob": 0.005,
+      "opacity": 0.85
+    },
+    {
+      "id": "devil_1",
+      "scene": "scene2",
+      "variants": "assets/images/entities/scene2/sea_devil/",
+      "glowLure": true,
+      "faceForward": true,
+      "facing": "left",
+      "flipVariants": [2],
+      "ease": 0.85,
+      "jitter": 0.004,
+      "interactive": false,
+      "layer": 0.4,
+      "label": "",
+      "path": [
+        { "x": 0.28, "y": 0.40 },
+        { "x": 0.33, "y": 0.45 },
+        { "x": 0.28, "y": 0.50 },
+        { "x": 0.23, "y": 0.45 }
+      ],
+      "loop": "loop",
+      "speed": 0.008,
+      "scale": 0.034,
+      "bob": 0.006,
+      "opacity": 0.75
+    },
+    {
+      "id": "devil_4",
+      "scene": "scene2",
+      "variants": "assets/images/entities/scene2/sea_devil/",
+      "glowLure": true,
+      "faceForward": true,
+      "facing": "left",
+      "flipVariants": [2],
+      "ease": 0.85,
+      "jitter": 0.004,
+      "interactive": false,
+      "layer": 0.45,
+      "label": "",
+      "path": [
+        { "x": 0.32, "y": 0.61 },
+        { "x": 0.37, "y": 0.66 },
+        { "x": 0.32, "y": 0.71 },
+        { "x": 0.27, "y": 0.66 }
+      ],
+      "loop": "loop",
+      "speed": 0.0075,
+      "scale": 0.034,
+      "bob": 0.006,
+      "opacity": 0.78
     },
     {
       "id": "jellyfish_2",
       "scene": "scene2",
       "variants": "assets/images/entities/scene2/jellyfish/",
       "interactive": false,
+      "layer": 0.5,
       "label": "",
       "path": [
         { "x": 0.70, "y": 0.62 },
@@ -104,9 +227,34 @@
       "weave": 0.022,
       "weaveSpeed": 0.33,
       "speed": 0.035,
-      "scale": 0.07,
+      "scale": 0.085,
       "bob": 0.018,
-      "opacity": 0.60
+      "opacity": 0.72
+    },
+    {
+      "id": "devil_2",
+      "scene": "scene2",
+      "variants": "assets/images/entities/scene2/sea_devil/",
+      "glowLure": true,
+      "faceForward": true,
+      "facing": "left",
+      "flipVariants": [2],
+      "ease": 0.85,
+      "jitter": 0.004,
+      "interactive": false,
+      "layer": 0.6,
+      "label": "",
+      "path": [
+        { "x": 0.72, "y": 0.45 },
+        { "x": 0.77, "y": 0.50 },
+        { "x": 0.72, "y": 0.55 },
+        { "x": 0.67, "y": 0.50 }
+      ],
+      "loop": "loop",
+      "speed": 0.007,
+      "scale": 0.042,
+      "bob": 0.006,
+      "opacity": 0.85
     },
     {
       "id": "squid",
@@ -115,6 +263,7 @@
       "faceForward": true,
       "facing": "left",
       "interactive": false,
+      "layer": 0.7,
       "label": "",
       "path": [
         { "x": 0.05, "y": 0.50 },
@@ -126,119 +275,100 @@
       "swim": "jet",
       "pulsePeriod": 1.8,
       "speed": 0.045,
-      "scale": 0.07,
+      "scale": 0.09,
       "bob": 0.010,
-      "opacity": 0.60
+      "opacity": 0.90
     },
+
     {
-      "id": "sea_spider",
-      "scene": "scene2",
-      "variants": "assets/images/entities/scene2/sea_spider/",
+      "_kommentar": "SCENE 3 (das eye). Heller Kuppel-Innenraum (drawSolarSpace). Bild-Sprites wie Scene 2: 'variants'=Ordner. Phase 3 = nur Bild, daher alle interactive:false (kein Klick/Panel). Figuren sitzen am Beckenrand (y~0.74-0.80, Wasserkante bei y-von-unten 0.20), fast still (kleines bob). Tuecher (cloth) treiben langsam auf. Fehlen Bilder -> prozeduraler Platzhalter.",
+      "id": "figure_1",
+      "scene": "scene3",
+      "variants": "assets/images/entities/scene3/figure/",
       "interactive": false,
+      "layer": 0.5,
       "label": "",
       "path": [
-        { "x": 0.30, "y": 0.60 },
-        { "x": 0.325, "y": 0.635 }
+        { "x": 0.34, "y": 0.76 }
       ],
-      "loop": "pingpong",
-      "ease": 0.9,
-      "jitter": 0.003,
-      "speed": 0.007,
-      "scale": 0.05,
+      "loop": "loop",
+      "speed": 0.0,
+      "scale": 0.13,
       "bob": 0.004,
-      "opacity": 0.80
+      "opacity": 0.92
     },
     {
-      "id": "devil_1",
-      "scene": "scene2",
-      "variants": "assets/images/entities/scene2/sea_devil/",
-      "faceForward": true,
-      "facing": "left",
-      "flipVariants": [2],
-      "ease": 0.85,
-      "jitter": 0.004,
+      "id": "figure_2",
+      "scene": "scene3",
+      "variants": "assets/images/entities/scene3/figure/",
       "interactive": false,
+      "layer": 0.52,
       "label": "",
       "path": [
-        { "x": 0.28, "y": 0.40 },
-        { "x": 0.33, "y": 0.45 },
-        { "x": 0.28, "y": 0.50 },
-        { "x": 0.23, "y": 0.45 }
+        { "x": 0.50, "y": 0.78 }
       ],
       "loop": "loop",
-      "speed": 0.008,
-      "scale": 0.018,
-      "bob": 0.006,
+      "speed": 0.0,
+      "scale": 0.14,
+      "bob": 0.005,
+      "opacity": 0.95
+    },
+    {
+      "id": "figure_3",
+      "scene": "scene3",
+      "variants": "assets/images/entities/scene3/figure/",
+      "interactive": false,
+      "layer": 0.51,
+      "label": "",
+      "path": [
+        { "x": 0.66, "y": 0.75 }
+      ],
+      "loop": "loop",
+      "speed": 0.0,
+      "scale": 0.12,
+      "bob": 0.004,
       "opacity": 0.90
     },
     {
-      "id": "devil_2",
-      "scene": "scene2",
-      "variants": "assets/images/entities/scene2/sea_devil/",
-      "faceForward": true,
-      "facing": "left",
-      "flipVariants": [2],
-      "ease": 0.85,
-      "jitter": 0.004,
+      "id": "cloth_1",
+      "scene": "scene3",
+      "variants": "assets/images/entities/scene3/cloth/",
       "interactive": false,
+      "layer": 0.3,
       "label": "",
+      "_kommentar": "Optional: treibendes Tuch/Token der Mond-Gabe, langsam aufsteigend.",
       "path": [
-        { "x": 0.72, "y": 0.45 },
-        { "x": 0.77, "y": 0.50 },
-        { "x": 0.72, "y": 0.55 },
-        { "x": 0.67, "y": 0.50 }
+        { "x": 0.44, "y": 0.70 },
+        { "x": 0.47, "y": 0.52 },
+        { "x": 0.45, "y": 0.34 }
       ],
-      "loop": "loop",
-      "speed": 0.007,
-      "scale": 0.020,
-      "bob": 0.006,
-      "opacity": 0.85
+      "loop": "drift",
+      "weave": 0.02,
+      "weaveSpeed": 0.3,
+      "speed": 0.012,
+      "scale": 0.05,
+      "bob": 0.012,
+      "opacity": 0.6
     },
     {
-      "id": "devil_3",
-      "scene": "scene2",
-      "variants": "assets/images/entities/scene2/sea_devil/",
-      "faceForward": true,
-      "facing": "left",
-      "flipVariants": [2],
-      "ease": 0.85,
-      "jitter": 0.004,
+      "id": "cloth_2",
+      "scene": "scene3",
+      "variants": "assets/images/entities/scene3/cloth/",
       "interactive": false,
+      "layer": 0.31,
       "label": "",
       "path": [
-        { "x": 0.66, "y": 0.615 },
-        { "x": 0.705, "y": 0.66 },
-        { "x": 0.66, "y": 0.705 },
-        { "x": 0.615, "y": 0.66 }
+        { "x": 0.58, "y": 0.72 },
+        { "x": 0.55, "y": 0.54 },
+        { "x": 0.57, "y": 0.36 }
       ],
-      "loop": "loop",
-      "speed": 0.009,
-      "scale": 0.015,
-      "bob": 0.006,
-      "opacity": 0.90
-    },
-    {
-      "id": "devil_4",
-      "scene": "scene2",
-      "variants": "assets/images/entities/scene2/sea_devil/",
-      "faceForward": true,
-      "facing": "left",
-      "flipVariants": [2],
-      "ease": 0.85,
-      "jitter": 0.004,
-      "interactive": false,
-      "label": "",
-      "path": [
-        { "x": 0.32, "y": 0.61 },
-        { "x": 0.37, "y": 0.66 },
-        { "x": 0.32, "y": 0.71 },
-        { "x": 0.27, "y": 0.66 }
-      ],
-      "loop": "loop",
-      "speed": 0.0075,
-      "scale": 0.018,
-      "bob": 0.006,
-      "opacity": 0.80
+      "loop": "drift",
+      "weave": 0.022,
+      "weaveSpeed": 0.26,
+      "speed": 0.010,
+      "scale": 0.045,
+      "bob": 0.013,
+      "opacity": 0.5
     }
   ]
 }
