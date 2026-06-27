@@ -112,6 +112,7 @@ void main(){
 function ensureGlobeBuffer() {
   if (!globeBuf) {
     globeBuf = createGraphics(GLOBE_BUF, GLOBE_BUF, WEBGL);
+    globeBuf.pixelDensity(1);   // feste Aufloesung (sonst Display-Density -> 4x auf High-DPI)
     oceanShader = globeBuf.createShader(SURF_VERT, SURF_FRAG);
     cloudShader = globeBuf.createShader(CLOUD_VERT, CLOUD_FRAG);
   }
@@ -682,6 +683,10 @@ function vh() { return window.innerHeight || windowHeight || document.documentEl
 function setup() {
   const c = createCanvas(vw(), vh());
   c.parent('canvas-holder');
+  // Performance: Backing-Store auf CSS-Aufloesung deckeln. p5 nimmt sonst window.devicePixelRatio
+  // (bei Windows-Skalierung 125-200% -> bis 4x so viele Pixel pro Frame). Das flache, dunstige
+  // Bild verliert dadurch kaum Schaerfe, spart aber auf High-DPI-Displays massiv Fuell-Last.
+  pixelDensity(1);
   imageMode(CENTER);
   textFont('Georgia');
   noLoop(); // erst nach Datenladen + Geste loopen
@@ -1254,7 +1259,7 @@ let fishSchools = [];    // [{ fish:[{x,y,vx,vy,sc}], cx0,cy0,amp,sp,sizeFactor,
 function buildScene2Fauna() {
   // Krill: dichte Gauss-Wolke; jede Partikel federt zu ihrem Home-Offset (dichter Kern, duenner Rand)
   const kp = [];
-  for (let i = 0; i < 150; i++) {
+  for (let i = 0; i < 80; i++) {                                       // dezent + guenstig (war 150)
     const gx = (Math.random() + Math.random() + Math.random()) / 3 - 0.5;   // ~Gauss
     const gy = (Math.random() + Math.random() + Math.random()) / 3 - 0.5;
     kp.push({
@@ -1338,17 +1343,18 @@ function drawScene2Fauna(alpha) {
       f.x += f.vx * dt; f.y += f.vy * dt;
       f.y = Math.max(0.33, Math.min(0.96, f.y));                     // unter der Wasserlinie halten
     }
-    // zeichnen: kleine schwarze Silhouetten, an der Schwimmrichtung ausgerichtet; tiefer = fester schwarz
+    // zeichnen: schwarze Silhouetten als Strich-Kapseln (1 Op/Fisch statt push/rotate/ellipse/pop).
+    // Ausrichtung an der Schwimmrichtung; Strichbreite = Koerperhoehe; tiefer = fester schwarz.
+    const depthT = Math.max(0, Math.min(1, (ty - WATERLINE_FRAC) / (1 - WATERLINE_FRAC)));
+    stroke(8, 12, 16, 200 * alpha * (1 + 0.25 * depthT));
+    const bw = mm * sch.sizeFactor;                                  // Koerperhoehe = Strichbreite
+    strokeWeight(bw); strokeCap(ROUND);
     for (const f of sch.fish) {
-      const depthT = Math.max(0, Math.min(1, (f.y - WATERLINE_FRAC) / (1 - WATERLINE_FRAC)));
-      fill(8, 12, 16, 200 * alpha * (1 + 0.25 * depthT));
-      const len = f.sc * mm * sch.sizeFactor;
-      push();
-      translate(f.x * w, f.y * h);
-      rotate(Math.atan2(f.vy, f.vx));
-      ellipse(0, 0, len * 2.6, len);                                // elongierte Silhouette in Schwimmrichtung
-      pop();
+      const vm = Math.hypot(f.vx, f.vy) + 1e-6;
+      const hx = f.vx / vm * bw * 1.3, hy = f.vy / vm * bw * 1.3;    // halbe Koerperlaenge in Schwimmrichtung
+      line(f.x * w - hx, f.y * h - hy, f.x * w + hx, f.y * h + hy);
     }
+    noStroke();
   }
   pop();
 }
