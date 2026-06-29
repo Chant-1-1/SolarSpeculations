@@ -17,6 +17,13 @@
       "background": "",
       "backgroundTint": "#081826",
       "underwater": true
+    },
+    {
+      "id": "scene3",
+      "name": "das eye",
+      "background": "assets/images/backgrounds/scene3_interior.png",
+      "backgroundTint": "#eee9df",
+      "interior": true
     }
   ]
 }

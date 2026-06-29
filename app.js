@@ -282,19 +282,22 @@ async function loadFrames(spec) {
 }
 
 // Variant-Ordner laden (Bild-Sprites). Wie loadFrames eine NUMMERIERTE Sequenz, aber mit Abbruch
-// bei der ersten Luecke. Dateinamen-Praefix = Ordnername: ".../whale/" -> whale1.png, whale2.png, ...
-// Faellt auf bare 1.png, 2.png zurueck, falls keine Praefix-Datei existiert. Max ~12 Varianten.
+// bei der ersten Luecke. Dateinamen-Praefix = Ordnername: ".../whale/" -> whale1, whale2, ...
+// Pro Nummer wird ZUERST .webp (klein) versucht, dann .png (Fallback). Faellt auf bare 1,2,...
+// zurueck, falls keine Praefix-Datei existiert. Max ~12 Varianten.
 // Leeres Ergebnis -> Entity bleibt beim prozeduralen Platzhalter.
 async function loadVariants(folder) {
   const name = folder.replace(/\/+$/, '').split('/').pop();   // Ordnername als Praefix
-  let imgs = await loadVariantSeq(folder, name);              // erst <name>1.png, <name>2.png, ...
-  if (!imgs.length) imgs = await loadVariantSeq(folder, '');  // sonst bare 1.png, 2.png, ...
+  let imgs = await loadVariantSeq(folder, name);              // erst <name>1.webp/.png, ...
+  if (!imgs.length) imgs = await loadVariantSeq(folder, '');  // sonst bare 1.webp/.png, ...
   return imgs;
 }
 async function loadVariantSeq(folder, prefix) {
   const imgs = [];
   for (let i = 1; i <= 12; i++) {
-    const img = await tryLoadImage(folder + prefix + i + '.png');
+    const base = folder + prefix + i;
+    let img = await tryLoadImage(base + '.webp');             // WebP bevorzugt (deutlich kleiner)
+    if (!img) img = await tryLoadImage(base + '.png');        // sonst PNG-Fallback
     if (!img) break;                                          // erste fehlende Nummer -> Sequenz-Ende
     imgs.push(img);
   }
@@ -344,6 +347,9 @@ class Entity {
     this.bobPhase = Math.random() * TWO_PI;
     this.highlight = 0;               // 0..1 weiches Hervorheben beim Klick
     this.color = colorFromId(def.id); // Platzhalterfarbe
+    // Zufaellige Groesse pro Instanz (Tiere): Multiplikator 0.6..0.9 fuer natuerliche Groessen-Varianz
+    // und mehr Tiefe. Globus + Station (placeholder) bleiben unveraendert (Multiplikator 1).
+    this.sizeMul = (this.isGlobe || def.placeholder) ? 1 : (0.6 + Math.random() * 0.3);
     this.pos = { x: 0, y: 0 };        // letzte Bildschirmposition (px)
     this.radius = 40;
   }
@@ -438,7 +444,7 @@ class Entity {
     const np = this.normPos();
     const x = np.x * width;
     const y = np.y * height;
-    const sz = (this.def.scale || 0.12) * Math.min(width, height) * 2;
+    const sz = (this.def.scale || 0.12) * Math.min(width, height) * 2 * this.sizeMul;
     this.pos = { x, y };
     this.radius = sz * 0.5;
 
@@ -453,8 +459,9 @@ class Entity {
 
     let alpha = (this.def.opacity != null ? this.def.opacity : 1) * this.respawnAlpha;
     alpha *= currentSceneAlphaFor(this);
-    // Tiefen-Verdunkelung: je tiefer das Tier, desto dunkler/schemenhafter (Station ausgenommen)
-    const dk = this.def.placeholder === 'island' ? 1 : depthDim(np.y);
+    // Tiefen-Verdunkelung: je tiefer das Tier, desto dunkler/schemenhafter. NUR in Unterwasser-Szenen
+    // (Scene 2); Station ausgenommen. In Scene 3 (heller Innenraum) bleiben Figuren unverdunkelt.
+    const dk = (this.def.placeholder === 'island' || !sceneIsUnderwater(this.def.scene)) ? 1 : depthDim(np.y);
 
     push();
     translate(x, y);
@@ -500,8 +507,39 @@ class Entity {
       // nach vorne ausrichten: Sprite horizontal spiegeln, sodass die Vorderseite in Bewegungsrichtung zeigt
       // (facing = native Blickrichtung der Grafik: 'left' -> Kunst zeigt nach links)
       if (this.def.faceForward) scale(this.faceDir * (this.def.facing === 'left' ? -1 : 1), 1);
-      tint(255 * dk, 255 * dk, 255 * dk, 255 * alpha);     // dunkler/schemenhafter mit der Tiefe
+      // dunkler/schemenhafter mit der Tiefe. dk auf 12 Stufen quantisiert: ein FARB-Tint (RGB<255)
+      // zwingt p5 sonst, das getintete Bild pro Frame neu zu bauen (getImageData/putImageData ueber
+      // alle Quellpixel), weil dk sich beim Schwimmen staendig minimal aendert. Mit 12 diskreten
+      // Stufen cached p5 die getinteten Bilder und baut nicht mehr neu -> ~45% guenstiger, Look identisch.
+      const dkQ = Math.round(dk * 12) / 12;
+      tint(255 * dkQ, 255 * dkQ, 255 * dkQ, 255 * alpha);
       image(drawImg, 0, 0, sz, sz * ratio);
+      // Esca (Anglerfisch-Leuchtkoeder): additiver, pulsierender Leuchtpunkt am erkannten warmen
+      // Fleck im Sprite. Biolumineszenz -> nicht von der Tiefe gedimmt (leuchtet im Dunkeln staerker).
+      if (this.def.glowLure) {
+        if (drawImg.__lure === undefined) drawImg.__lure = findLureSpot(drawImg);
+        const L = drawImg.__lure;
+        if (L) {
+          const lx = (L.x - 0.5) * sz, ly = (L.y - 0.5) * sz * ratio;
+          const ms = millis() * 0.001;
+          const puls = 0.55 + 0.30 * Math.sin(ms * 1.7 + this.swimPhase)   // langsames Glühen
+                            + 0.15 * Math.sin(ms * 9.3 + this.bobPhase);    // feines Flackern
+          const p = Math.max(0.15, Math.min(1, puls));
+          const r = sz * 0.13 * (0.8 + 0.4 * p);
+          const ctx = drawingContext;
+          ctx.save();
+          ctx.globalCompositeOperation = 'lighter';
+          const grad = ctx.createRadialGradient(lx, ly, 0, lx, ly, r);
+          grad.addColorStop(0.0, 'rgba(255,252,225,' + (0.85 * p * alpha) + ')');
+          grad.addColorStop(0.35, 'rgba(255,226,150,' + (0.45 * p * alpha) + ')');
+          grad.addColorStop(1.0, 'rgba(255,210,120,0)');
+          ctx.fillStyle = grad;
+          ctx.fillRect(lx - r, ly - r, r * 2, r * 2);
+          ctx.fillStyle = 'rgba(255,255,245,' + (0.9 * p * alpha) + ')';   // heller Kern
+          ctx.beginPath(); ctx.arc(lx, ly, r * 0.16, 0, 6.2831853); ctx.fill();
+          ctx.restore();
+        }
+      }
       pop();
       drawingContext.shadowBlur = 0;
     } else if (!handled && this.def.placeholder === 'island') {
@@ -574,10 +612,39 @@ function pointAt(pts, p, closed) {
 // ~0.28 am dunklen Grund (smoothstep -> oberes Mittelwasser bleibt lesbar, nur die Tiefe kippt
 // in Schemen/Silhouette). Gemeinsam fuer Sprites, Platzhalter-Leuchtklekse und prozedurale Fauna.
 function depthDim(ny) {
-  let t = (ny - WATERLINE_FRAC) / (1.0 - WATERLINE_FRAC);
+  // Originaler weicher Verlauf, nach oben gestaucht: erreicht den dunklen Boden frueher (~ny 0.72
+  // statt 1.0), passt zum nach oben geschobenen Wasser-Verlauf. Sanft (smoothstep), kein harter Schnitt.
+  let t = (ny - WATERLINE_FRAC) / (0.72 - WATERLINE_FRAC);
   t = t < 0 ? 0 : t > 1 ? 1 : t;
   t = t * t * (3 - 2 * t);          // smoothstep
   return 1.0 - 0.72 * t;            // 1.0 .. 0.28
+}
+
+// Sucht den hellsten WARMEN (gelb-weissen) Fleck im Sprite -> Position der Esca (Anglerfisch-Koeder,
+// vom Nutzer in Photoshop markiert). Liefert normierte Bildkoordinaten {x,y} in [0..1] (Schwerpunkt
+// der warm-hellen Pixel) oder null. Einmalig pro Bild (Ergebnis wird auf img.__lure gecacht).
+function findLureSpot(img) {
+  try {
+    img.loadPixels();
+    const w = img.width, h = img.height, px = img.pixels;
+    if (!px || !px.length) return null;
+    let sx = 0, sy = 0, sw = 0;
+    for (let y = 0; y < h; y += 2) {                 // grobes Sampling reicht
+      for (let x = 0; x < w; x += 2) {
+        const i = (y * w + x) * 4;
+        if (px[i + 3] < 60) continue;                // transparent -> ignorieren
+        const r = px[i], g = px[i + 1], b = px[i + 2];
+        const bright = (r + g + b) / 3;
+        if (bright < 160) continue;                  // nur HELLE Pixel (Koerper ist dunkel)
+        if (b > Math.min(r, g) + 25) continue;       // klar BLAUE Pixel raus (faengt Gelb UND Weiss)
+        const warm = (r + g) * 0.5 - b;              // gelb hat warm>0; weiss ~0
+        const wgt = (bright - 150) * (1.0 + Math.max(0, warm) * 0.04);
+        sx += x * wgt; sy += y * wgt; sw += wgt;
+      }
+    }
+    if (sw <= 0) return null;
+    return { x: sx / sw / w, y: sy / sw / h };
+  } catch (e) { return null; }
 }
 
 function colorFromId(id) {
@@ -608,6 +675,12 @@ function hslToRgb(h, s, l) {
 // =========================================================================
 //  SZENEN-CROSSFADE-HELFER
 // =========================================================================
+// Gehoert die Szene (per id) zu einem Unterwasser-Setup? (steuert die Tiefen-Verdunkelung)
+function sceneIsUnderwater(id) {
+  const s = scenes.find(x => x.id === id);
+  return !!(s && s.underwater);
+}
+
 // Sichtbarkeits-Alpha eines Entitys abhaengig vom aktuellen Crossfade
 function currentSceneAlphaFor(ent) {
   const curId = scenes[currentScene]?.id;
@@ -680,13 +753,46 @@ function setDuck(on) {
 function vw() { return window.innerWidth || windowWidth || document.documentElement.clientWidth; }
 function vh() { return window.innerHeight || windowHeight || document.documentElement.clientHeight; }
 
+// Performance: Backing-Store-Pixel deckeln. p5 nimmt sonst window.devicePixelRatio (Windows-
+// Skalierung / Retina 2-3x -> bis 9x so viele Fragmente pro Frame). Statt fester Dichte ein
+// PIXEL-BUDGET: auf grossen/High-DPI-Screens wird die Dichte gesenkt, bis die Backing-Flaeche
+// unter MAX_BACKING_PX bleibt -> Fuell-Last (Wasser-Upscale, Fauna, Tints) gedeckelt. Auf kleinen
+// Fenstern bleibt bis 1.5 Schaerfe. Nie unter 1.0 -> nie unter logischer Aufloesung (kein Matsch).
+// Genau das war die Ursache fuers Ruckeln in Vollbild/High-DPI (im Preview dpr=1 -> unsichtbar).
+const MAX_BACKING_PX = 2.6e6;   // ~1080p bei ~1.12x; Ziel: stabile 60fps statt maximaler Schaerfe
+// Opt-in Performance-Anzeige: Seite mit ?perf oeffnen -> kleine FPS/Dichte-HUD oben links.
+// Damit kannst du auf DEINEM Rechner (Vollbild, echte DPI) pruefen, ob es jetzt 60fps haelt.
+let PERF_HUD = false;
+let PERF_FLAT = false;   // ?flat -> statisches 2D-Wasser statt WebGL-Shader (testet den GL->2D-Blit-Stall)
+let PERF_NOFAUNA = false;// ?nofauna -> Krill+Fische aus (testet, ob die Fauna der Engpass ist)
+// Marine Snow (weisse schwebende Punkte im Wasser): AN (1), in reduzierter Dichte (Shader-Schwelle
+// 0.99). Gilt fuer Shader-Wasser UND 2D-Fallback. 0..1 regelt die Staerke.
+let SNOW_AMOUNT = 1;
+// Kaustik (kleine helle Lichtflecken knapp unter der Oberflaeche): wenige Punkte (nur 1 Worley-Lage,
+// siehe caustics()), dafuer normal hell. 0..1 regelt die HELLIGKEIT (nicht die Anzahl).
+let CAUSTICS_AMOUNT = 1.0;
+try {
+  // FPS-HUD: lokal (localhost/127.0.0.1/file://) standardmaessig AN -> dauerhaft beim Bearbeiten
+  // sichtbar; auf der Live-Seite (GitHub Pages) aus, ausser mit ?perf. ?noperf schaltet lokal aus.
+  const isLocal = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname) || location.protocol === 'file:';
+  PERF_HUD = (isLocal || /[?&]perf\b/.test(location.search)) && !/[?&]noperf\b/.test(location.search);
+  PERF_FLAT = /[?&]flat\b/.test(location.search);
+  PERF_NOFAUNA = /[?&]nofauna\b/.test(location.search);
+  if (/[?&]nosnow\b/.test(location.search)) SNOW_AMOUNT = 0;       // Snow zum Vergleich aus
+  if (/[?&]caustics\b/.test(location.search)) CAUSTICS_AMOUNT = 1; // Kaustik zum Vergleich an
+} catch (e) { /* kein location */ }
+let perfFpsEMA = 60;
+function chooseDensity() {
+  const dpr = window.devicePixelRatio || 1;
+  const area = Math.max(1, vw() * vh());
+  const budgetD = Math.sqrt(MAX_BACKING_PX / area);   // groesste Dichte, die das Budget noch haelt
+  return Math.max(1, Math.min(dpr, 1.5, budgetD));
+}
+
 function setup() {
   const c = createCanvas(vw(), vh());
   c.parent('canvas-holder');
-  // Performance: Backing-Store auf CSS-Aufloesung deckeln. p5 nimmt sonst window.devicePixelRatio
-  // (bei Windows-Skalierung 125-200% -> bis 4x so viele Pixel pro Frame). Das flache, dunstige
-  // Bild verliert dadurch kaum Schaerfe, spart aber auf High-DPI-Displays massiv Fuell-Last.
-  pixelDensity(1);
+  pixelDensity(chooseDensity());
   imageMode(CENTER);
   textFont('Georgia');
   noLoop(); // erst nach Datenladen + Geste loopen
@@ -749,6 +855,21 @@ const WATER_RENDER_SCALE = 0.5;// halbe Aufloesung -> ein Fragment-Pass, dann ho
 const WATER_MAX = 860;         // Deckel fuer die laengste Buffer-Kante
 const WATER_LIGHTDIR = [0.18, 1.0];       // Richtung ZUM Licht (uv-Raum, leicht rechts wie die Scene-1-Sonne)
 const WATER_LIGHTCOL = [1.0, 0.95, 0.82]; // warm-weiss/gold (gefilterte Sonne durch den Smog)
+
+// ===== SOLAR-SPACE-SHADER (Scene 3 „das eye") =====
+// Heller Innenraum als GEGENPOL zu Scene 2: weisse Kuppel, Oculus im Scheitel, herabfallender
+// Lichtkegel, ruhige Wasserflaeche unten, deren Licht RIPPELND an die Kuppel zurueckgeworfen wird
+// (Kaustik-/Worley-Technik aus WATER_FRAG, hier nach OBEN projiziert). Eigener WebGL-Buffer wie
+// das Wasser; faellt bei Shader-Fehler / reduced-motion auf das gecachte 2D-drawSolarSpaceFallback().
+let solarBuf = null;
+let solarShader = null;
+let solarShaderFailed = false;     // Shader nicht nutzbar -> dauerhaft 2D-Fallback
+let solarProbed = false;           // einmalige Sicht-Pruefung nach erstem Render
+let solarStaticBuf = null;         // gecachter statischer 2D-Verlauf (Fallback): Kuppel + Kegel + Pool
+let solarPoolTopY = 0;             // Pixel-Y der Wasserkante im Fallback-Buffer
+let solarOc = { x: 0, y: 0 };      // Oculus-Position im Fallback-Buffer (px)
+const SOLAR_POOL_Y = 0.20;         // Wasserflaeche als Anteil von UNTEN (untere 20%)
+const SOLAR_LIGHTCOL = [1.0, 0.97, 0.88]; // warm-weiss/gold (gefiltertes Oculus-Licht)
 
 function buildSpace() {
   if (spaceBuf) spaceBuf.remove();
@@ -991,9 +1112,9 @@ function drawUnderwater(alpha = 1) {
     drawGodRay(x, wl, w * 0.045, w * 0.16, len, Math.max(0, a));
   }
   // Kaustik direkt unter der Wasserlinie
-  drawCaustics(w, wl, h, t, alpha);
-  // Marine Snow: langsam sinkende, feine Partikel (nur unter Wasser)
-  for (const p of marineSnow) {
+  if (CAUSTICS_AMOUNT > 0) drawCaustics(w, wl, h, t, alpha);
+  // Marine Snow: langsam sinkende, feine Partikel (nur unter Wasser); SNOW_AMOUNT=0 -> aus
+  if (SNOW_AMOUNT > 0) for (const p of marineSnow) {
     p.y += p.vy * dt;
     p.x += p.vx * dt;
     if (p.y > 1.03) { p.y = -0.03; p.x = Math.random(); }           // oben neu auftauchen
@@ -1035,6 +1156,8 @@ uniform vec2  uResolution;
 uniform float uWaterlineY;   // Wasserlinie als Anteil von OBEN (0=oben .. 1=unten), ~0.30
 uniform vec2  uLightDir;     // Richtung ZUM Licht (uv-Raum, y nach oben)
 uniform vec3  uLightColor;   // warm-weiss/gold (gefilterte Sonne)
+uniform float uSnow;         // Marine-Snow-Staerke (0 = aus)
+uniform float uCaustics;     // Kaustik-Staerke (0 = aus)
 
 // ---------- Noise-Bausteine (Value-Noise + fbm, GLSL-ES-1.00 tauglich) ----------
 float hash21(vec2 p){
@@ -1084,12 +1207,18 @@ float worley(vec2 p, float t){
   return md;
 }
 float caustics(vec2 uv, float t){
-  float c=0.0, sc=7.0, amp=1.0;
-  for(int i=0;i<3;i++){                                 // <= 3 Lagen
-    float w = worley(uv*sc + vec2(t*0.12*float(i+1), t*0.03), t*0.7);
-    c += amp * pow(max(0.0, 1.0 - w), 6.0);            // duenne helle Filamente an den Zellkanten
-    sc*=1.8; amp*=0.55;
-  }
+  // 3 gestaffelte Lagen fuer Tiefen-/3D-Effekt: tiefere Lagen WENIGER Punkte UND durchsichtiger,
+  // jede mit eigener Scroll-Geschwindigkeit (Parallaxe). Punktanzahl ~ Zellskala^2.
+  float c = 0.0;
+  // Lage 1 (vorn): Referenz -> volle Punktdichte (sc=7.0), volle Deckkraft
+  float w1 = worley(uv*7.00 + vec2(t*0.12, t*0.03),        t*0.7);
+  c += 1.00 * pow(max(0.0, 1.0 - w1), 6.0);
+  // Lage 2 (Mitte): 25% weniger Punkte (sc*sqrt(0.75)=6.06), durchsichtiger
+  float w2 = worley(uv*6.06 + vec2(t*0.24, t*0.03) + 11.3, t*0.7);
+  c += 0.60 * pow(max(0.0, 1.0 - w2), 6.0);
+  // Lage 3 (hinten): 50% weniger Punkte (sc*sqrt(0.5)=4.95), am durchsichtigsten
+  float w3 = worley(uv*4.95 + vec2(t*0.36, t*0.03) + 23.7, t*0.7);
+  c += 0.35 * pow(max(0.0, 1.0 - w3), 6.0);
   return c;
 }
 
@@ -1135,8 +1264,10 @@ void main(){
   vec3 teal = vec3(0.16, 0.40, 0.42);
   vec3 deep = vec3(0.04, 0.14, 0.24);
   vec3 ink  = vec3(0.01, 0.03, 0.06);
-  vec3 waterCol = mix(teal, deep, smoothstep(0.0, 0.45, depth));
-  waterCol = mix(waterCol, ink, smoothstep(0.42, 1.0, depth));
+  // Teal->Tiefblau oben wie gehabt; das fast-schwarze Ink aber erst WEIT unten (~Wal-Hoehe, depth~0.74)
+  // -> die mittlere Tiefblau-Zone (deep) wird deutlich laenger (Nutzerwunsch).
+  vec3 waterCol = mix(teal, deep, smoothstep(0.0, 0.28, depth));
+  waterCol = mix(waterCol, ink, smoothstep(0.60, 0.92, depth));
 
   // ===== WEICHER Wasserlinie-Uebergang (analytisches Anti-Aliasing) =====
   // smoothstep ueber ein schmales, AUFLOESUNGS-ABHAENGIGES Band (~2.5 Buffer-Pixel) -> glatte
@@ -1152,16 +1283,18 @@ void main(){
     float grFade = 1.0 - smoothstep(0.0, 0.28, depth);   // ~1/3 so lang (frueher bis 0.85)
     col += uLightColor * gr * grFade * 0.5 * below;
     // Kaustik: am staerksten direkt unter der Oberflaeche, mit Tiefe schwaecher
-    float ca = caustics(ruv * vec2(aspect, 1.0) * 3.0, t);
+    float ca = (uCaustics > 0.0) ? caustics(ruv * vec2(aspect, 1.0) * 3.0, t) : 0.0;
     float caFade = 1.0 - smoothstep(0.0, 0.6, depth);
-    col += uLightColor * ca * caFade * 0.35 * below;
-    // Marine Snow: WENIGE, langsam sinkende, feine Specks (additiv)
-    vec2 sq = vec2(uv.x*aspect, uv.y) * 38.0;
+    col += uLightColor * ca * caFade * 0.35 * below * uCaustics;
+    // Marine Snow: SEHR WENIGE, langsam sinkende, feine Specks (additiv). Schwelle 0.99 statt
+    // 0.965 + groebere Kachelung -> ~25% der bisherigen Dichte (auf Nutzerwunsch: viel weniger
+    // weisse schwirrende Punkte im Wasser).
+    vec2 sq = vec2(uv.x*aspect, uv.y) * 30.0;
     sq.y += t*0.5;                                       // sinkt langsam
     vec2 sip = floor(sq), sfp = fract(sq);
-    if(hash21(sip) > 0.965){                             // hohe Schwelle -> sparsam
+    if(uSnow > 0.0 && hash21(sip) > 0.99){               // uSnow=0 -> komplett aus
       float dd = length(sfp - 0.5);
-      col += uLightColor * smoothstep(0.13, 0.0, dd) * 0.4 * (1.0 - depth*0.5) * below;
+      col += uLightColor * smoothstep(0.13, 0.0, dd) * 0.4 * (1.0 - depth*0.5) * below * uSnow;
     }
   }
 
@@ -1211,7 +1344,7 @@ function ensureWaterBuffer() {
 // Shader-Wasser als Vollbild-Backdrop (Crossfade-Alpha wie space/underwater). Faellt auf
 // drawUnderwater() zurueck bei reduced-motion, createShader-Fehler oder leerem ersten Render.
 function drawWater(alpha = 1) {
-  if (waterReduceMotion || waterShaderFailed) { drawUnderwater(alpha); return; }
+  if (waterReduceMotion || waterShaderFailed || PERF_FLAT) { drawUnderwater(alpha); return; }
   ensureWaterBuffer();
   if (!waterBuf || !waterShader) { drawUnderwater(alpha); return; }
   try {
@@ -1224,6 +1357,8 @@ function drawWater(alpha = 1) {
     waterShader.setUniform('uWaterlineY', WATERLINE_FRAC);
     waterShader.setUniform('uLightDir', WATER_LIGHTDIR);
     waterShader.setUniform('uLightColor', WATER_LIGHTCOL);
+    waterShader.setUniform('uSnow', SNOW_AMOUNT);
+    waterShader.setUniform('uCaustics', CAUSTICS_AMOUNT);
     g.plane(g.width + 2, g.height + 2);                  // Vollbild-Quad (kleiner Overscan gegen Randnaht)
     g.resetShader();
     // einmalige Sicht-Pruefung: rendert der Shader gar nichts (stiller Compile-Fehler) -> Fallback
@@ -1247,19 +1382,253 @@ function drawWater(alpha = 1) {
   pop();
 }
 
+// =========================================================================
+//  SOLAR-SPACE-SHADER (Scene 3 „das eye") — heller Kuppel-Innenraum mit Oculus
+//  Aufbau wie das Wasser (eigener WebGL-Buffer, halbe Aufloesung, hochskaliert). Rehabilitiert
+//  die Worley-/Kaustik-Technik aus WATER_FRAG als nach OBEN projizierte Decken-Reflexion.
+// =========================================================================
+const SOLAR_FRAG = `
+precision highp float;
+uniform float uTime;
+uniform vec2  uResolution;
+uniform float uPoolY;       // Wasserflaeche als Anteil von UNTEN (~0.20)
+uniform vec3  uLightColor;  // warm-weiss/gold (Oculus-Licht)
+
+// ---------- Noise-Bausteine (wie WATER_FRAG, eigenes Programm -> hier erneut) ----------
+float hash21(vec2 p){ p=fract(p*vec2(123.34,345.45)); p+=dot(p,p+34.345); return fract(p.x*p.y); }
+float vnoise(vec2 p){
+  vec2 i=floor(p), f=fract(p); vec2 u=f*f*(3.0-2.0*f);
+  float a=hash21(i), b=hash21(i+vec2(1.,0.)), c=hash21(i+vec2(0.,1.)), d=hash21(i+vec2(1.,1.));
+  return mix(mix(a,b,u.x), mix(c,d,u.x), u.y);
+}
+float fbm(vec2 p){ float v=0.,a=0.5; for(int i=0;i<4;i++){ v+=a*vnoise(p); p=p*2.0+vec2(1.7,9.2); a*=0.5; } return v; }
+float worley(vec2 p, float t){
+  vec2 ip=floor(p), fp=fract(p); float md=1.0;
+  for(int j=-1;j<=1;j++) for(int i=-1;i<=1;i++){
+    vec2 g=vec2(float(i),float(j));
+    vec2 o=vec2(hash21(ip+g), hash21(ip+g+19.19));
+    o=0.5+0.5*sin(t+6.2831*o);                  // wandernde Zellpunkte (Animation)
+    md=min(md, length(g+o-fp));
+  }
+  return md;
+}
+// weiche, BREITE Rippel-Baender (niedriger Exponent) -> ruhige Decken-Reflexion, nicht punktig
+float ripple(vec2 uv, float t){
+  float w1=worley(uv*3.00 + vec2( t*0.10, t*0.05),       t*0.5);
+  float w2=worley(uv*2.05 + vec2(-t*0.07, t*0.04)+7.3,   t*0.5);
+  return pow(max(0.0,1.0-w1),2.5) + 0.55*pow(max(0.0,1.0-w2),2.5);
+}
+// schaerferes Kaustik-Geflecht fuer die Wasseroberflaeche
+float caustics(vec2 uv, float t){
+  float w=worley(uv*5.0 + vec2(t*0.12, t*0.04), t*0.6);
+  return pow(max(0.0,1.0-w),5.0);
+}
+
+void main(){
+  vec2 uv = gl_FragCoord.xy / uResolution;     // 0..1, y von UNTEN
+  float aspect = uResolution.x / uResolution.y;
+  float t = uTime * 0.18;                       // sehr ruhige, langsame Bewegung
+  float poolY = uPoolY;
+  vec2  oc = vec2(0.5, 0.92);                    // Oculus im Scheitel
+
+  // ----- Kuppel: warmes Weiss, am hellsten am Oculus, sanft zur Peripherie verschattet -----
+  vec2 q = (uv - oc) * vec2(aspect, 1.0);
+  float r = length(q);
+  vec3 warmWhite = vec3(1.0, 0.985, 0.95);
+  vec3 domeShade = vec3(0.82, 0.815, 0.80);
+  vec3 col = mix(warmWhite, domeShade, smoothstep(0.06, 1.05, r));
+  col *= 1.0 + 0.015 * sin(r*22.0 - 0.4);       // zarte konzentrische Schalen (Andeutung Woelbung)
+  col += (fbm(uv*vec2(aspect,1.0)*2.2 + t*0.05) - 0.5) * 0.025;  // Hauch Dunst-Struktur
+
+  // ----- Oculus: heller warmer Kern + weicher Bloom-Halo -----
+  col = mix(col, vec3(1.0, 0.99, 0.96), smoothstep(0.12, 0.0, r) * 0.95);
+  col += uLightColor * smoothstep(0.55, 0.0, r) * 0.22;
+
+  // ----- Lichtkegel: senkrecht vom Oculus, nach unten leicht aufweitend -----
+  float descend = clamp((oc.y - uv.y) / (oc.y - poolY), 0.0, 1.0);  // 0 Oculus .. 1 Pool
+  float coneHalf = mix(0.03, 0.20, descend);
+  float dx = abs((uv.x - 0.5) * aspect);
+  float cone = smoothstep(coneHalf, coneHalf*0.25, dx);
+  cone *= (1.0 - 0.45*descend);                                     // nach unten leicht ausbleichend
+  cone *= step(poolY, uv.y);                                        // nur ueber dem Wasser
+  cone *= 0.8 + 0.2*vnoise(vec2(uv.x*6.0, uv.y*3.0 - t*0.3));       // leichte wandernde Verdeckung
+  col += uLightColor * cone * 0.16;
+
+  // ----- Staub im Strahl: sehr feine, langsam schwebende Specks, nur im Kegel -----
+  vec2 dpp = vec2(uv.x*aspect, uv.y)*42.0;
+  dpp.y += t*0.4;                                                   // langsames Treiben
+  vec2 dip = floor(dpp), dfp = fract(dpp);
+  if(uv.y > poolY && dx < coneHalf && hash21(dip) > 0.985){
+    float dd = length(dfp - 0.5);
+    col += uLightColor * smoothstep(0.16, 0.0, dd) * 0.5 * (0.6 + 0.4*sin(t*3.0 + dip.x));
+  }
+
+  // ----- Reflexion: der Pool wirft Licht RIPPELND an die Kuppel zurueck (nach oben projiziert) -----
+  // am staerksten knapp ueber dem Wasser, zum Scheitel hin ausklingend; im Strahl betont.
+  float lowness = 1.0 - smoothstep(poolY, oc.y, uv.y);              // 1 nahe Pool .. 0 am Oculus
+  float rc = ripple(vec2(uv.x*aspect, (uv.y - poolY))*2.6, t);
+  float reflMask = lowness * (0.5 + 0.5*cone);                      // im Kegel staerker
+  col += uLightColor * rc * reflMask * 0.16 * step(poolY, uv.y);
+
+  // ----- Wasserflaeche unten: ruhig, kuehler Hauch, gespiegeltes Oculus-Licht + Kaustik -----
+  if(uv.y < poolY){
+    float pd = (poolY - uv.y) / max(poolY, 0.001);                 // 0 Oberflaeche .. 1 Boden
+    vec3 poolHi = vec3(0.80, 0.85, 0.89);                          // kuehler Hauch an der Wasserkante
+    vec3 poolLo = vec3(0.52, 0.62, 0.70);
+    vec3 pcol = mix(poolHi, poolLo, pd);
+    float refl = smoothstep(0.18, 0.0, dx) * (1.0 - pd);           // Kegel-Fussabdruck auf dem Wasser
+    pcol += uLightColor * refl * 0.45;
+    float pc = caustics(vec2(uv.x*aspect, uv.y)*4.0, t);
+    pcol += uLightColor * pc * 0.30 * (1.0 - pd*0.5);
+    col = mix(col, pcol, smoothstep(0.0, 0.012, poolY - uv.y));    // weiche Wasserkante
+  }
+
+  // ----- weiche, helle Vignette + Hauch Weiss-Dunst (luftig, NICHT dunkel) -----
+  float vig = smoothstep(1.5, 0.2, length((uv - vec2(0.5, 0.55)) * vec2(aspect*0.8, 1.0)));
+  col *= mix(0.92, 1.0, vig);
+  col = mix(col, vec3(0.985, 0.975, 0.95), 0.06);
+
+  gl_FragColor = vec4(col, 1.0);
+}`;
+
+// eigenen WebGL-Buffer + Shader anlegen (reduzierte Aufloesung). Bei Fehler -> 2D-Fallback.
+function ensureSolarBuffer() {
+  if (waterReduceMotion || solarShaderFailed || solarBuf) return;
+  try {
+    let bw = Math.round(vw() * WATER_RENDER_SCALE);
+    let bh = Math.round(vh() * WATER_RENDER_SCALE);
+    const m = Math.max(bw, bh);
+    if (m > WATER_MAX) { const k = WATER_MAX / m; bw = Math.round(bw * k); bh = Math.round(bh * k); }
+    bw = Math.max(2, bw); bh = Math.max(2, bh);
+    const buf = createGraphics(bw, bh, WEBGL);
+    buf.pixelDensity(1);
+    const sh = buf.createShader(WATER_VERT, SOLAR_FRAG);   // generischer Vollbild-Vertex (wie Wasser)
+    solarBuf = buf; solarShader = sh; solarProbed = false;
+  } catch (e) {
+    console.warn('Solar-Shader nicht verfuegbar -> 2D-Fallback', e);
+    solarShaderFailed = true;
+    if (solarBuf) { solarBuf.remove(); solarBuf = null; }
+    solarShader = null;
+  }
+}
+
+// Scene-3-Backdrop als Vollbild (Crossfade-Alpha wie space/underwater). Faellt auf
+// drawSolarSpaceFallback() zurueck bei reduced-motion, ?flat, Shader-Fehler oder leerem Render.
+function drawSolarSpace(alpha = 1) {
+  if (waterReduceMotion || solarShaderFailed || PERF_FLAT) { drawSolarSpaceFallback(alpha); return; }
+  ensureSolarBuffer();
+  if (!solarBuf || !solarShader) { drawSolarSpaceFallback(alpha); return; }
+  try {
+    const g = solarBuf;
+    g.clear();
+    g.noStroke();
+    g.shader(solarShader);
+    solarShader.setUniform('uTime', millis() / 1000);
+    solarShader.setUniform('uResolution', [g.width, g.height]);
+    solarShader.setUniform('uPoolY', SOLAR_POOL_Y);
+    solarShader.setUniform('uLightColor', SOLAR_LIGHTCOL);
+    g.plane(g.width + 2, g.height + 2);
+    g.resetShader();
+    if (!solarProbed) {
+      solarProbed = true;
+      const px = g.get(g.width >> 1, g.height >> 1);
+      if (!px || px[3] < 5) throw new Error('leerer Render (vermutlich Shader-Compile-Fehler)');
+    }
+  } catch (e) {
+    console.warn('Solar-Shader Render fehlgeschlagen -> 2D-Fallback', e);
+    solarShaderFailed = true;
+    if (solarBuf) { solarBuf.remove(); solarBuf = null; }
+    solarShader = null;
+    drawSolarSpaceFallback(alpha);
+    return;
+  }
+  push();
+  imageMode(CORNER);
+  tint(255, 255 * alpha);
+  image(solarBuf, 0, 0, width, height);
+  pop();
+}
+
+// ----- 2D-Fallback (reduced-motion / Shader-Fehler): gecachte statische Kuppel + Pool + Kegel,
+// darueber pro Frame nur wenige guenstige, langsame Rippel-Baender + Staub. -----
+function buildSolarStatic() {
+  if (solarStaticBuf) solarStaticBuf.remove();
+  const w = Math.max(2, vw()), h = Math.max(2, vh());
+  const g = createGraphics(w, h); g.pixelDensity(1);
+  const ctx = g.drawingContext;
+  const poolTopY = h * (1 - SOLAR_POOL_Y);     // Wasserkante (px von oben)
+  const ocx = w * 0.5, ocy = h * 0.08;          // Oculus nahe oben
+  ctx.clearRect(0, 0, w, h);
+  // Kuppel: radialer Verlauf vom Oculus (warm-weiss -> sanftes Grau-Weiss)
+  let dome = ctx.createRadialGradient(ocx, ocy, 0, ocx, ocy, Math.hypot(w, h) * 0.9);
+  dome.addColorStop(0.0, '#fffdf6'); dome.addColorStop(0.5, '#f1ede4'); dome.addColorStop(1.0, '#d6d2ca');
+  ctx.fillStyle = dome; ctx.fillRect(0, 0, w, poolTopY);
+  // Lichtkegel (nach unten aufweitend)
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(ocx - w * 0.03, ocy); ctx.lineTo(ocx + w * 0.03, ocy);
+  ctx.lineTo(ocx + w * 0.17, poolTopY); ctx.lineTo(ocx - w * 0.17, poolTopY); ctx.closePath();
+  let cone = ctx.createLinearGradient(0, ocy, 0, poolTopY);
+  cone.addColorStop(0, 'rgba(255,250,228,0.40)'); cone.addColorStop(1, 'rgba(255,250,228,0.05)');
+  ctx.fillStyle = cone; ctx.fill();
+  ctx.restore();
+  // Oculus-Scheibe (heller Kern + Halo)
+  let ocl = ctx.createRadialGradient(ocx, ocy, 0, ocx, ocy, h * 0.17);
+  ocl.addColorStop(0, 'rgba(255,253,246,1)'); ocl.addColorStop(1, 'rgba(255,250,236,0)');
+  ctx.fillStyle = ocl; ctx.fillRect(0, 0, w, poolTopY);
+  // Pool: kuehler vertikaler Verlauf
+  let pool = ctx.createLinearGradient(0, poolTopY, 0, h);
+  pool.addColorStop(0, '#ccd6dc'); pool.addColorStop(1, '#8493a0');
+  ctx.fillStyle = pool; ctx.fillRect(0, poolTopY, w, h - poolTopY);
+  // gespiegeltes Oculus-Licht auf dem Wasser
+  let foot = ctx.createRadialGradient(ocx, poolTopY, 0, ocx, poolTopY, w * 0.24);
+  foot.addColorStop(0, 'rgba(255,250,232,0.6)'); foot.addColorStop(1, 'rgba(255,250,232,0)');
+  ctx.fillStyle = foot; ctx.fillRect(0, poolTopY, w, h - poolTopY);
+  solarStaticBuf = g; solarPoolTopY = poolTopY; solarOc = { x: ocx, y: ocy };
+}
+function drawSolarSpaceFallback(alpha = 1) {
+  if (!solarStaticBuf) buildSolarStatic();
+  push();
+  imageMode(CORNER); tint(255, 255 * alpha); noStroke();
+  image(solarStaticBuf, 0, 0, width, height);
+  noTint();
+  // ruhige, langsame Decken-Reflexion: ein paar breite, wandernde Lichtbaender knapp ueber dem Wasser
+  const t = millis() * 0.0004;
+  const poolTopPx = height * (1 - SOLAR_POOL_Y);
+  blendMode(ADD); noStroke();
+  for (let i = 0; i < 4; i++) {
+    const yy = poolTopPx - (i * 0.10 + 0.02) * height + Math.sin(t * 6 + i) * 8;
+    const bx = width * 0.5 + Math.sin(t * 3 + i * 1.7) * width * 0.18;
+    const bw = width * (0.18 + 0.05 * i);
+    const a = (28 - i * 5) * alpha;
+    fill(255, 250, 232, Math.max(0, a));
+    ellipse(bx, yy, bw, height * 0.05);
+  }
+  // Staub im Strahl
+  for (let i = 0; i < 18; i++) {
+    const dy = ((t * 30 + i * 53) % (poolTopPx - height * 0.10)) + height * 0.10;
+    const dxr = width * 0.5 + Math.sin(t * 9 + i) * width * 0.06 * (dy / poolTopPx);
+    fill(255, 250, 235, 70 * alpha);
+    ellipse(dxr, dy, 2.2, 2.2);
+  }
+  blendMode(BLEND);
+  pop();
+}
+
 // ===== PROZEDURALE KLEINFAUNA (Scene 2): Krill-Schwarm + Fisch-Boids (KEINE Bilder) =====
 // Ueber dem Wasser-Backdrop, unter den Bild-Entities gezeichnet (drawSceneBackdrop), blendet mit
 // dem Crossfade (alpha). Bewegung aus der Locomotion-Recherche: Krill = dichte Gauss-Wolke mit
 // Kohaesions-Feder + metachronalem Schimmer + Diel-Heben; Fische = Boids (Separation/Alignment/
 // Kohaesion + Wander), klein+viel, schwarze Silhouetten, tiefer = fester schwarz, eine Schule
 // migriert vertikal. Positionen normiert (resize-fest).
+const KRILL_COUNT = 30;  // Krill-Partikel (+50% ggue. letztem Stand 20; davor 80, urspruenglich 150)
 let krillSwarm = null;   // { parts:[{hx,hy,x,y,r,a,ph,jx,jy}] }
 let fishSchools = [];    // [{ fish:[{x,y,vx,vy,sc}], cx0,cy0,amp,sp,sizeFactor,cruise,deep,ph }]
 
 function buildScene2Fauna() {
   // Krill: dichte Gauss-Wolke; jede Partikel federt zu ihrem Home-Offset (dichter Kern, duenner Rand)
   const kp = [];
-  for (let i = 0; i < 80; i++) {                                       // dezent + guenstig (war 150)
+  for (let i = 0; i < KRILL_COUNT; i++) {                              // 20 = 25% (war 80, davor 150)
     const gx = (Math.random() + Math.random() + Math.random()) / 3 - 0.5;   // ~Gauss
     const gy = (Math.random() + Math.random() + Math.random()) / 3 - 0.5;
     kp.push({
@@ -1270,28 +1639,37 @@ function buildScene2Fauna() {
   }
   krillSwarm = { parts: kp };
 
-  // Fischschwaerme: klein+viel; verschiedene Groessen; einer schwimmt tiefer (vertikale Migration)
+  // Fischschwaerme: dicht, unregelmaessige Abstaende, je Schwarm eigene dynamische Gangart.
+  // Positionen getrennt, damit keine zwei Schwaerme uebereinander liegen ('doppelt'-Eindruck).
   fishSchools = [];
   const CFG = [
-    { n: 18, cx0: 0.30, cy0: 0.45, amp: 0.16, sp: 0.034, sz: 0.0020, cruise: 0.020, deep: false },
-    { n: 40, cx0: 0.55, cy0: 0.38, amp: 0.20, sp: 0.026, sz: 0.0024, cruise: 0.018, deep: false },
-    { n: 26, cx0: 0.50, cy0: 0.70, amp: 0.26, sp: 0.040, sz: 0.0022, cruise: 0.016, deep: true }
+    { n: 38, cx0: 0.24, cy0: 0.42, amp: 0.16, sp: 0.034, sz: 0.0020, cruise: 0.020, deep: false },
+    { n: 80, cx0: 0.66, cy0: 0.36, amp: 0.18, sp: 0.026, sz: 0.0024, cruise: 0.018, deep: false },
+    { n: 50, cx0: 0.80, cy0: 0.74, amp: 0.14, sp: 0.040, sz: 0.0022, cruise: 0.016, deep: true },   // tief, rechts (weg von den anderen)
+    { n: 60, cx0: 0.50, cy0: 0.74, amp: 0.06, sp: 0.030, sz: 0.0021, cruise: 0.014, deep: false }   // dicht DIREKT unter der Station (kleines amp -> bleibt zentriert; zeichnet hinter der Station)
   ];
   for (const c of CFG) {
     const fish = [];
+    const spread = 0.055;
     for (let i = 0; i < c.n; i++) {
-      const a = Math.random() * TWO_PI, rr = Math.random() * 0.04;
+      // dreieckig verteilter Start -> dichter Kern, ausgefranster Rand (nicht gleichmaessig)
+      const gx = Math.random() + Math.random() - 1.0;
+      const gy = Math.random() + Math.random() - 1.0;
       fish.push({
-        x: c.cx0 + Math.cos(a) * rr, y: c.cy0 + Math.sin(a) * rr * 0.6,
-        vx: Math.cos(a) * c.cruise, vy: 0, sc: 0.7 + Math.random() * 0.6
+        x: c.cx0 + gx * spread, y: c.cy0 + gy * spread * 0.65,
+        vx: (Math.random() - 0.5) * c.cruise, vy: 0, sc: 0.7 + Math.random() * 0.6,
+        ps2: Math.pow(0.008 + Math.random() * 0.014, 2),     // individuelle Mindestabstaende -> unregelmaessig
+        wph: Math.random() * TWO_PI, wsp: 0.6 + Math.random() * 1.1   // individuelles Wandern (entgittert)
       });
     }
     fishSchools.push({ fish, cx0: c.cx0, cy0: c.cy0, amp: c.amp, sp: c.sp,
-      sizeFactor: c.sz, cruise: c.cruise, deep: c.deep, ph: Math.random() * TWO_PI });
+      sizeFactor: c.sz, cruise: c.cruise, deep: c.deep, ph: Math.random() * TWO_PI,
+      gait: 0.6, gaitTarget: 0.6, gaitTimer: Math.random() * 2.0, gaitRate: 0.06 });  // dynamische Gangart
   }
 }
 
 function drawScene2Fauna(alpha) {
+  if (PERF_NOFAUNA) return;
   if (!krillSwarm) buildScene2Fauna();
   const w = width, h = height, mm = Math.min(w, h);
   const t = millis() / 1000, dt = Math.min(0.05, deltaTime / 1000);
@@ -1315,12 +1693,23 @@ function drawScene2Fauna(alpha) {
   blendMode(BLEND);
 
   // === Fischschwaerme: schwarze Silhouetten, Boids (Separation/Alignment/Kohaesion + Wander) ===
-  const perc2 = 0.06 * 0.06, sep2 = 0.022 * 0.022;
+  const perc2 = 0.06 * 0.06;
   for (const sch of fishSchools) {
+    // dynamische Gangart pro Schwarm: schleichen -> ploetzlich sprinten -> fast stehen, eigener
+    // Zufall/Timing je Schwarm. gait = Tempo-Multiplikator, sanft zum jeweiligen Ziel gefuehrt.
+    sch.gaitTimer -= dt;
+    if (sch.gaitTimer <= 0) {
+      const r = Math.random();
+      if (r < 0.30)      { sch.gaitTarget = 0.06 + Math.random() * 0.12; sch.gaitTimer = 0.7 + Math.random() * 2.2; sch.gaitRate = 0.05; } // fast stehen
+      else if (r < 0.55) { sch.gaitTarget = 2.4 + Math.random() * 1.8;  sch.gaitTimer = 0.4 + Math.random() * 1.0; sch.gaitRate = 0.20; } // Sprint
+      else               { sch.gaitTarget = 0.5 + Math.random() * 0.5;  sch.gaitTimer = 1.5 + Math.random() * 3.0; sch.gaitRate = 0.06; } // Cruise
+    }
+    sch.gait += (sch.gaitTarget - sch.gait) * Math.min(1, sch.gaitRate * dt * 60);
     const tx = sch.cx0 + sch.amp * Math.sin(t * sch.sp + sch.ph);    // Wander-Ziel des Schwarms
-    const ty = sch.deep ? (0.70 + 0.10 * Math.sin(t * 0.012))        // tiefer Schwarm: vertikale Migration
+    const ty = sch.deep ? (0.74 + 0.07 * Math.sin(t * 0.012))        // tiefer Schwarm: dezente Vertikal-Migration
                         : (sch.cy0 + 0.03 * Math.sin(t * sch.sp * 1.3 + sch.ph));
-    const ebb = (0.7 + 0.3 * Math.sin(t * 0.07)) * sch.cruise;       // kollektives Ebben/Fliessen
+    const ebb = sch.gait * sch.cruise;                              // aktuelles Schwarm-Tempo
+    const resp = 0.05 + 0.10 * Math.min(1, sch.gait / 2);           // Sprint -> schnellere Reaktion (knackig)
     for (const f of sch.fish) {
       let alx = 0, aly = 0, cox = 0, coy = 0, sepx = 0, sepy = 0, nn = 0;
       for (const g of sch.fish) {
@@ -1328,18 +1717,20 @@ function drawScene2Fauna(alpha) {
         const dx = g.x - f.x, dy = g.y - f.y, d2 = dx * dx + dy * dy;
         if (d2 < perc2) {
           alx += g.vx; aly += g.vy; cox += g.x; coy += g.y; nn++;
-          if (d2 < sep2) { const dd = Math.sqrt(d2) + 1e-5; sepx -= dx / dd; sepy -= dy / dd; }
+          if (d2 < f.ps2) { const dd = Math.sqrt(d2) + 1e-5; sepx -= dx / dd; sepy -= dy / dd; }  // individueller Mindestabstand
         }
       }
       let dvx = (tx - f.x) * 0.30, dvy = (ty - f.y) * 0.30;          // Wander zum Schwarm-Ziel
       if (nn > 0) {
         alx /= nn; aly /= nn; cox /= nn; coy /= nn;
-        dvx += alx * 1.0 + (cox - f.x) * 0.35 + sepx * 0.015;        // Alignment + Kohaesion + Separation
-        dvy += aly * 1.0 + (coy - f.y) * 0.35 + sepy * 0.015;
+        dvx += alx * 1.0 + (cox - f.x) * 0.45 + sepx * 0.012;        // Alignment + Kohaesion (fester=enger) + Separation
+        dvy += aly * 1.0 + (coy - f.y) * 0.45 + sepy * 0.012;
       }
+      dvx += Math.sin(t * f.wsp + f.wph) * 0.15;                     // individuelles Wandern -> unregelmaessige Abstaende
+      dvy += Math.cos(t * f.wsp * 0.9 + f.wph) * 0.12;
       const dm = Math.hypot(dvx, dvy) + 1e-6;
-      f.vx += ((dvx / dm) * ebb - f.vx) * 0.06;                      // sanft zur Wunschrichtung -> Wende als Welle
-      f.vy += ((dvy / dm) * ebb - f.vy) * 0.06;
+      f.vx += ((dvx / dm) * ebb - f.vx) * resp;                      // sanft/knackig zur Wunschrichtung
+      f.vy += ((dvy / dm) * ebb - f.vy) * resp;
       f.x += f.vx * dt; f.y += f.vy * dt;
       f.y = Math.max(0.33, Math.min(0.96, f.y));                     // unter der Wasserlinie halten
     }
@@ -1538,6 +1929,47 @@ function draw() {
   if (heldEntity) cursor('grabbing');
   else if (hoverEntity) cursor((hoverEntity.frames || hoverEntity.isGlobe) ? 'grab' : 'pointer');
   else cursor('default');
+
+  if (PERF_HUD) drawPerfHud();
+}
+
+// GPU-/Renderer-String einmalig ermitteln (fuer ?perf): zeigt, ob Hardware-Beschleunigung aktiv
+// ist (sonst SwiftShader/CPU -> erklaert starkes Ruckeln). Quelle: vorhandener WebGL-Buffer.
+let perfRenderer = null;
+function getPerfRenderer() {
+  if (perfRenderer !== null) return perfRenderer;
+  perfRenderer = '?';
+  try {
+    const buf = (typeof waterBuf !== 'undefined' && waterBuf) ? waterBuf
+              : (typeof globeBuf !== 'undefined' && globeBuf) ? globeBuf : null;
+    const gl = buf && buf._renderer ? buf._renderer.GL : null;
+    if (gl) {
+      const ext = gl.getExtension('WEBGL_debug_renderer_info');
+      perfRenderer = String(ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER));
+    }
+  } catch (e) { /* egal */ }
+  return perfRenderer;
+}
+
+// Kleine Diagnose-HUD (nur mit ?perf): geglaettete FPS, Backing-Dichte, Megapixel, dpr, GPU.
+function drawPerfHud() {
+  const inst = deltaTime > 0 ? 1000 / deltaTime : 60;
+  perfFpsEMA = perfFpsEMA * 0.9 + inst * 0.1;
+  const d = pixelDensity();
+  const mpx = (width * d * height * d) / 1e6;
+  const gpu = getPerfRenderer();
+  push();
+  resetMatrix && resetMatrix();
+  noStroke(); fill(0, 0, 0, 160); rectMode(CORNER);
+  rect(8, 8, 360, 74, 6);
+  fill(perfFpsEMA >= 55 ? color(120, 230, 140) : perfFpsEMA >= 40 ? color(240, 210, 110) : color(240, 120, 110));
+  textAlign(LEFT, TOP); textSize(16); textFont('Georgia');
+  text(perfFpsEMA.toFixed(0) + ' fps', 16, 12);
+  fill(220); textSize(11);
+  text('Dichte ' + d.toFixed(2) + '  ·  ' + mpx.toFixed(1) + ' MPix', 16, 36);
+  text('dpr ' + (window.devicePixelRatio || 1).toFixed(2) + '  ·  ' + width + '×' + height, 16, 50);
+  text('GPU: ' + gpu.slice(0, 52), 16, 64);
+  pop();
 }
 
 // Zeichnet den KOMPLETTEN Hintergrund einer Szene bei gegebenem Alpha (0..1) -> eine Funktion
@@ -1557,6 +1989,18 @@ function drawSceneBackdrop(index, alpha) {
   if (sc.underwater) {
     drawWater(alpha);          // Shader-Wasser; faellt intern auf drawUnderwater() zurueck
     drawScene2Fauna(alpha);    // prozedurale Kleinfauna (Krill + Fischschwarm) ueber dem Wasser
+    return;
+  }
+  if (sc.interior) {
+    // Scene 3 „das eye": entweder gemaltes Kuppel-Bild (falls vorhanden) ODER prozeduraler Innenraum.
+    // sc.bg deckt den Vollbild-Hintergrund ab; der Shader liefert sonst Kuppel + Oculus + Reflexion.
+    if (sc.bg) {
+      const ir = sc.bg.width / sc.bg.height, cr = width / height;
+      let w, h; if (ir > cr) { h = height; w = height * ir; } else { w = width; h = width / ir; }
+      push(); imageMode(CENTER); tint(255, 255 * alpha); image(sc.bg, width / 2, height / 2, w, h); pop();
+    } else {
+      drawSolarSpace(alpha);   // prozedurale Licht-Architektur; faellt intern auf 2D-Fallback zurueck
+    }
     return;
   }
   push();
@@ -1680,16 +2124,20 @@ function updateSceneName(index = currentScene) {
 
 function keyPressed() {
   if (keyCode === ESCAPE && openEntity) closePanel();
+  else if (key === 'p' || key === 'P') PERF_HUD = !PERF_HUD;   // FPS-HUD ein/aus
   else if (keyCode === LEFT_ARROW) goToScene((currentScene - 1 + scenes.length) % scenes.length);
   else if (keyCode === RIGHT_ARROW) goToScene((currentScene + 1) % scenes.length);
 }
 
 function windowResized() {
+  pixelDensity(chooseDensity());   // Budget bei Groessenwechsel neu bewerten (vor resizeCanvas)
   resizeCanvas(vw(), vh());
   if (spaceResizeTimer) clearTimeout(spaceResizeTimer);
   spaceResizeTimer = setTimeout(() => {
     buildSpace();              // gecachten Weltraum-Backdrop neu bauen (entprellt)
     underwaterBuf = null;      // Unterwasser-Buffer verwerfen -> drawUnderwater baut ihn in neuer Groesse neu
     if (waterBuf) { waterBuf.remove(); waterBuf = null; waterShader = null; }  // Wasser-Shader-Buffer in neuer Groesse neu bauen
+    if (solarBuf) { solarBuf.remove(); solarBuf = null; solarShader = null; }  // Solar-Shader-Buffer (Scene 3) neu bauen
+    if (solarStaticBuf) { solarStaticBuf.remove(); solarStaticBuf = null; }    // gecachten 2D-Fallback verwerfen
   }, 180);
 }
