@@ -25,7 +25,7 @@
     <div>5 · Ohne<small>ruhiges Wasser</small></div>
   </div>
 
-  <script src="lib/p5.min.js"></script>
+  <script src="../lib/p5.min.js"></script>
   <script>
   const N = 5, SP = 200, R = 78;
   let tex, flow, sh;
@@ -78,8 +78,8 @@
   }`;
 
   function preload(){
-    tex = loadImage('assets/images/entities/scene1/world.png');
-    flow = loadImage('assets/images/entities/scene1/flow.png');
+    tex = loadImage('../assets/images/entities/scene1/world.png');
+    flow = loadImage('../assets/images/entities/scene1/flow.png');
   }
   function setup(){
     const c = createCanvas(N*SP, 220, WEBGL); c.parent('holder');

@@ -19,7 +19,7 @@
   <div id="holder"></div>
   <small class="cred">Texturen: Planet Pixel Emporium / NASA (via three.js examples) — Quellenangabe noch ergaenzen.</small>
 
-  <script src="lib/p5.min.js"></script>
+  <script src="../lib/p5.min.js"></script>
   <script>
   const R = 178;
   const CLOUD_OP   = 0.50;           // Wolken-Deckkraft (premultiplied -> hoeher noetig fuer Sichtbarkeit)
@@ -123,10 +123,10 @@
   function norm3(v){ const m=Math.hypot(v[0],v[1],v[2])||1; return [v[0]/m,v[1]/m,v[2]/m]; }
 
   function preload(){
-    day    = loadImage('assets/images/entities/scene1/earth_day.jpg');
-    nmap   = loadImage('assets/images/entities/scene1/earth_normal.jpg');
-    smap   = loadImage('assets/images/entities/scene1/earth_spec.jpg');
-    night  = loadImage('assets/images/entities/scene1/earth_night.png');
+    day    = loadImage('../assets/images/entities/scene1/earth_day.jpg');
+    nmap   = loadImage('../assets/images/entities/scene1/earth_normal.jpg');
+    smap   = loadImage('../assets/images/entities/scene1/earth_spec.jpg');
+    night  = loadImage('../assets/images/entities/scene1/earth_night.png');
   }
   function setup(){
     const c = createCanvas(600, 600, WEBGL); c.parent('holder');

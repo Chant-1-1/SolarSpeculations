@@ -17,7 +17,7 @@
   <div id="fps"></div>
   <div id="holder"></div>
 
-  <script src="lib/p5.min.js"></script>
+  <script src="../lib/p5.min.js"></script>
   <script>
   const R = 150;            // Kugelradius
   const N_MAX = 2600;       // max. Sprites
@@ -97,7 +97,7 @@
     field.gid = 'cloudfield';   // einmal cachen
   }
 
-  function preload(){ tex = loadImage('assets/images/entities/scene1/world.png'); }
+  function preload(){ tex = loadImage('../assets/images/entities/scene1/world.png'); }
   function setup(){
     const c = createCanvas(560, 560, WEBGL); c.parent('holder');
     noiseSeed(7);

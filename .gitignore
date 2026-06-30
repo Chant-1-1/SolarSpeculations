@@ -17,3 +17,20 @@ desktop.ini
 # Logs & temporäre Dateien
 *.log
 *.tmp
+
+# Design-Quellen (Affinity etc., nicht ausliefern)
+_source/
+
+# Bild-Grundlagen / Arbeitsdateien (rohe Bilder + PSD/Affinity) — nur lokal, nie pushen
+/images/
+
+# Quell-Dateiformate generell nie pushen (egal wo sie liegen)
+*.psd
+*.psb
+*.af
+*.afphoto
+*.afdesign
+*.xcf
+/docs
+ANALYSE.md
+ASSETS.md

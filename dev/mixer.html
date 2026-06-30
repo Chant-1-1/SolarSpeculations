@@ -53,10 +53,10 @@
   <div class="bar"><button id="export">JSON erzeugen</button><button id="copy">kopieren</button></div>
   <textarea id="out" readonly></textarea>
 
-  <script src="lib/Tone.js"></script>
+  <script src="../lib/Tone.js"></script>
   <script>
   let SCENES = [];
-  fetch('data/scenes.json').then(r=>r.json()).then(d=>{SCENES=d.scenes.map(s=>s.id);}).catch(()=>{SCENES=['scene1','scene2','scene3'];});
+  fetch('../data/scenes.json').then(r=>r.json()).then(d=>{SCENES=d.scenes.map(s=>s.id);}).catch(()=>{SCENES=['scene1','scene2','scene3'];});
 
   let started = false;
   let master, buses;
@@ -126,7 +126,7 @@
   // ---- Laden ----
   document.getElementById('dir').addEventListener('change', e=>{
     [...e.target.files].filter(f=>/\.mp3$/i.test(f.name)).forEach(f=>{
-      const rel = f.webkitRelativePath ? f.webkitRelativePath.replace(/^[^/]+\//,'assets/sounds/').replace('assets/sounds/assets/sounds/','assets/sounds/') : f.name;
+      const rel = f.webkitRelativePath ? f.webkitRelativePath.replace(/^[^/]+\//,'../assets/sounds/').replace('../assets/sounds/assets/sounds/','../assets/sounds/') : f.name;
       addSound(rel, URL.createObjectURL(f));
     });
   });

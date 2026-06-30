@@ -22,7 +22,7 @@
     <div>2 · Volumetrisch<small>Raymarch + Hoehengradient + Selbstschatten</small></div>
   </div>
 
-  <script src="lib/p5.min.js"></script>
+  <script src="../lib/p5.min.js"></script>
   <script>
   const N = 2, SP = 320, R = 110, RO = 1.13;
   let tex, sh;
@@ -107,7 +107,7 @@
     a=-spin; c=Math.cos(a); s=Math.sin(a); L=[L[0]*c+L[2]*s, L[1], -L[0]*s+L[2]*c];
     return L;
   }
-  function preload(){ tex = loadImage('assets/images/entities/scene1/world.png'); }
+  function preload(){ tex = loadImage('../assets/images/entities/scene1/world.png'); }
   function setup(){ const c=createCanvas(N*SP, 300, WEBGL); c.parent('holder'); sh=createShader(VERT,FRAG); noStroke(); }
   function draw(){
     clear(); const gl=drawingContext; gl.enable(gl.DEPTH_TEST);

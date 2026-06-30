@@ -16,6 +16,23 @@ let nextScene = -1;       // Ziel waehrend Crossfade, sonst -1
 let sceneFade = 1;        // 0..1 Crossfade-Fortschritt zur neuen Szene
 const SCENE_FADE_SPEED = 0.6; // pro Sekunde
 
+// Zoom-Uebergang Scene 2 <-> Scene 3 (Station-Aussenansicht -> Innenraum)
+let zoomTransition = false;
+let zoomProgress = 0;
+let zoomDirection = 1;        // +1 = rein (sea->interior), -1 = raus (interior->sea)
+const ZOOM_DURATION = 2.2;    // Sekunden (laenger als normaler Crossfade)
+const ZOOM_MAX_SCALE = 8.3;   // Endvergroesserung
+const ZOOM_TARGET_X = 0.49;    // Zoom-Zentrum horizontal (Mitte)
+const ZOOM_TARGET_Y = 0.27;   // Zoom-Zentrum vertikal (Stationskuppel)
+function easeInOutCubic(t) { return t < 0.5 ? 4*t*t*t : 1 - Math.pow(-2*t + 2, 3) / 2; }
+// Quelle der Wahrheit fuer die Zoom-Transition: szenenbezogene IDs. Indizes werden in
+// buildWorld() aus diesen IDs aufgeloest -> Reihenfolge in scenes.json kann sich aendern,
+// ohne dass die Zoom-Logik (Backdrop-Skalierung, Entity-Mitskalierung, Crossfade, goToScene) bricht.
+const ZOOM_SEA_ID = 'scene2';
+const ZOOM_INTERIOR_ID = 'scene3';
+let zoomSeaIndex = -1;
+let zoomInteriorIndex = -1;
+
 let started = false;      // Audio-Geste erfolgt?
 let openEntity = null;    // aktuell geoeffnetes Inhalts-Panel
 let hoverEntity = null;
@@ -122,7 +139,7 @@ function ensureGlobeBuffer() {
 const SUN_WORLD   = [0.55, 0.30, 0.78];   // Weltrichtung zur Sonne: ueberwiegend frontal -> meist Tagseite
 const G_SUNCOL    = [1.0, 0.97, 0.90];
 const G_NIGHTCOL  = [0.04, 0.05, 0.09];   // dunkle Nachtseite (keine Stadtlichter)
-const G_ATMOCOL   = [0.42, 0.60, 0.95];   // Atmosphaeren-Blau am Rand
+const G_ATMOCOL   = [0.92, 0.86, 0.72];   // Atmosphaeren-Rand: warmer Smog-Gold-Ton (passt zum 2D-Halo + Szene 2)
 const G_RELIEF    = 0.85;
 const G_GLOSS     = 240.0;                 // enger Glanz
 const G_SPECGAIN  = 0.0;                   // Sonnen-Hotspot AUS
@@ -242,6 +259,9 @@ async function buildWorld() {
     const bg = await tryLoadImage(sc.background);
     scenes.push({ ...sc, bg });
   }
+  // Zoom-Transition: Indizes aus den IDs aufloesen (Reihenfolge-unabhaengig)
+  zoomSeaIndex = scenes.findIndex(s => s.id === ZOOM_SEA_ID);
+  zoomInteriorIndex = scenes.findIndex(s => s.id === ZOOM_INTERIOR_ID);
   // Entities
   allEntities = [];
   for (const def of entitiesData.entities) {
@@ -329,11 +349,9 @@ class Entity {
       this.baseVel = def.globe.baseVel != null ? def.globe.baseVel : 0.3;  // rad/s Normaltempo
       this.tilt = def.globe.tilt != null ? def.globe.tilt : 0.35;
       this.baseTilt = this.tilt;   // Ausgangs-Neigung, zu der der Pitch zurueckschwingt
-      this.cloudVel = def.globe.cloudDrift != null ? def.globe.cloudDrift : 0.05;  // Wolken-Eigendrift
       this.spinAngle = 0;
       this.spinVel = this.baseVel;
       this.tiltVel = 0;            // Pitch-Schwung (Hoch/Runter-Drehung)
-      this.cloudDrift = 0;
     }
     this.path = def.path || [{ x: 0.5, y: 0.5 }];
     this.loop = def.loop || 'loop';
@@ -417,7 +435,6 @@ class Entity {
         this.tiltVel *= Math.max(0, 1 - 4.5 * dt);
         this.tilt += this.tiltVel * dt;
       }
-      this.cloudDrift += this.cloudVel * dt;   // Wolken ziehen immer (auch im Stillstand)
     }
 
     const target = this.highlight > 0 && openEntity === this ? 1 : 0;
@@ -472,12 +489,14 @@ class Entity {
     if (this.isGlobe && this.tex && globeBuf) {
       drawGlobe(this);
       const ctx = drawingContext, r = sz * (globeProjFrac || GLOBE_R_FRAC);
-      // weicher Atmosphaeren-Halo (ragt ueber den Kugelrand hinaus, hinter der Kugel)
-      let halo = ctx.createRadialGradient(0, 0, r * 0.82, 0, 0, r * 1.35);
-      halo.addColorStop(0, 'rgba(130,175,235,0)');
-      halo.addColorStop(0.42, `rgba(130,175,235,${0.25 * alpha})`);
-      halo.addColorStop(1, 'rgba(130,175,235,0)');
-      ctx.fillStyle = halo; ctx.fillRect(-r * 1.5, -r * 1.5, r * 3, r * 3);
+      // weicher Atmosphaeren-Halo (ragt ueber den Kugelrand hinaus, hinter der Kugel).
+      // Schmaler/enger an den Rand gezogen (nur noch ~halbe Aussenreichweite) und im warmen
+      // Smog-Goldton aus Szene 2 (#ecdcb8) -> koppelt Szene 1 farblich an die Stationskulisse.
+      let halo = ctx.createRadialGradient(0, 0, r * 0.90, 0, 0, r * 1.17);
+      halo.addColorStop(0, 'rgba(236,220,184,0)');
+      halo.addColorStop(0.45, `rgba(236,220,184,${0.25 * alpha})`);
+      halo.addColorStop(1, 'rgba(236,220,184,0)');
+      ctx.fillStyle = halo; ctx.fillRect(-r * 1.3, -r * 1.3, r * 2.6, r * 2.6);
       // Kugel-Bild
       imageMode(CENTER);
       tint(255, 255 * alpha);
@@ -686,9 +705,14 @@ function currentSceneAlphaFor(ent) {
   const curId = scenes[currentScene]?.id;
   const nxtId = nextScene >= 0 ? scenes[nextScene]?.id : null;
   if (ent.def.scene === curId && ent.def.scene === nxtId) return 1;
-  if (ent.def.scene === curId) return 1 - sceneFadeT();
-  if (ent.def.scene === nxtId) return sceneFadeT();
-  return 0;
+  let alpha;
+  if (ent.def.scene === curId) alpha = 1 - sceneFadeT();
+  else if (ent.def.scene === nxtId) alpha = sceneFadeT();
+  else return 0;
+  if (zoomTransition && ent.def.scene === ZOOM_SEA_ID && !ent.def.zoomAnchor) {
+    alpha *= 1 - Math.max(0, Math.min(1, (zoomProgress - 0.15) / 0.35));
+  }
+  return alpha;
 }
 function sceneFadeT() { return nextScene >= 0 ? sceneFade : 0; }
 
@@ -779,7 +803,6 @@ try {
   PERF_FLAT = /[?&]flat\b/.test(location.search);
   PERF_NOFAUNA = /[?&]nofauna\b/.test(location.search);
   if (/[?&]nosnow\b/.test(location.search)) SNOW_AMOUNT = 0;       // Snow zum Vergleich aus
-  if (/[?&]caustics\b/.test(location.search)) CAUSTICS_AMOUNT = 1; // Kaustik zum Vergleich an
 } catch (e) { /* kein location */ }
 let perfFpsEMA = 60;
 function chooseDensity() {
@@ -853,6 +876,14 @@ let waterReduceMotion = false; // prefers-reduced-motion -> Fallback (Ruhe statt
 let waterProbed = false;       // einmalige Sicht-Pruefung nach dem ersten Render (faengt stillen Compile-Fehler)
 const WATER_RENDER_SCALE = 0.5;// halbe Aufloesung -> ein Fragment-Pass, dann hochskaliert (60fps)
 const WATER_MAX = 860;         // Deckel fuer die laengste Buffer-Kante
+// ----- SONNEN-SHADER (Scene 1): eigener kleiner, QUADRATISCHER WebGL-Buffer (fixe Aufloesung) -----
+// Die Sonne lebt im lokalen UV-Raum dieses Buffers (Scheibe + Protuberanzen + Korona); die Orbit-
+// Position bleibt 2D und wird per ADD-Blit gesetzt. Faellt wie Wasser/Solar auf 2D zurueck.
+let sunBuf = null;
+let sunShader = null;
+let sunShaderFailed = false;   // Shader nicht nutzbar -> dauerhaft 2D-Fallback drawSunFallback()
+let sunProbed = false;         // einmalige Sicht-Pruefung nach dem ersten Render
+const SUN_BUF = 512;           // feste Kantenlaenge (auflösungsunabhaengig, beim Blit skaliert)
 const WATER_LIGHTDIR = [0.18, 1.0];       // Richtung ZUM Licht (uv-Raum, leicht rechts wie die Scene-1-Sonne)
 const WATER_LIGHTCOL = [1.0, 0.95, 0.82]; // warm-weiss/gold (gefilterte Sonne durch den Smog)
 
@@ -866,8 +897,6 @@ let solarShader = null;
 let solarShaderFailed = false;     // Shader nicht nutzbar -> dauerhaft 2D-Fallback
 let solarProbed = false;           // einmalige Sicht-Pruefung nach erstem Render
 let solarStaticBuf = null;         // gecachter statischer 2D-Verlauf (Fallback): Kuppel + Kegel + Pool
-let solarPoolTopY = 0;             // Pixel-Y der Wasserkante im Fallback-Buffer
-let solarOc = { x: 0, y: 0 };      // Oculus-Position im Fallback-Buffer (px)
 const SOLAR_POOL_Y = 0.20;         // Wasserflaeche als Anteil von UNTEN (untere 20%)
 const SOLAR_LIGHTCOL = [1.0, 0.97, 0.88]; // warm-weiss/gold (gefiltertes Oculus-Licht)
 
@@ -1084,6 +1113,16 @@ function drawCaustics(w, wl, h, t, alpha) {
   }
 }
 
+// Hilfsfunktion: gecachten/gerenderten Buffer bildschirmfuellend (CORNER) mit Alpha blitten.
+// Gekapselt mit push/pop, damit tint/imageMode den umliegenden p5-State nicht beeinflussen.
+function blitBufferFull(buf, alpha) {
+  push();
+  imageMode(CORNER);
+  tint(255, 255 * alpha);
+  image(buf, 0, 0, width, height);
+  pop();
+}
+
 // kompletter Unterwasser-Backdrop bei gegebenem Alpha (0..1) -> deckend bei 1, ausblendbar fuer Crossfade
 function drawUnderwater(alpha = 1) {
   if (!underwaterBuf) buildUnderwater();
@@ -1091,14 +1130,11 @@ function drawUnderwater(alpha = 1) {
   const w = width, h = height, wl = h * WATERLINE_FRAC;
   const t = millis() / 1000, dt = Math.min(0.05, deltaTime / 1000);
 
-  push();
   // statischer Verlauf (deckend bei alpha=1) als Basis
-  imageMode(CORNER);
-  tint(255, 255 * alpha);
-  image(underwaterBuf, 0, 0, w, h);
-  noTint();
+  blitBufferFull(underwaterBuf, alpha);
 
   // lebendige Schichten additiv darueber
+  push();
   blendMode(ADD);
   noStroke();
   // Gottesstrahlen: wenige weiche Kegel von der Oberflaeche, langsam wandernd + sanft pulsierend
@@ -1148,18 +1184,10 @@ attribute vec3 aPosition;
 uniform mat4 uModelViewMatrix, uProjectionMatrix;
 void main(){ gl_Position = uProjectionMatrix * uModelViewMatrix * vec4(aPosition, 1.0); }`;
 
-// Fragment: rechnet pro Pixel ueber gl_FragCoord/uResolution (kein TexCoord noetig).
-const WATER_FRAG = `
-precision highp float;
-uniform float uTime;
-uniform vec2  uResolution;
-uniform float uWaterlineY;   // Wasserlinie als Anteil von OBEN (0=oben .. 1=unten), ~0.30
-uniform vec2  uLightDir;     // Richtung ZUM Licht (uv-Raum, y nach oben)
-uniform vec3  uLightColor;   // warm-weiss/gold (gefilterte Sonne)
-uniform float uSnow;         // Marine-Snow-Staerke (0 = aus)
-uniform float uCaustics;     // Kaustik-Staerke (0 = aus)
-
-// ---------- Noise-Bausteine (Value-Noise + fbm, GLSL-ES-1.00 tauglich) ----------
+// Geteilter GLSL-Noise-Block fuer WATER_FRAG + SOLAR_FRAG: hash21 / vnoise / fbm / worley.
+// Numerisch identisch in beiden Shadern -> hier einmal definiert, per String-Konkatenation
+// in beide Fragmente eingebaut. GLSL-ES-1.00 tauglich (eigenstaendig, keine externen Includes).
+const GLSL_NOISE = `
 float hash21(vec2 p){
   p = fract(p * vec2(123.34, 345.45));
   p += dot(p, p + 34.345);
@@ -1176,7 +1204,32 @@ float fbm(vec2 p){
   for(int i=0;i<4;i++){ v += a*vnoise(p); p = p*2.0 + vec2(1.7,9.2); a*=0.5; }
   return v;
 }
+float worley(vec2 p, float t){
+  vec2 ip=floor(p), fp=fract(p);
+  float md=1.0;
+  for(int j=-1;j<=1;j++)
+  for(int i=-1;i<=1;i++){
+    vec2 g=vec2(float(i),float(j));
+    vec2 o=vec2(hash21(ip+g), hash21(ip+g+19.19));
+    o = 0.5 + 0.5*sin(t + 6.2831*o);                   // Zellpunkte wandern (Animation)
+    md = min(md, length(g+o-fp));
+  }
+  return md;
+}
+`;
 
+// Fragment: rechnet pro Pixel ueber gl_FragCoord/uResolution (kein TexCoord noetig).
+// Header (uniforms) + GLSL_NOISE + szenenspezifische Funktionen + main.
+const WATER_FRAG = `
+precision highp float;
+uniform float uTime;
+uniform vec2  uResolution;
+uniform float uWaterlineY;   // Wasserlinie als Anteil von OBEN (0=oben .. 1=unten), ~0.30
+uniform vec2  uLightDir;     // Richtung ZUM Licht (uv-Raum, y nach oben)
+uniform vec3  uLightColor;   // warm-weiss/gold (gefilterte Sonne)
+uniform float uSnow;         // Marine-Snow-Staerke (0 = aus)
+uniform float uCaustics;     // Kaustik-Staerke (0 = aus)
+` + GLSL_NOISE + `
 // ---------- Oberflaeche: exp(sin)-Wellen (Technik: "Seascape", TDM / Ms2SD1) ----------
 // Edge-on (1D): Summe weniger exp(sin)-Terme schaerft die Kaemme; leicht rauschmoduliert
 // gegen Periodizitaet. Liefert die animierte Hoehe der Wasserlinie an Spalte x.
@@ -1193,19 +1246,7 @@ float waveHeight(float x, float t){
 }
 
 // ---------- Kaustik: animiertes Worley (Technik: "Caustic Study #02: Pool" / tX3BWl) ----------
-// Voronoi-Zellen mit wandernden Punkten; helle duenne Kanten -> tanzendes Geflecht.
-float worley(vec2 p, float t){
-  vec2 ip=floor(p), fp=fract(p);
-  float md=1.0;
-  for(int j=-1;j<=1;j++)
-  for(int i=-1;i<=1;i++){
-    vec2 g=vec2(float(i),float(j));
-    vec2 o=vec2(hash21(ip+g), hash21(ip+g+19.19));
-    o = 0.5 + 0.5*sin(t + 6.2831*o);                   // Zellpunkte wandern (Animation)
-    md = min(md, length(g+o-fp));
-  }
-  return md;
-}
+// worley() kommt aus GLSL_NOISE (oben einmal definiert).
 float caustics(vec2 uv, float t){
   // 3 gestaffelte Lagen fuer Tiefen-/3D-Effekt: tiefere Lagen WENIGER Punkte UND durchsichtiger,
   // jede mit eigener Scroll-Geschwindigkeit (Parallaxe). Punktanzahl ~ Zellskala^2.
@@ -1280,11 +1321,11 @@ void main(){
   if(d < aa){
     // God Rays: mit der Tiefe ausblendend, additiv warm
     float gr = godrays(ruv, normalize(uLightDir), t);
-    float grFade = 1.0 - smoothstep(0.0, 0.28, depth);   // ~1/3 so lang (frueher bis 0.85)
+    float grFade = 1.0 - smoothstep(0.0, 0.05,depth);   // ~1/3 so lang (frueher bis 0.85)
     col += uLightColor * gr * grFade * 0.5 * below;
     // Kaustik: am staerksten direkt unter der Oberflaeche, mit Tiefe schwaecher
     float ca = (uCaustics > 0.0) ? caustics(ruv * vec2(aspect, 1.0) * 3.0, t) : 0.0;
-    float caFade = 1.0 - smoothstep(0.0, 0.6, depth);
+    float caFade = 1.0 - smoothstep(0.0, 0.1, depth);
     col += uLightColor * ca * caFade * 0.35 * below * uCaustics;
     // Marine Snow: SEHR WENIGE, langsam sinkende, feine Specks (additiv). Schwelle 0.99 statt
     // 0.965 + groebere Kachelung -> ~25% der bisherigen Dichte (auf Nutzerwunsch: viel weniger
@@ -1375,11 +1416,7 @@ function drawWater(alpha = 1) {
     drawUnderwater(alpha);
     return;
   }
-  push();
-  imageMode(CORNER);
-  tint(255, 255 * alpha);
-  image(waterBuf, 0, 0, width, height);                 // reduzierte Aufloesung hochskaliert
-  pop();
+  blitBufferFull(waterBuf, alpha);                       // reduzierte Aufloesung hochskaliert
 }
 
 // =========================================================================
@@ -1393,25 +1430,7 @@ uniform float uTime;
 uniform vec2  uResolution;
 uniform float uPoolY;       // Wasserflaeche als Anteil von UNTEN (~0.20)
 uniform vec3  uLightColor;  // warm-weiss/gold (Oculus-Licht)
-
-// ---------- Noise-Bausteine (wie WATER_FRAG, eigenes Programm -> hier erneut) ----------
-float hash21(vec2 p){ p=fract(p*vec2(123.34,345.45)); p+=dot(p,p+34.345); return fract(p.x*p.y); }
-float vnoise(vec2 p){
-  vec2 i=floor(p), f=fract(p); vec2 u=f*f*(3.0-2.0*f);
-  float a=hash21(i), b=hash21(i+vec2(1.,0.)), c=hash21(i+vec2(0.,1.)), d=hash21(i+vec2(1.,1.));
-  return mix(mix(a,b,u.x), mix(c,d,u.x), u.y);
-}
-float fbm(vec2 p){ float v=0.,a=0.5; for(int i=0;i<4;i++){ v+=a*vnoise(p); p=p*2.0+vec2(1.7,9.2); a*=0.5; } return v; }
-float worley(vec2 p, float t){
-  vec2 ip=floor(p), fp=fract(p); float md=1.0;
-  for(int j=-1;j<=1;j++) for(int i=-1;i<=1;i++){
-    vec2 g=vec2(float(i),float(j));
-    vec2 o=vec2(hash21(ip+g), hash21(ip+g+19.19));
-    o=0.5+0.5*sin(t+6.2831*o);                  // wandernde Zellpunkte (Animation)
-    md=min(md, length(g+o-fp));
-  }
-  return md;
-}
+` + GLSL_NOISE + `
 // weiche, BREITE Rippel-Baender (niedriger Exponent) -> ruhige Decken-Reflexion, nicht punktig
 float ripple(vec2 uv, float t){
   float w1=worley(uv*3.00 + vec2( t*0.10, t*0.05),       t*0.5);
@@ -1491,6 +1510,85 @@ void main(){
   gl_FragColor = vec4(col, 1.0);
 }`;
 
+// =========================================================================
+//  SONNEN-SHADER (Scene 1) — lebendiger Stern statt statischer Verlauf.
+//  Realismus-Technik wie das Meer: geteilter GLSL_NOISE (fbm/worley) + domain warping.
+//  Bausteine: Randverdunkelung (limb darkening), Granulation (Konvektionszellen),
+//  turbulente Protuberanzen am Rand, rauschdurchzogene Korona. OPAKE Ausgabe auf
+//  Schwarz -> wird additiv (ADD) an die Orbit-Position geblittet. uHeat/uIntensity
+//  kommen aus dem CPU-Flackern (bleibt erhalten).
+// =========================================================================
+const SUN_FRAG = `
+precision highp float;
+uniform float uTime;
+uniform vec2  uResolution;
+uniform float uHeat;        // 0..1: Rotverschiebung gold -> rot-orange (atmet mit dem Flackern)
+uniform float uIntensity;   // Helligkeits-Pumpen (Flackern)
+` + GLSL_NOISE + `
+void main(){
+  vec2 uv = gl_FragCoord.xy / uResolution;
+  vec2 p  = uv - 0.5;                       // zentriert, Scheibe in der Mitte
+  float r = length(p);
+  float ang = atan(p.y, p.x);
+  float t = uTime;
+
+  const float RD = 0.165;                   // Scheibenradius in UV
+
+  // organische Verformung (domain warping) fuer Granulation + Protuberanzen
+  vec2 warp = vec2(fbm(p*6.0 + t*0.04), fbm(p*6.0 + 5.2 - t*0.05));
+
+  // ----- Oberflaeche: Granulation (Konvektionszellen) + Randverdunkelung -----
+  float gran  = fbm(p*15.0 + warp*1.4 + t*0.03);
+  float cells = worley(p*11.0 + warp*0.8, t*0.18);         // grosse Zellen, langsam wabernd
+  float mu    = sqrt(max(0.0, 1.0 - (r*r)/(RD*RD)));       // cos(Blickwinkel) -> limb darkening
+  float limb  = 0.30 + 0.70*mu;
+  float surf  = limb * (0.78 + 0.40*gran) * (0.72 + 0.45*(1.0 - cells));
+  float disk  = smoothstep(RD, RD - 0.012, r);             // weiche Scheibenkante
+
+  // ----- Hitze-Farbe: gold -> aggressives Rot-Orange (Flackern + Granulationstiefe) -----
+  vec3 hot   = vec3(1.0, 0.42, 0.12);
+  vec3 gold  = vec3(1.0, 0.83, 0.42);
+  vec3 white = vec3(1.0, 0.96, 0.86);
+  vec3 base    = mix(gold, hot, clamp(uHeat*0.55 + (1.0 - gran)*0.35, 0.0, 1.0));
+  vec3 diskCol = mix(base, white, smoothstep(0.75, 1.25, surf)) * surf * uIntensity;
+  vec3 col = diskCol * disk;
+
+  // ----- Protuberanzen/Flares: turbulente Zungen knapp ueber dem Rand -----
+  float fl = fbm(vec2(ang*2.2, r*7.0 - t*0.5) + warp*2.2);
+  fl = pow(max(0.0, fl), 1.6);
+  float promOuter = RD + 0.075 * fl;                       // Reichweite der Zunge nach aussen
+  float prom = smoothstep(promOuter, RD - 0.01, r);        // 1 am Rand .. 0 aussen
+  prom *= (1.0 - disk) * fl;                               // nur ausserhalb der Scheibe
+  col += hot * prom * (0.9 + 0.7*uHeat) * uIntensity;
+
+  // ----- Korona: weicher Aussen-Glow mit wandernden Straehnen -----
+  float corona = clamp(exp(-(r - RD) * 6.5), 0.0, 1.0) * (1.0 - disk);
+  float streak = 0.55 + 0.70*fbm(vec2(ang*3.0, r*3.5 - t*0.25));
+  col += mix(hot, gold, 0.5) * corona * streak * (0.45 + 0.40*uIntensity);
+
+  // kreisfoermige Randmaske: garantiert Schwarz VOR der quadratischen Buffer-Kante (r=0.5),
+  // sonst wuerde der additive Blit einen sichtbaren rechteckigen Glow-Rand zeigen.
+  col *= smoothstep(0.5, 0.34, r);
+
+  gl_FragColor = vec4(col, 1.0);                           // opak auf Schwarz -> additiv geblittet
+}`;
+
+// kleinen quadratischen WebGL-Buffer + Sonnen-Shader anlegen. Bei Fehler -> 2D-Fallback.
+function ensureSunBuffer() {
+  if (waterReduceMotion || sunShaderFailed || sunBuf) return;
+  try {
+    const buf = createGraphics(SUN_BUF, SUN_BUF, WEBGL);
+    buf.pixelDensity(1);                                   // feste Aufloesung (kein Retina-Doppeln)
+    const sh = buf.createShader(WATER_VERT, SUN_FRAG);     // generischer Vollbild-Vertex (wie Wasser)
+    sunBuf = buf; sunShader = sh; sunProbed = false;
+  } catch (e) {
+    console.warn('Sonnen-Shader nicht verfuegbar -> 2D-Fallback drawSunFallback()', e);
+    sunShaderFailed = true;
+    if (sunBuf) { sunBuf.remove(); sunBuf = null; }
+    sunShader = null;
+  }
+}
+
 // eigenen WebGL-Buffer + Shader anlegen (reduzierte Aufloesung). Bei Fehler -> 2D-Fallback.
 function ensureSolarBuffer() {
   if (waterReduceMotion || solarShaderFailed || solarBuf) return;
@@ -1542,11 +1640,7 @@ function drawSolarSpace(alpha = 1) {
     drawSolarSpaceFallback(alpha);
     return;
   }
-  push();
-  imageMode(CORNER);
-  tint(255, 255 * alpha);
-  image(solarBuf, 0, 0, width, height);
-  pop();
+  blitBufferFull(solarBuf, alpha);
 }
 
 // ----- 2D-Fallback (reduced-motion / Shader-Fehler): gecachte statische Kuppel + Pool + Kegel,
@@ -1584,15 +1678,13 @@ function buildSolarStatic() {
   let foot = ctx.createRadialGradient(ocx, poolTopY, 0, ocx, poolTopY, w * 0.24);
   foot.addColorStop(0, 'rgba(255,250,232,0.6)'); foot.addColorStop(1, 'rgba(255,250,232,0)');
   ctx.fillStyle = foot; ctx.fillRect(0, poolTopY, w, h - poolTopY);
-  solarStaticBuf = g; solarPoolTopY = poolTopY; solarOc = { x: ocx, y: ocy };
+  solarStaticBuf = g;
 }
 function drawSolarSpaceFallback(alpha = 1) {
   if (!solarStaticBuf) buildSolarStatic();
-  push();
-  imageMode(CORNER); tint(255, 255 * alpha); noStroke();
-  image(solarStaticBuf, 0, 0, width, height);
-  noTint();
+  blitBufferFull(solarStaticBuf, alpha);
   // ruhige, langsame Decken-Reflexion: ein paar breite, wandernde Lichtbaender knapp ueber dem Wasser
+  push();
   const t = millis() * 0.0004;
   const poolTopPx = height * (1 - SOLAR_POOL_Y);
   blendMode(ADD); noStroke();
@@ -1815,14 +1907,19 @@ function drawIslandPlaceholder(sz, top, alpha) {
 }
 
 // --- Sonne + Mond umkreisen die Erde (Bildmitte). Erd-Beleuchtung folgt der Sonne (currentSunWorld). ---
-const SUN_ORBIT_SPEED = 0.03, MOON_ORBIT_SPEED = 0.10;   // rad/s (Sonne langsam, Mond sichtbar kreisend)
+const SUN_ORBIT_SPEED = 0.06, MOON_ORBIT_SPEED = 0.13;   // rad/s (Sonne langsam, Mond sichtbar kreisend)
 const SUN_ORBIT_R = 0.42, MOON_ORBIT_R = 0.30;           // Orbit-Radius * min(w,h)
 const SUN_START = 0.5;                                    // Start-Winkel (~ oben-rechts wie zuvor)
 const SUN_KXY = 0.6, SUN_KZ = 0.78;                       // seitlicher vs. frontaler Lichtanteil (KZ hoch -> meist Tag)
 
+// Orbit-Winkel der Sonne in Radiant (zeitabhaengig). Quelle der Wahrheit fuer alle Stellen,
+// die "wo steht die Sonne gerade?" wissen muessen (Erd-Beleuchtung + Sichtbare Sonnenposition).
+function sunOrbitAngle() {
+  return millis() / 1000 * SUN_ORBIT_SPEED + SUN_START;
+}
 // Weltrichtung zur Sonne aus dem Orbit-Winkel; +y_SUN = oben (empirisch), passt zur sichtbaren Sonnenposition
 function currentSunWorld() {
-  const a = millis() / 1000 * SUN_ORBIT_SPEED + SUN_START;
+  const a = sunOrbitAngle();
   return norm3([Math.cos(a) * SUN_KXY, -Math.sin(a) * SUN_KXY, SUN_KZ]);   // -sin: Erdlicht oben, wenn Sonne oben
 }
 
@@ -1833,7 +1930,7 @@ function drawSunMoon(alpha = 1) {
   const ctx = drawingContext, prevGA = ctx.globalAlpha;
   ctx.globalAlpha = alpha;
   const mm = Math.min(width, height), cx = width / 2, cy = height / 2;
-  const sa = millis() / 1000 * SUN_ORBIT_SPEED + SUN_START;
+  const sa = sunOrbitAngle();
   const ma = millis() / 1000 * MOON_ORBIT_SPEED;
   const sx = cx + Math.cos(sa) * SUN_ORBIT_R * mm, sy = cy - Math.sin(sa) * SUN_ORBIT_R * mm; // sin>0 -> oben
   const mx = cx + Math.cos(ma) * MOON_ORBIT_R * mm, my = cy - Math.sin(ma) * MOON_ORBIT_R * mm;
@@ -1843,22 +1940,145 @@ function drawSunMoon(alpha = 1) {
   ctx.globalAlpha = prevGA;
 }
 
+// Sonnensturm-Auswurf: kleine gluehende Partikel, die unregelmaessig vom Rand abgestossen werden.
+// Wird in drawSun() (einmal pro Frame, wenn Szene 1 sichtbar) fortgeschrieben + gezeichnet.
+let sunEjecta = [];
+// lineare Farbmischung zweier RGB-Tripel (k=0..1)
+function mixRGB(a, b, k) {
+  return [Math.round(a[0] + (b[0] - a[0]) * k),
+          Math.round(a[1] + (b[1] - a[1]) * k),
+          Math.round(a[2] + (b[2] - a[2]) * k)];
+}
+
+// Multi-Frequenz-Flackern (0..1) -> treibt sowohl Shader (uHeat/uIntensity) als auch 2D-Fallback.
+// Unregelmaessig durch ueberlagerte Sinus-Frequenzen, kein gleichmaessiges Pulsen.
+function sunFlicker(t) {
+  let f = 0.45 * Math.sin(t * 7.3) + 0.30 * Math.sin(t * 13.7 + 1.3)
+        + 0.15 * Math.sin(t * 23.1 + 2.7) + 0.10 * Math.sin(t * 3.1);
+  return 0.5 + 0.5 * f;   // 0..1, betont
+}
+
+// Sonne: WebGL-Shader-Pfad (lebendiger Stern). Faellt auf das 2D-drawSunFallback() zurueck bei
+// reduced-motion, createShader-Fehler oder leerem ersten Render. Flackern bleibt CPU-seitig und
+// geht als uHeat/uIntensity in den Shader (das Pumpen bleibt damit erhalten).
 function drawSun(x, y, r) {
+  if (waterReduceMotion || sunShaderFailed || PERF_FLAT) { drawSunFallback(x, y, r); return; }
+  ensureSunBuffer();
+  if (!sunBuf || !sunShader) { drawSunFallback(x, y, r); return; }
+  const t = millis() / 1000;
+  const flick = sunFlicker(t);
+  const heat = 0.45 + 0.45 * flick;        // Rotverschiebung atmet mit
+  const intensity = 0.85 + 0.40 * flick;   // Helligkeit pumpt
+  try {
+    const g = sunBuf;
+    g.clear();
+    g.noStroke();
+    g.shader(sunShader);
+    sunShader.setUniform('uTime', t);
+    sunShader.setUniform('uResolution', [g.width, g.height]);
+    sunShader.setUniform('uHeat', heat);
+    sunShader.setUniform('uIntensity', intensity);
+    g.plane(g.width + 2, g.height + 2);                  // Vollbild-Quad (kleiner Overscan gegen Randnaht)
+    g.resetShader();
+    // einmalige Sicht-Pruefung: rendert der Shader nichts (stiller Compile-Fehler) -> Fallback.
+    // Mitte = heller Scheibenkern -> pruefe RGB-Summe (alpha ist konstant opak).
+    if (!sunProbed) {
+      sunProbed = true;
+      const px = g.get(g.width >> 1, g.height >> 1);
+      if (!px || (px[0] + px[1] + px[2]) < 8) throw new Error('leerer Sun-Render (vermutlich Shader-Compile-Fehler)');
+    }
+  } catch (e) {
+    console.warn('Sonnen-Shader Render fehlgeschlagen -> 2D-Fallback drawSunFallback()', e);
+    sunShaderFailed = true;
+    if (sunBuf) { sunBuf.remove(); sunBuf = null; }
+    sunShader = null;
+    drawSunFallback(x, y, r);
+    return;
+  }
+  // additiv an die Orbit-Position blitten; Buffer deckt Scheibe + Protuberanzen + Korona.
+  // D = Blit-Durchmesser ~ Korona-Reichweite (Scheibenradius RD=0.165 -> Kern ~ r auf dem Schirm).
+  push();
+  blendMode(ADD);
+  imageMode(CENTER);
+  const D = r * 11;
+  image(sunBuf, x, y, D, D);
+  pop();
+}
+
+// 2D-Fallback (reduced-motion / Shader-Fehler): der prozedurale Sonnensturm auf Canvas-Basis.
+function drawSunFallback(x, y, r) {
   const ctx = drawingContext;
+  const t = millis() / 1000;
+  const dt = Math.min(0.05, deltaTime / 1000);
+
+  // unregelmaessiges Flackern (geteilt mit dem Shader-Pfad)
+  const flick = sunFlicker(t);
+  const intensity = 0.78 + 0.55 * flick;              // Glow-Helligkeit pumpt
+  const heat = 0.45 + 0.45 * flick;                   // 0=gold .. 1=aggressiv rot-orange (atmet mit)
+
+  // Farbpole: ruhiges Gold -> heisses Rot-Orange; mit dem Flackern dazwischen geblendet
+  const goldGlow = [255, 222, 150], hotGlow = [255, 96, 44];
+  const goldCore = [255, 252, 240], hotCore = [255, 188, 120];
+  const cGlow = mixRGB(goldGlow, hotGlow, heat);
+  const cCore = mixRGB(goldCore, hotCore, heat);
+
   push(); noStroke();
-  blendMode(ADD);                                   // glueht auf dem dunklen Weltraum
-  let glow = ctx.createRadialGradient(x, y, 0, x, y, r * 7);
-  glow.addColorStop(0.0, 'rgba(255,246,214,0.85)');
-  glow.addColorStop(0.10, 'rgba(255,232,168,0.45)');
-  glow.addColorStop(0.35, 'rgba(255,205,120,0.12)');
-  glow.addColorStop(1.0, 'rgba(255,190,100,0)');
-  ctx.fillStyle = glow; ctx.fillRect(x - r * 7, y - r * 7, r * 14, r * 14);
+  blendMode(ADD);                                     // glueht auf dem dunklen Weltraum
+  const GR = r * 7;
+  let glow = ctx.createRadialGradient(x, y, 0, x, y, GR);
+  glow.addColorStop(0.0, `rgba(${cGlow[0]},${cGlow[1]},${cGlow[2]},${0.85 * intensity})`);
+  glow.addColorStop(0.10, `rgba(${cGlow[0]},${cGlow[1]},${cGlow[2]},${0.45 * intensity})`);
+  glow.addColorStop(0.35, `rgba(${cGlow[0]},${Math.round(cGlow[1] * 0.82)},${cGlow[2]},${0.12 * intensity})`);
+  glow.addColorStop(1.0, `rgba(${cGlow[0]},${cGlow[1]},${cGlow[2]},0)`);
+  ctx.fillStyle = glow; ctx.fillRect(x - GR, y - GR, GR * 2, GR * 2);
+
+  // --- Flares/Protuberanzen: schmale radiale Zungen am Rand, langsam rotierend, variabel ---
+  const nF = 5;
+  for (let i = 0; i < nF; i++) {
+    const baseA = t * 0.25 + i * TWO_PI / nF;         // langsame Rotation
+    const wob = 0.5 + 0.5 * Math.sin(t * 1.7 + i * 2.1);
+    const len = r * (1.5 + 1.1 * wob) * (0.7 + 0.5 * flick);          // Laenge variiert + flackert
+    const aw = 0.10 + 0.05 * Math.sin(t * 2.3 + i);   // halbe Winkelbreite an der Basis
+    const bright = (0.16 + 0.20 * (0.5 + 0.5 * Math.sin(t * 3.1 + i * 1.9))) * intensity;
+    const ex = x + Math.cos(baseA) * len, ey = y + Math.sin(baseA) * len;
+    let fg = ctx.createLinearGradient(x, y, ex, ey);
+    fg.addColorStop(0, `rgba(${cGlow[0]},${cGlow[1]},${cGlow[2]},${bright})`);
+    fg.addColorStop(0.5, `rgba(${hotGlow[0]},${hotGlow[1]},${hotGlow[2]},${bright * 0.5})`);
+    fg.addColorStop(1, `rgba(${hotGlow[0]},${hotGlow[1]},${hotGlow[2]},0)`);
+    ctx.fillStyle = fg;
+    ctx.beginPath();
+    ctx.moveTo(x + Math.cos(baseA - aw) * r * 0.92, y + Math.sin(baseA - aw) * r * 0.92);
+    ctx.lineTo(ex, ey);
+    ctx.lineTo(x + Math.cos(baseA + aw) * r * 0.92, y + Math.sin(baseA + aw) * r * 0.92);
+    ctx.closePath(); ctx.fill();
+  }
+
+  // --- Partikelauswurf: unregelmaessig neue Partikel (mehr bei hohem Flackern), driften + faden ---
+  if (Math.random() < 0.22 + 0.45 * flick && sunEjecta.length < 40) {
+    const a = Math.random() * TWO_PI;
+    const spd = r * (1.4 + Math.random() * 2.6);
+    sunEjecta.push({ x: x + Math.cos(a) * r * 0.95, y: y + Math.sin(a) * r * 0.95,
+                     vx: Math.cos(a) * spd, vy: Math.sin(a) * spd,
+                     life: 0.6 + Math.random() * 0.9, age: 0, sz: r * (0.05 + Math.random() * 0.10) });
+  }
+  for (let k = sunEjecta.length - 1; k >= 0; k--) {
+    const p = sunEjecta[k];
+    p.age += dt;
+    if (p.age >= p.life) { sunEjecta.splice(k, 1); continue; }
+    p.x += p.vx * dt; p.y += p.vy * dt;
+    p.vx *= (1 - 1.6 * dt); p.vy *= (1 - 1.6 * dt);   // nach aussen abbremsen
+    const lf = 1 - p.age / p.life;                    // 1..0 Restleben
+    ctx.fillStyle = `rgba(${hotGlow[0]},${Math.round(110 + 110 * lf)},${hotGlow[2]},${0.5 * lf * intensity})`;
+    ctx.beginPath(); ctx.arc(p.x, p.y, p.sz * (0.5 + lf), 0, TWO_PI); ctx.fill();
+  }
+
   blendMode(BLEND);
+  // --- Kern (rot-verschoben, leicht atmend) ---
   let core = ctx.createRadialGradient(x, y, 0, x, y, r);
-  core.addColorStop(0, 'rgba(255,255,252,1)');
-  core.addColorStop(0.65, 'rgba(255,247,220,1)');
-  core.addColorStop(1, 'rgba(255,236,190,0.95)');
-  ctx.fillStyle = core; ctx.beginPath(); ctx.arc(x, y, r, 0, TWO_PI); ctx.fill();
+  core.addColorStop(0, `rgba(${cCore[0]},${cCore[1]},${cCore[2]},1)`);
+  core.addColorStop(0.65, `rgba(${cCore[0]},${Math.round(cCore[1] * 0.93)},${Math.round(cCore[2] * 0.82)},1)`);
+  core.addColorStop(1, `rgba(${hotCore[0]},${Math.round(hotCore[1] * 0.82)},${Math.round(hotCore[2] * 0.7)},0.95)`);
+  ctx.fillStyle = core; ctx.beginPath(); ctx.arc(x, y, r * (1 + 0.04 * flick), 0, TWO_PI); ctx.fill();
   pop();
 }
 
@@ -1891,16 +2111,27 @@ function draw() {
   // Hintergrund: aktuelle Szene DECKEND als Basis, naechste Szene per Alpha darueber einblenden.
   // So ist der Crossfade ein sauberes B*f over A (kein Mittel-Abdunkeln, kein Pop am Umschalten).
   // drawSceneBackdrop kapselt prozedural (space/underwater), Bild- und Farbhintergruende inkl. Sonne/Mond.
-  drawSceneBackdrop(currentScene, 1);
-  if (nextScene >= 0) drawSceneBackdrop(nextScene, sceneFade);
+  // Bei Zoom-Uebergang 2<->3: Scene 2 wird mit Canvas-Transform skaliert/verschoben.
+  const zoom = zoomTransition ? getZoomTransform() : null;
+  drawSceneWithZoom(currentScene, 1, zoom);
+  if (nextScene >= 0) drawSceneWithZoom(nextScene, sceneFade, zoom);
 
-  // Crossfade fortschreiben
+  // Crossfade / Zoom-Uebergang fortschreiben
   if (nextScene >= 0) {
-    sceneFade = Math.min(1, sceneFade + dt * SCENE_FADE_SPEED);
-    if (sceneFade >= 1) {
-      currentScene = nextScene;
-      nextScene = -1;
-      sceneFade = 1;
+    if (zoomTransition) {
+      zoomProgress = Math.min(1, zoomProgress + dt / ZOOM_DURATION);
+      if (zoomDirection > 0) {
+        sceneFade = Math.max(0, Math.min(1, (zoomProgress - 0.5) / 0.5));
+      } else {
+        sceneFade = Math.max(0, Math.min(1, zoomProgress / 0.5));
+      }
+      if (zoomProgress >= 1) {
+        currentScene = nextScene; nextScene = -1; sceneFade = 1;
+        zoomTransition = false; zoomProgress = 0;
+      }
+    } else {
+      sceneFade = Math.min(1, sceneFade + dt * SCENE_FADE_SPEED);
+      if (sceneFade >= 1) { currentScene = nextScene; nextScene = -1; sceneFade = 1; }
     }
   }
 
@@ -1914,16 +2145,24 @@ function draw() {
     if (currentSceneAlphaFor(ent) <= 0.01) continue;
     ent.update(dt);
   }
-  // Hover-Erkennung (oberstes zuerst). Nicht-interaktive Entities (interactive:false) erzeugen
-  // kein Hover-Label und keinen Cursor-Wechsel.
-  for (let i = allEntities.length - 1; i >= 0; i--) {
-    const ent = allEntities[i];
-    if (ent.def.interactive === false) continue;
-    if (currentSceneAlphaFor(ent) > 0.4 && ent.contains(mouseX, mouseY)) { hoverEntity = ent; break; }
+  // Hover-Erkennung (oberstes zuerst). Waehrend Zoom-Uebergang deaktiviert.
+  if (!zoomTransition) {
+    for (let i = allEntities.length - 1; i >= 0; i--) {
+      const ent = allEntities[i];
+      if (ent.def.interactive === false) continue;
+      if (currentSceneAlphaFor(ent) > 0.4 && ent.contains(mouseX, mouseY)) { hoverEntity = ent; break; }
+    }
   }
   for (const ent of allEntities) {
     if (currentSceneAlphaFor(ent) <= 0.01) continue;
-    ent.draw();
+    const entIsSea = (ent.def.scene === ZOOM_SEA_ID);
+    if (zoom && entIsSea) {
+      push(); translate(zoom.cx, zoom.cy); scale(zoom.scale); translate(-zoom.cx, -zoom.cy);
+      ent.draw();
+      pop();
+    } else {
+      ent.draw();
+    }
   }
 
   if (heldEntity) cursor('grabbing');
@@ -1975,9 +2214,36 @@ function drawPerfHud() {
 // Zeichnet den KOMPLETTEN Hintergrund einer Szene bei gegebenem Alpha (0..1) -> eine Funktion
 // fuer alle Szenentypen, damit der Crossfade beliebige Kombinationen sauber ueberblendet:
 //   space     -> prozeduraler Weltraum + Sonne/Mond
+// Zoom-Transform-Helfer: Canvas-Skalierung um das Zoom-Zentrum
+function getZoomTransform() {
+  let zoomT;
+  if (zoomDirection > 0) { zoomT = easeInOutCubic(Math.min(1, zoomProgress / 0.7)); }
+  else { zoomT = easeInOutCubic(1 - Math.max(0, (zoomProgress - 0.3) / 0.7)); }
+  const s = 1 + (ZOOM_MAX_SCALE - 1) * zoomT;
+  return { scale: s, cx: ZOOM_TARGET_X * width, cy: ZOOM_TARGET_Y * height };
+}
+function drawSceneWithZoom(sceneIndex, alpha, zoomXform) {
+  if (zoomXform && sceneIndex === zoomSeaIndex) {
+    push();
+    translate(zoomXform.cx, zoomXform.cy);
+    scale(zoomXform.scale);
+    translate(-zoomXform.cx, -zoomXform.cy);
+    drawSceneBackdrop(sceneIndex, alpha);
+    pop();
+  } else {
+    drawSceneBackdrop(sceneIndex, alpha);
+  }
+}
+
 //   underwater -> prozedurale Unterwasser-Atmosphaere
 //   sc.bg      -> bildschirmfuellendes Hintergrundbild (cover)
 //   sonst      -> einfarbig aus backgroundTint
+// Hilfsfunktion: Bild bildschirmfuellend (cover) zentriert zeichnen, p5-State sauber gekapselt
+function drawCoverImage(img, alpha) {
+  const ir = img.width / img.height, cr = width / height;
+  let w, h; if (ir > cr) { h = height; w = height * ir; } else { w = width; h = width / ir; }
+  push(); imageMode(CENTER); tint(255, 255 * alpha); image(img, width / 2, height / 2, w, h); pop();
+}
 function drawSceneBackdrop(index, alpha) {
   const sc = scenes[index];
   if (!sc || alpha <= 0.001) return;
@@ -1994,33 +2260,21 @@ function drawSceneBackdrop(index, alpha) {
   if (sc.interior) {
     // Scene 3 „das eye": entweder gemaltes Kuppel-Bild (falls vorhanden) ODER prozeduraler Innenraum.
     // sc.bg deckt den Vollbild-Hintergrund ab; der Shader liefert sonst Kuppel + Oculus + Reflexion.
-    if (sc.bg) {
-      const ir = sc.bg.width / sc.bg.height, cr = width / height;
-      let w, h; if (ir > cr) { h = height; w = height * ir; } else { w = width; h = width / ir; }
-      push(); imageMode(CENTER); tint(255, 255 * alpha); image(sc.bg, width / 2, height / 2, w, h); pop();
-    } else {
-      drawSolarSpace(alpha);   // prozedurale Licht-Architektur; faellt intern auf 2D-Fallback zurueck
-    }
+    if (sc.bg) drawCoverImage(sc.bg, alpha);
+    else drawSolarSpace(alpha);   // prozedurale Licht-Architektur; faellt intern auf 2D-Fallback zurueck
     return;
   }
-  push();
   if (sc.bg) {
-    // bildschirmfuellend (cover)
-    const ir = sc.bg.width / sc.bg.height;
-    const cr = width / height;
-    let w, h;
-    if (ir > cr) { h = height; w = height * ir; } else { w = width; h = width / ir; }
-    imageMode(CENTER);
-    tint(255, 255 * alpha);
-    image(sc.bg, width / 2, height / 2, w, h);
+    drawCoverImage(sc.bg, alpha);
   } else {
     // einfarbiger Hintergrund aus backgroundTint
+    push();
     const tintCol = hexToRgb(sc.backgroundTint || '#ffffff');
     noStroke();
     fill(tintCol[0], tintCol[1], tintCol[2], 255 * alpha);
     rect(0, 0, width, height);
+    pop();
   }
-  pop();
 }
 
 function hexToRgb(hex) {
@@ -2091,6 +2345,9 @@ function closePanel() {
 function goToScene(index) {
   if (index === currentScene || nextScene >= 0) return;
   if (index < 0 || index >= scenes.length) return;
+  const isZoom = (currentScene === zoomSeaIndex && index === zoomInteriorIndex) ||
+                 (currentScene === zoomInteriorIndex && index === zoomSeaIndex);
+  if (isZoom) { zoomTransition = true; zoomProgress = 0; zoomDirection = (index === zoomInteriorIndex) ? 1 : -1; }
   nextScene = index;
   sceneFade = 0;
   updateDots(index);
@@ -2135,7 +2392,7 @@ function windowResized() {
   if (spaceResizeTimer) clearTimeout(spaceResizeTimer);
   spaceResizeTimer = setTimeout(() => {
     buildSpace();              // gecachten Weltraum-Backdrop neu bauen (entprellt)
-    underwaterBuf = null;      // Unterwasser-Buffer verwerfen -> drawUnderwater baut ihn in neuer Groesse neu
+    if (underwaterBuf) { underwaterBuf.remove(); underwaterBuf = null; }   // Unterwasser-Buffer verwerfen -> drawUnderwater baut ihn in neuer Groesse neu
     if (waterBuf) { waterBuf.remove(); waterBuf = null; waterShader = null; }  // Wasser-Shader-Buffer in neuer Groesse neu bauen
     if (solarBuf) { solarBuf.remove(); solarBuf = null; solarShader = null; }  // Solar-Shader-Buffer (Scene 3) neu bauen
     if (solarStaticBuf) { solarStaticBuf.remove(); solarStaticBuf = null; }    // gecachten 2D-Fallback verwerfen

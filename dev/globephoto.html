@@ -17,7 +17,7 @@
   <div id="fps"></div>
   <div id="holder"></div>
 
-  <script src="lib/p5.min.js"></script>
+  <script src="../lib/p5.min.js"></script>
   <script>
   const R = 175;                     // Kugelradius
   // --- Tuning ---
@@ -87,9 +87,9 @@
   function norm3(v){ const m = Math.hypot(v[0],v[1],v[2]) || 1; return [v[0]/m, v[1]/m, v[2]/m]; }
 
   function preload(){
-    alb  = loadImage('assets/images/entities/scene1/world.png');
-    nmap = loadImage('assets/images/entities/scene1/world_normal.png');
-    smap = loadImage('assets/images/entities/scene1/world_spec.png');
+    alb  = loadImage('../assets/images/entities/scene1/world.png');
+    nmap = loadImage('../assets/images/entities/scene1/world_normal.png');
+    smap = loadImage('../assets/images/entities/scene1/world_spec.png');
   }
   function setup(){
     const c = createCanvas(600, 600, WEBGL); c.parent('holder');
