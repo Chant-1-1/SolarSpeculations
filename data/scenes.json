@@ -24,6 +24,58 @@
       "background": "assets/images/backgrounds/scene3_interior.png",
       "backgroundTint": "#eee9df",
       "interior": true
+    },
+    {
+      "_kommentar": "ATMOSPHERE-Ansicht: Zoom auf den Erd-Rand (Limb) der Projekt-Weltkugel, die langsam weiterrotiert; darueber die obersten Schichten (Magnetfeld, Ozon, Smog). KEIN Wasser/Berg. NICHT in der Nav -> nur ueber den 'Atmosphere'-Marker auf der Weltkugel erreichbar. drawAtmosphere().",
+      "id": "atmosphere",
+      "name": "the atmosphere",
+      "background": "",
+      "backgroundTint": "#05070c",
+      "atmosphere": true,
+      "noNav": true
+    },
+    {
+      "_kommentar": "WATER-Ansicht: der Berg (Bild) im halbtransparenten Szene-2-Wasser; Start trocken, Meeresspiegel steigt auf Klick ins Bild. KEINE Atmosphaeren-Schichten. NICHT in der Nav -> nur ueber den 'Water'-Marker auf der Weltkugel erreichbar. drawWaterSection().",
+      "id": "water",
+      "name": "the water",
+      "background": "",
+      "backgroundTint": "#05070c",
+      "water": true,
+      "noNav": true,
+      "land": "assets/images/entities/scene1/section/mountain.png"
+    },
+    {
+      "_kommentar": "VIZ-Unterszenen (noNav): prozedurale Erklaer-Ansichten im Stil von atmosphere/water. Erreichbar ueber pulsierende Gold-Marker in der Elternszene (VIZ_MENU in app.js). 'viz' = welche Zeichenfunktion (drawViz). 'sun' aus Szene 1; station/living/wildlife aus Szene 2. Klickbare Hotspots (Callouts) sitzen dynamisch auf den gezeichneten Features (vizHotspotNorm).",
+      "id": "sun",
+      "name": "the sun",
+      "background": "",
+      "backgroundTint": "#0a0500",
+      "viz": "sun",
+      "noNav": true
+    },
+    {
+      "id": "station_cut",
+      "name": "the station",
+      "background": "",
+      "backgroundTint": "#07141f",
+      "viz": "station",
+      "noNav": true
+    },
+    {
+      "id": "habitat",
+      "name": "living",
+      "background": "",
+      "backgroundTint": "#0c1a20",
+      "viz": "living",
+      "noNav": true
+    },
+    {
+      "id": "wildlife",
+      "name": "wildlife",
+      "background": "",
+      "backgroundTint": "#061820",
+      "viz": "wildlife",
+      "noNav": true
     }
   ]
 }

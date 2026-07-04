@@ -33,6 +33,44 @@ const ZOOM_INTERIOR_ID = 'scene3';
 let zoomSeaIndex = -1;
 let zoomInteriorIndex = -1;
 
+// Generalisierte Zoom-Parameter (werden je Uebergang in goToScene gesetzt). Defaults = Station-Zoom 2<->3.
+// zoomPivotIndex = die Szene, die SKALIERT wird (Sea bzw. Weltkugel-Szene); die Zielszene blendet ein.
+let zoomPivotIndex = -1;
+let zoomTargetX = ZOOM_TARGET_X;
+let zoomTargetY = ZOOM_TARGET_Y;
+let zoomMaxScale = ZOOM_MAX_SCALE;
+
+// ===== ZOOM Weltkugel (Szene 1) <-> ATMOSPHERE / WATER (zwei Zoom-Ansichten) =====
+const SPACE_ID = 'scene1';        // die Weltkugel-/Weltraum-Szene (Pivot beim Zoom)
+const ATMO_ID = 'atmosphere';     // Erd-Rand + obere Schichten
+const WATER_ID = 'water';         // Berg + Wasser (Querschnitt)
+let spaceIndex = -1;
+let atmosphereIndex = -1;
+let waterIndex = -1;
+const SECTION_ZOOM_SCALE = 9.5;   // Endvergroesserung beim Rein-Zoomen in die Kugel
+const RIM_MARK_K = 0.98;          // Oberrand-Marker: Anteil des Radius ueber der Kugelmitte
+let atmoSpin = 0;                 // eigene, langsame Rotation des Erd-Limbs in der Atmosphaeren-Szene
+const ATMO_SPIN_VEL = 0.045;      // rad/s (langsam)
+let atmoRenderTick = 0;           // Drossel: Erd-Rand nur jeden N. Frame neu rendern (Rotation ist langsam)
+// Meeresspiegel-Anstieg im Schnitt (0 = alter Stand, 1 = jetziger, hoeherer Stand). Klick-getriggert.
+let sectionSeaRise = 0;
+let sectionSeaRiseActive = false;
+const SEA_RISE_DURATION = 6.0;    // Sekunden fuer den langsamen Anstieg
+const SECTION_OLD_SEA_Y = 1.06;   // Start-Meeresspiegel: UNTER dem Bildrand -> am Anfang kein Wasser sichtbar
+const SECTION_NEW_SEA_Y = 0.40;   // jetziger Meeresspiegel (steigt ins Bild hoch; etwas ueber den Berggipfel)
+// Berg-/Land-Bild (assets/images/entities/section/land.png, transparentes PNG). Position/Groesse tunebar.
+let SECTION_LAND_CX = 0.50;       // horizontale Mitte des Bergs (Anteil Breite)
+let SECTION_LAND_BASE_Y = 1.00;   // Unterkante des Bergs (Anteil Hoehe; >1 = Fuss unter dem Bildrand)
+// Berg-Bild wird UNIFORM (unverzerrt) auf SCALE*Bildschirmbreite gezogen; die HOEHE folgt dem Bild-
+// Seitenverhaeltnis. D.h. Hoehe & Breite des Bergs steuerst du ueber die BILDDATEI selbst (Masse +
+// transparente Raender). On-Screen-Hoehe = SCALE * Bildschirmbreite * (Bildhoehe/Bildbreite).
+let SECTION_LAND_SCALE = 1.0;     // 1.0 = volle Bildschirmbreite (kleiner = schmaler)
+const SECTION_WATER_OPACITY = 0.58; // Deckkraft des Wassers ueber dem Berg (halbtransparent -> Berg bleibt sichtbar)
+// Randmarker: Einstieg (auf der Kugel) + Ausstieg (oben im Schnitt). Live-Position pro Frame aus draw().
+let sectionMarkers = [];    // Einstiegs-Marker auf der Kugel (Szene 1): {x,y,r,idx,label}
+let sectionBackMarker = { x: 0, y: 0, r: 0, visible: false };
+let sectionHover = false;   // Maus ueber einem Randmarker -> Pointer-Cursor
+
 let started = false;      // Audio-Geste erfolgt?
 let openEntity = null;    // aktuell geoeffnetes Inhalts-Panel
 let hoverEntity = null;
@@ -40,7 +78,9 @@ let heldEntity = null;    // Entity, das gerade per Maus festgehalten/gedreht wi
 let globeBuf = null;      // gemeinsamer WebGL-Layer fuer 3D-Kugeln
 let oceanShader = null;   // Shader fuer animierte Meeresstroemungen
 let cloudShader = null;   // Shader fuer prozedurale, animierte Wolken
-const GLOBE_BUF = 600;    // Aufloesung dieses Layers (px)
+const GLOBE_BUF = 1280;   // Aufloesung des Globus-Layers (px). Hoeher = schaerferer Erd-Rand in der
+                          // Atmosphaeren-Ansicht, kostet mehr GPU in Szene 1. Bei Rucklern runter (z.B. 900/600).
+                          // Hinweis: die Erdtextur ist 2048px breit -> ab ~1500 bringt mehr Buffer kaum noch Schaerfe.
 const GLOBE_R_FRAC = 0.37; // sphere(R)-Radius als Anteil von GLOBE_BUF
 let globeProjFrac = null;  // tatsaechlich projizierter Kugelradius-Anteil (zur Laufzeit gemessen)
 
@@ -136,7 +176,6 @@ function ensureGlobeBuffer() {
 }
 
 // ---- Foto-Globus: Beleuchtungs-Tuning (Werte aus globereal.html, von Lukas freigegeben) ----
-const SUN_WORLD   = [0.55, 0.30, 0.78];   // Weltrichtung zur Sonne: ueberwiegend frontal -> meist Tagseite
 const G_SUNCOL    = [1.0, 0.97, 0.90];
 const G_NIGHTCOL  = [0.04, 0.05, 0.09];   // dunkle Nachtseite (keine Stadtlichter)
 const G_ATMOCOL   = [0.92, 0.86, 0.72];   // Atmosphaeren-Rand: warmer Smog-Gold-Ton (passt zum 2D-Halo + Szene 2)
@@ -161,33 +200,51 @@ function toModelVec(v, tilt, spin) {
 
 // rendert die FOTO-Kugel: Albedo + Normal-Relief + Specular + Sonnenlicht + Tag/Nacht + Atmosphaere
 // (Oberflaechen-Shader), darueber prozedurale dynamische Wolken (eigene, leicht groessere Kugel).
-function drawGlobe(ent) {
-  const g = globeBuf;
-  const R = GLOBE_BUF * GLOBE_R_FRAC;
-  const camZ = (GLOBE_BUF / 2) / Math.tan(Math.PI / 6);   // p5-Default-Kamera des Buffers
+// Rendert in globeBuf (Default) ODER in einen uebergebenen Buffer + eigene Shader (fuer die hochaufgeloeste
+// Atmosphaeren-Ansicht). Buffergroesse wird aus g.width abgeleitet -> aufloesungsunabhaengig.
+function drawGlobe(ent, opts = {}) {
+  const g = opts.buf || globeBuf;
+  const os = (opts.oceanSh !== undefined) ? opts.oceanSh : oceanShader;
+  const cs = (opts.cloudSh !== undefined) ? opts.cloudSh : cloudShader;
+  const BUFSZ = g.width;
+  const R = BUFSZ * GLOBE_R_FRAC;
+  const camZ = (BUFSZ / 2) / Math.tan(Math.PI / 6);   // p5-Default-Kamera des Buffers
   g.clear();
   const gl = g.drawingContext;
   gl.enable(gl.DEPTH_TEST); gl.depthMask(true);
+  // Projektion: normal Perspektive (Szene 1); fuer den Cap-Zoom der Atmosphaere eine ORTHOGRAFISCHE Box,
+  // die nur den sichtbaren Rand-Ausschnitt rahmt -> die volle Buffer-Aufloesung geht in die sichtbare Erde.
+  if (opts.orthoBox) { const b = opts.orthoBox; g.ortho(b.left, b.right, b.bottom, b.top, b.near, b.far); }
+  else g.perspective();
   const tNow = millis() / 1000;
   const tilt = ent.tilt, spin = ent.spinAngle;
-  const L = toModelVec(currentSunWorld(), tilt, spin);   // Sonne im Modellraum (folgt der kreisenden Sonne)
   const cam = toModelVec([0, 0, camZ], tilt, spin);     // Kamera im Modellraum
+  // Licht: normal die kreisende Sonne; bei opts.frontLit FRONTAL (nur winziger Hauch nach oben, KEIN
+  // Seiten-Versatz) -> die ganze zugewandte Seite ist beleuchtet, kein schwarzer Seiten-Schatten.
+  // (Sheen/Fresnel sind in der Atmosphaere aus, daher brennt frontal auch nicht mehr weiss aus.)
+  const L = opts.frontLit ? toModelVec([0.0, 0.10 * camZ, 0.995 * camZ], tilt, spin)
+                          : toModelVec(currentSunWorld(), tilt, spin);
+  const cloudOp = (opts.cloudOp != null) ? opts.cloudOp : G_CLOUD_OP;
+  const sunCol = (opts.sunScale != null) ? [G_SUNCOL[0]*opts.sunScale, G_SUNCOL[1]*opts.sunScale, G_SUNCOL[2]*opts.sunScale] : G_SUNCOL;
 
   // Oberflaeche
   g.push();
   g.noStroke();
-  if (oceanShader && ent.normTex && ent.specTex) {
-    g.shader(oceanShader);
-    oceanShader.setUniform('uDay', ent.tex);
-    oceanShader.setUniform('uNormalMap', ent.normTex);
-    oceanShader.setUniform('uSpec', ent.specTex);
-    oceanShader.setUniform('uLight', L); oceanShader.setUniform('uCam', cam);
-    oceanShader.setUniform('uSunCol', G_SUNCOL); oceanShader.setUniform('uNightCol', G_NIGHTCOL);
-    oceanShader.setUniform('uAtmoCol', G_ATMOCOL);
-    oceanShader.setUniform('uRelief', G_RELIEF); oceanShader.setUniform('uGloss', G_GLOSS);
-    oceanShader.setUniform('uSpecGain', G_SPECGAIN); oceanShader.setUniform('uAmbient', G_AMBIENT);
-    oceanShader.setUniform('uWaterGain', G_WATER_GAIN);
-    oceanShader.setUniform('uSheen', G_SHEEN); oceanShader.setUniform('uSheenPow', G_SHEEN_POW);
+  if (os && ent.normTex && ent.specTex) {
+    g.shader(os);
+    os.setUniform('uDay', ent.tex);
+    os.setUniform('uNormalMap', ent.normTex);
+    os.setUniform('uSpec', ent.specTex);
+    os.setUniform('uLight', L); os.setUniform('uCam', cam);
+    os.setUniform('uSunCol', sunCol);
+    os.setUniform('uNightCol', opts.nightCol != null ? opts.nightCol : G_NIGHTCOL);   // atmo: hoeher -> Rand nicht dunkel
+    os.setUniform('uAtmoCol', opts.atmoCol != null ? opts.atmoCol : G_ATMOCOL);   // atmo-zoom: aus -> kein grauer Fresnel-Schleier
+    os.setUniform('uRelief', G_RELIEF); os.setUniform('uGloss', G_GLOSS);
+    os.setUniform('uSpecGain', G_SPECGAIN);
+    os.setUniform('uAmbient', opts.ambient != null ? opts.ambient : G_AMBIENT);   // atmo: hoeher -> Fuelllicht hebt den Rand
+    os.setUniform('uWaterGain', opts.waterGain != null ? opts.waterGain : G_WATER_GAIN);   // atmo: kleiner -> Ozean nicht ausgebrannt
+    os.setUniform('uSheen', opts.sheen != null ? opts.sheen : G_SHEEN);                     // atmo: 0 -> kein Front-Licht-Glanz
+    os.setUniform('uSheenPow', G_SHEEN_POW);
   } else {
     g.noLights(); g.texture(ent.tex);
   }
@@ -195,30 +252,31 @@ function drawGlobe(ent) {
   g.rotateY(spin);
   g.sphere(R, 96, 64);
   g.pop();
-  if (oceanShader) g.resetShader();
+  if (os) g.resetShader();
 
-  // projizierten OBERFLAECHEN-Radius messen (vor der groesseren Wolkenkugel) -> Halo
+  // projizierten OBERFLAECHEN-Radius messen (vor der groesseren Wolkenkugel) -> Halo. Verhaeltnis
+  // ist groessenunabhaengig, daher genuegt eine Messung (aus welchem Buffer auch immer zuerst).
   if (globeProjFrac === null) {
-    const cx = GLOBE_BUF / 2, cyy = GLOBE_BUF / 2;
-    let r = GLOBE_BUF / 2;
-    for (let x = cx; x < GLOBE_BUF; x++) { if (g.get(x, cyy)[3] < 10) { r = x - cx; break; } }
-    globeProjFrac = r / GLOBE_BUF;
+    const c2 = BUFSZ / 2;
+    let r = BUFSZ / 2;
+    for (let x = c2; x < BUFSZ; x++) { if (g.get(x, c2)[3] < 10) { r = x - c2; break; } }
+    globeProjFrac = r / BUFSZ;
   }
 
   // Wolken: prozedural, dynamisch (Drift+Morph via uTime), leicht groessere Kugel.
   // Backface-Culling (nur vordere Halbkugel) + kein Tiefenschreiben + PREMULTIPLIED Alpha.
-  if (cloudShader && ent.specTex) {
+  if (cs && ent.specTex) {
     g.blendMode(BLEND);
     gl.enable(gl.CULL_FACE);
     gl.cullFace(gl.FRONT);
     gl.depthMask(false);
     g.push();
     g.noStroke();
-    g.shader(cloudShader);
-    cloudShader.setUniform('uLandSpec', ent.specTex);
-    cloudShader.setUniform('uLight', L); cloudShader.setUniform('uCam', cam);
-    cloudShader.setUniform('uCloudOp', G_CLOUD_OP);
-    cloudShader.setUniform('uTime', tNow);                 // Wolken driften unabhaengig vom Spin
+    g.shader(cs);
+    cs.setUniform('uLandSpec', ent.specTex);
+    cs.setUniform('uLight', L); cs.setUniform('uCam', cam);
+    cs.setUniform('uCloudOp', cloudOp);
+    cs.setUniform('uTime', tNow);                 // Wolken driften unabhaengig vom Spin
     g.rotateX(tilt);
     g.rotateY(spin);
     g.sphere(R * 1.012, 96, 64);                   // schwebt knapp ueber der Oberflaeche
@@ -257,11 +315,15 @@ async function buildWorld() {
   scenes = [];
   for (const sc of scenesData.scenes) {
     const bg = await tryLoadImage(sc.background);
-    scenes.push({ ...sc, bg });
+    const landImg = sc.land ? await tryLoadImage(sc.land) : null;   // optionales Bild (z.B. Berg im Schnitt)
+    scenes.push({ ...sc, bg, landImg });
   }
   // Zoom-Transition: Indizes aus den IDs aufloesen (Reihenfolge-unabhaengig)
   zoomSeaIndex = scenes.findIndex(s => s.id === ZOOM_SEA_ID);
   zoomInteriorIndex = scenes.findIndex(s => s.id === ZOOM_INTERIOR_ID);
+  spaceIndex = scenes.findIndex(s => s.id === SPACE_ID);
+  atmosphereIndex = scenes.findIndex(s => s.id === ATMO_ID);
+  waterIndex = scenes.findIndex(s => s.id === WATER_ID);
   // Entities
   allEntities = [];
   for (const def of entitiesData.entities) {
@@ -437,12 +499,22 @@ class Entity {
       }
     }
 
-    const target = this.highlight > 0 && openEntity === this ? 1 : 0;
+    const target = openEntity === this ? 1 : 0;   // weiches Hervorheben, solange dieses Panel offen ist
     this.highlight += (target - this.highlight) * min(1, dt * 4);
   }
 
   // normierte Position (0..1) entlang des Pfades (+ bob, + optionales Pendeln/Zittern)
   normPos() {
+    // Atmosphaeren-Hotspots: dynamisch auf ihren Schicht-Bogen setzen (statt fester Pfad-Koords)
+    if (this.def.scene === ATMO_ID && ATMO_HOTSPOTS[this.def.id]) {
+      const a = atmoHotspotNorm(this.def.id);
+      if (a) return a;
+    }
+    // Viz-Hotspots (sun/station/living/wildlife): dynamisch auf ihrem gezeichneten Feature
+    if (this.def.hotspot) {
+      const v = vizHotspotNorm(this.def.id);
+      if (v) return v;
+    }
     const p = pointAt(this.path, this.u, this.closed);
     let ox = 0, oy = (this.def.bob || 0) * Math.sin(this.bobPhase);
     const tt = millis() / 1000;
@@ -566,6 +638,9 @@ class Entity {
       // An der Wasserlinie verankert: wlLocalY ist die Wasserlinie in lokalen (entity-)Koords.
       const wlLocalY = WATERLINE_FRAC * height - y;
       drawIslandPlaceholder(sz, wlLocalY, alpha);
+    } else if (!handled && this.def.hotspot) {
+      // Section-Hotspot: dezenter pulsierender Gold-Ring (kein Bild) -> ruhige Klickpunkte im Schnitt
+      drawHotspotMarker(sz, alpha, glow, hoverEntity === this);
     } else if (!handled) {
       // Platzhalter-Form: weicher Leuchtkleks (treibende Kreaturen-Leuchtpunkte)
       // global ~10% gedimmt + Tiefen-Verdunkelung (Station/Stein + Scene 1 unberuehrt)
@@ -709,7 +784,7 @@ function currentSceneAlphaFor(ent) {
   if (ent.def.scene === curId) alpha = 1 - sceneFadeT();
   else if (ent.def.scene === nxtId) alpha = sceneFadeT();
   else return 0;
-  if (zoomTransition && ent.def.scene === ZOOM_SEA_ID && !ent.def.zoomAnchor) {
+  if (zoomTransition && zoomPivotIndex >= 0 && ent.def.scene === scenes[zoomPivotIndex]?.id && !ent.def.zoomAnchor) {
     alpha *= 1 - Math.max(0, Math.min(1, (zoomProgress - 0.15) / 0.35));
   }
   return alpha;
@@ -2139,6 +2214,14 @@ function draw() {
   const duckTarget = openEntity ? 1 : 0;
   duck += (duckTarget - duck) * Math.min(1, dt * 4);
 
+  // Meeresspiegel-Anstieg im Wasser-Schnitt (klick-getriggert): langsam von alt -> jetzt
+  if (sectionSeaRiseActive && sectionSeaRise < 1) sectionSeaRise = Math.min(1, sectionSeaRise + dt / SEA_RISE_DURATION);
+  // Erd-Limb (Atmosphaeren-Szene) dreht in DIESELBE Richtung wie der Globus weiter, nur langsamer.
+  // Frueher lief atmoSpin fest positiv (+), der Globus aber negativ (baseVel=-0.10) -> beim Zoom in
+  // die Atmosphaere kehrte sich die Drehung sichtbar um. Richtung folgt jetzt dem Vorzeichen von baseVel.
+  const atmoGlobe = allEntities.find(e => e.isGlobe);
+  atmoSpin += (atmoGlobe && atmoGlobe.baseVel < 0 ? -1 : 1) * ATMO_SPIN_VEL * dt;
+
   // Entities aktualisieren + zeichnen (nur sichtbare Szenen)
   hoverEntity = null;
   for (const ent of allEntities) {
@@ -2155,8 +2238,8 @@ function draw() {
   }
   for (const ent of allEntities) {
     if (currentSceneAlphaFor(ent) <= 0.01) continue;
-    const entIsSea = (ent.def.scene === ZOOM_SEA_ID);
-    if (zoom && entIsSea) {
+    const entIsPivot = zoomPivotIndex >= 0 && ent.def.scene === scenes[zoomPivotIndex]?.id;
+    if (zoom && entIsPivot) {
       push(); translate(zoom.cx, zoom.cy); scale(zoom.scale); translate(-zoom.cx, -zoom.cy);
       ent.draw();
       pop();
@@ -2165,7 +2248,10 @@ function draw() {
     }
   }
 
+  updateSectionMarkers();   // Rand-Ein-/Ausstiegs-Marker positionieren + zeichnen (Kugel-Oberrand / Schnitt oben)
+
   if (heldEntity) cursor('grabbing');
+  else if (sectionHover) cursor('pointer');
   else if (hoverEntity) cursor((hoverEntity.frames || hoverEntity.isGlobe) ? 'grab' : 'pointer');
   else cursor('default');
 
@@ -2219,11 +2305,11 @@ function getZoomTransform() {
   let zoomT;
   if (zoomDirection > 0) { zoomT = easeInOutCubic(Math.min(1, zoomProgress / 0.7)); }
   else { zoomT = easeInOutCubic(1 - Math.max(0, (zoomProgress - 0.3) / 0.7)); }
-  const s = 1 + (ZOOM_MAX_SCALE - 1) * zoomT;
-  return { scale: s, cx: ZOOM_TARGET_X * width, cy: ZOOM_TARGET_Y * height };
+  const s = 1 + (zoomMaxScale - 1) * zoomT;
+  return { scale: s, cx: zoomTargetX * width, cy: zoomTargetY * height };
 }
 function drawSceneWithZoom(sceneIndex, alpha, zoomXform) {
-  if (zoomXform && sceneIndex === zoomSeaIndex) {
+  if (zoomXform && sceneIndex === zoomPivotIndex) {
     push();
     translate(zoomXform.cx, zoomXform.cy);
     scale(zoomXform.scale);
@@ -2264,6 +2350,18 @@ function drawSceneBackdrop(index, alpha) {
     else drawSolarSpace(alpha);   // prozedurale Licht-Architektur; faellt intern auf 2D-Fallback zurueck
     return;
   }
+  if (sc.atmosphere) {
+    drawAtmosphere(alpha);        // Erd-Rand (rotierend) + obere Schichten (Magnetfeld/Ozon/Smog)
+    return;
+  }
+  if (sc.water) {
+    drawWaterSection(alpha);      // Berg + halbtransparentes Szene-2-Wasser (Querschnitt), ohne Atmosphaere
+    return;
+  }
+  if (sc.viz) {
+    drawViz(sc.viz, alpha);       // prozedurale Erklaer-Ansichten (sun/station/living/wildlife)
+    return;
+  }
   if (sc.bg) {
     drawCoverImage(sc.bg, alpha);
   } else {
@@ -2283,10 +2381,867 @@ function hexToRgb(hex) {
 }
 
 // =========================================================================
+//  ZWEI ZOOM-ANSICHTEN (aus Szene 1 erreichbar):
+//   drawAtmosphere() = Erd-Rand (rotierend) + obere Schichten (Magnetfeld/Ozon/Smog)
+//   drawWaterSection() = Berg (Bild) + halbtransparentes Szene-2-Wasser, Meeresspiegel steigt auf Klick
+// =========================================================================
+
+// prozedurales Kuestenprofil (normiert 0..1): links Hochland -> Huegelkamm ueber altem
+// Meeresspiegel -> Kueste -> abfallender Schelf/Boden rechts. Wird einmal gebaut (aufloesungsunabh.).
+function buildCoast() {
+  return [
+    { x: 0.00, y: 0.70 }, { x: 0.10, y: 0.60 }, { x: 0.20, y: 0.50 },
+    { x: 0.30, y: 0.47 },   // Kamm (ueber SECTION_OLD_SEA_Y = 0.62)
+    { x: 0.40, y: 0.52 }, { x: 0.50, y: 0.60 }, { x: 0.58, y: 0.68 },   // Kueste
+    { x: 0.70, y: 0.78 }, { x: 0.85, y: 0.86 }, { x: 1.00, y: 0.92 }
+  ];
+}
+
+// ---- WATER-Ansicht: Berg + halbtransparentes Szene-2-Wasser (Querschnitt). OHNE Atmosphaeren-Schichten. ----
+function drawWaterSection(alpha) {
+  const W = width, H = height, ctx = drawingContext, t = millis() * 0.001;
+  const wl = SECTION_OLD_SEA_Y + (SECTION_NEW_SEA_Y - SECTION_OLD_SEA_Y) * sectionSeaRise;  // aktuelle Wasserlinie
+
+  push();
+  ctx.globalAlpha = alpha;
+
+  // 1) Verbrannter Sonnen-Himmel (uebernommen aus dem alten "sea level"-Viz) -> Atmosphaere ueber dem Wasser
+  drawWaterSky(W, H, ctx);
+
+  // 2) Tiefwasser-Basis unter der Wasserlinie (dunkel) -> Grundlage fuer das halbtransparente Wasser.
+  //    Nur wenn die Wasserlinie im Bild ist (wl < 1) -> am Anfang (Start unter dem Rand) kein Wasser.
+  const hasWater = wl < 1.0;
+  if (hasWater) {
+    const deep = ctx.createLinearGradient(0, wl * H, 0, H);
+    deep.addColorStop(0.00, '#12403f'); deep.addColorStop(0.35, '#0c2b40');
+    deep.addColorStop(0.72, '#08202e'); deep.addColorStop(1.00, '#030a12');
+    ctx.fillStyle = deep; ctx.fillRect(0, wl * H, W, H - wl * H);
+  }
+
+  // 3) Berg-Bild (ueber Himmel + Tiefwasser-Basis) ODER prozedurale Kueste als Fallback
+  const land = scenes[waterIndex] && scenes[waterIndex].landImg;
+  if (land) {
+    const dw = SECTION_LAND_SCALE * W, dh = dw * (land.height / land.width);   // uniform, aspekt-erhaltend
+    push(); imageMode(CORNER);
+    image(land, SECTION_LAND_CX * W - dw / 2, SECTION_LAND_BASE_Y * H - dh, dw, dh);
+    pop();
+  } else {
+    if (!drawWaterSection._coast) drawWaterSection._coast = buildCoast();
+    push(); noStroke(); fill(58, 49, 40);
+    beginShape(); vertex(0, H);
+    for (const p of drawWaterSection._coast) vertex(p.x * W, p.y * H);
+    vertex(W, H); endShape(CLOSE); pop();
+  }
+
+  // 4) Wasser wie in Szene 2 (halbtransparent -> Berg bleibt sichtbar)
+  if (hasWater) drawSectionWater(wl, alpha);
+
+  // 5) biolumineszentes Gruen in der kalten Tiefe (additiv), nur unter der aktuellen Wasserlinie
+  if (hasWater) {
+    if (!drawWaterSection._biolum) {
+      const b = [];
+      for (let i = 0; i < 14; i++) b.push({ x: Math.random(), y: 0.82 + Math.random() * 0.16, ph: Math.random() * 6.28, s: 1 + Math.random() * 2 });
+      drawWaterSection._biolum = b;
+    }
+    push(); ctx.globalCompositeOperation = 'lighter'; noStroke();
+    for (const b of drawWaterSection._biolum) {
+      if (b.y <= wl) continue;
+      fill(80, 220, 150, 60 * Math.max(0, 0.4 + 0.6 * Math.sin(t * 0.9 + b.ph)));
+      ellipse(b.x * W, b.y * H, b.s * 4);
+    }
+    pop();
+  }
+
+  // 6) Jahres-Zaehler an der Wasserlinie -> zaehlt mit dem Anstieg 2026 -> 3126 hoch (aus dem alten Viz)
+  if (hasWater) {
+    const yr = Math.floor(2026 + (3126 - 2026) * sectionSeaRise);
+    push();
+    noStroke(); textAlign(LEFT, TOP); textFont('Georgia'); textSize(13);
+    fill(210, 228, 228, 215);
+    text('sea level — year ' + yr, W * 0.06, wl * H + 14);
+    pop();
+  }
+
+  ctx.globalAlpha = 1;
+  pop();
+}
+
+// Verbrannter Sonnen-Himmel fuer die Wasser-Szene (uebernommen aus dem alten "sea level"-Viz):
+// dunkelrot->gold-Verlauf + grosse Sonnen-Glut + rotierende Strahlen + geschichtete Sonnenscheibe + UV-Baender.
+// Zuerst deckende Basis (sonst wuerde der translucente Verlauf nicht abdecken), dann die Schichten.
+function drawWaterSky(W, H, ctx) {
+  ctx.fillStyle = '#050300'; ctx.fillRect(0, 0, W, H);   // deckende dunkle Basis
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0.00, 'rgba(28,14,0,0.96)');
+  g.addColorStop(0.32, 'rgba(82,42,2,0.90)');
+  g.addColorStop(0.66, 'rgba(165,112,12,0.70)');
+  g.addColorStop(1.00, 'rgba(205,162,34,0.50)');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+
+  const sunX = W * 0.70, sunY = H * 0.22, F = frameCount;
+  const rg = ctx.createRadialGradient(sunX, sunY, 20, sunX, sunY, H * 0.6);   // grosse Sonnen-Glut
+  rg.addColorStop(0.0, 'rgba(255,230,80,0.50)');
+  rg.addColorStop(0.2, 'rgba(240,180,30,0.26)');
+  rg.addColorStop(0.5, 'rgba(200,120,10,0.11)');
+  rg.addColorStop(1.0, 'rgba(100,50,0,0)');
+  ctx.fillStyle = rg; ctx.fillRect(0, 0, W, H);
+
+  for (let i = 0; i < 32; i++) {                          // 32 lange, langsam rotierende Strahlen
+    const ang = (TWO_PI / 32) * i + F * 0.003;
+    const len = H * 0.5 + noise(i * 0.8, F * 0.006) * H * 0.28;
+    const flick = Math.sin(F * 0.05 + i * 1.1) * 0.18 + 0.82;
+    stroke(255, 210, 50, 44 * flick); strokeWeight(Math.max(0.3, 1.6 - (i % 3) * 0.4));
+    line(sunX, sunY, sunX + Math.cos(ang) * len, sunY + Math.sin(ang) * len);
+  }
+  for (let i = 0; i < 24; i++) {                          // 24 kuerzere, hellere Strahlen
+    const ang = (TWO_PI / 24) * i + PI / 24 + F * 0.004;
+    const len = H * 0.28 + noise(i * 1.2, F * 0.009) * H * 0.18;
+    const flick = Math.sin(F * 0.07 + i * 0.8) * 0.2 + 0.8;
+    stroke(255, 240, 120, 62 * flick); strokeWeight(0.5);
+    line(sunX, sunY, sunX + Math.cos(ang) * len, sunY + Math.sin(ang) * len);
+  }
+  noStroke();                                             // geschichtete Sonnenscheibe
+  fill(255, 160, 0, 22); circle(sunX, sunY, 180);
+  fill(255, 200, 30, 48); circle(sunX, sunY, 90);
+  fill(255, 230, 80, 118); circle(sunX, sunY, 44);
+  fill(255, 248, 150, 195); circle(sunX, sunY, 22);
+  fill(255, 255, 220, 235); circle(sunX, sunY, 10);
+  for (let i = 0; i < 7; i++) {                           // horizontale UV-Schimmerbaender
+    const y = H * (0.06 + i * 0.05), fl = Math.sin(F * 0.03 + i * 1.4) * 0.25 + 0.75;
+    stroke(255, 220, 60, 14 * fl); strokeWeight(0.5); line(0, y, W, y);
+  }
+}
+
+// ---- ATMOSPHERE-Ansicht: Zoom auf den Erd-Rand (Projekt-Globus, langsam rotierend) + obere
+//      Schichten (Magnetfeld, Ozon, Smog). KEIN Wasser/Berg. Wie ein Blick aus dem Orbit. ----
+let ATMO_LIMB = 0.60;     // Bildschirm-y des Erd-Rands (Limb) -> Erde im unteren Drittel
+let ATMO_CAP_HALFW = 0.45; // Cap-Zoom: halbe Ortho-Box-Breite in Vielfachen des Kugelradius. KLEINER = staerker
+                           // reingezoomt (flacherer Limb, groessere Erde). On-Screen-Radius rr = Breite/(2*ATMO_CAP_HALFW).
+let ATMO_GLOW = 0.345;     // Staerke des blauen Atmosphaeren-Saums am Limb (0 = aus). Frueher 0.75 -> war zu weiss.
+let ATMO_SMOG = 0.08;      // Staerke des warmen Smog-Hauchs am Limb (0 = aus). Frueher 0.5 -> mit dem Blau = weiss.
+let ATMO_SUN = 1.50;       // Sonnen-Helligkeit der Erde in der Atmosphaere (1 = voll=zu weiss, 0.62=zu dunkel -> Mitte).
+let ATMO_FILL = 0.55;      // Fuelllicht/Ambient in der Atmosphaere -> hebt den kantigen Rand (Limb). Hoeher = Rand heller/flacher.
+let ATMO_MAG = 0.8;        // Deckkraft des Magnetfeld-Diagramms (duenne weiss-graue Dipol-Feldlinien; 0 = aus)
+let ATMO_MAG_LINES = 9;    // Anzahl Feldlinien je Seite (mehr = dichteres Feld)
+let ATMO_MAG_FLOW = 0.10;  // Tempo des wandernden Licht-Pulses entlang der Linien (0 = statisch, hoeher = schneller)
+let ATMO_MAG_WOBBLE = 0.6;         // staendiges seitliches Schwanken des Feldes (0 = starr)
+let ATMO_MAG_COLLAPSE = 1.0;       // Tiefe der kurzen Total-Einbrueche (0 = nie, 1 = Feld verschwindet ganz)
+let ATMO_MAG_COLLAPSE_EVERY = 6.5; // mittlerer Abstand der Einbrueche in Sekunden
+
+// Atmosphaeren-Hotspots sitzen DYNAMISCH auf ihren Schicht-Boegen (nicht mehr feste Bildschirm-Koords) ->
+// unabhaengig von Fenster-/Seitenverhaeltnis immer auf der richtigen Schicht.
+//   rf = Radius-Faktor (muss zu den in drawAtmosphere gezeichneten Boegen passen:
+//        Smog ~Limb=1.0, Ozon=1.075, Magnetfeld innerster Bogen=1.20)
+//   ox = horizontaler Offset vom Kugel-Scheitel (Anteil Breite; +rechts, -links)
+const ATMO_HOTSPOTS = {
+  sec_smog:   { rf: 1.03,  ox:  0.26 },   // Smog: direkt ueber dem Erd-Rand (weit unten)
+  sec_ozone:  { rf: 1.075, ox:  0.03 },   // Ozon: mittlerer Bogen
+  sec_magnet: { rf: 1.20,  ox: -0.20 }    // Magnetfeld: innerer Magnetfeld-Bogen (tiefer als vorher)
+};
+
+// Normierte (0..1) Bildschirmposition eines Atmosphaeren-Hotspots auf seinem Schicht-Bogen.
+// Gleiche Geometrie wie drawAtmosphere: Kugelmittelpunkt (cx,cy) weit unter dem Bild, Radius rr.
+function atmoHotspotNorm(id) {
+  const p = ATMO_HOTSPOTS[id]; if (!p) return null;
+  const W = width, H = height;
+  const rr = W / (2 * ATMO_CAP_HALFW);           // On-Screen-Kugelradius (px)
+  const cx = W * 0.5, cy = ATMO_LIMB * H + rr;   // Kugelmittelpunkt (cy weit unter dem Bild)
+  const dx = p.ox * W, R = rr * p.rf;
+  const yy = cy - Math.sqrt(Math.max(0, R * R - dx * dx));  // oberer Halbkreis
+  return { x: (cx + dx) / W, y: yy / H };
+}
+
+function drawAtmosphere(alpha) {
+  const W = width, H = height, ctx = drawingContext, t = millis() * 0.001;
+
+  push();
+  ctx.globalAlpha = alpha;
+
+  // 1) Weltraum-Hintergrund (dunkel) + Sterne im oberen Band
+  const sp = ctx.createLinearGradient(0, 0, 0, H);
+  sp.addColorStop(0.00, '#020307'); sp.addColorStop(ATMO_LIMB, '#060b16'); sp.addColorStop(1.00, '#0a1322');
+  ctx.fillStyle = sp; ctx.fillRect(0, 0, W, H);
+  if (!drawAtmosphere._stars) {
+    const s = [];
+    for (let i = 0; i < 90; i++) s.push({ x: Math.random(), y: Math.random() * ATMO_LIMB, r: 0.4 + Math.random() * 1.2, ph: Math.random() * 6.28 });
+    drawAtmosphere._stars = s;
+  }
+  noStroke();
+  for (const st of drawAtmosphere._stars) { fill(220, 225, 240, Math.max(0, 110 + 90 * Math.sin(t * 0.8 + st.ph))); ellipse(st.x * W, st.y * H, st.r); }
+
+  // 2) Erd-Rand mit CAP-ZOOM: die Kugel wird ORTHOGRAFISCH nur im sichtbaren Rand-Ausschnitt gerendert
+  //    (die volle Buffer-Aufloesung geht in die sichtbare Erde -> scharf) und 1:1 auf den Bildschirm geblittet.
+  const globe = allEntities.find(e => e.isGlobe);
+  const cx = W * 0.5;
+  const rr = W / (2 * ATMO_CAP_HALFW);   // On-Screen-Kugelradius (px); folgt aus der Ortho-Box-Breite
+  const cy = ATMO_LIMB * H + rr;         // Kugelmittelpunkt (weit unter dem Bildschirm) -> Limb bei ATMO_LIMB*H
+  if (globe && globe.tex && globeBuf) {
+    const doRender = (zoomTransition || nextScene >= 0) || (atmoRenderTick % 3 === 0);
+    atmoRenderTick++;
+    if (doRender) {
+      const BUFSZ = globeBuf.width, Rw = BUFSZ * GLOBE_R_FRAC, camZ = (BUFSZ / 2) / Math.tan(Math.PI / 6);
+      const halfW = ATMO_CAP_HALFW * Rw, boxW = 2 * halfW, boxH = boxW * (H / W);  // Ortho-Box im Bildschirm-Seitenverhaeltnis
+      const yTop = Rw + ATMO_LIMB * boxH;   // Limb (Kugel-Oberkante y=Rw) liegt bei ATMO_LIMB von oben
+      const box = { left: -halfW, right: halfW, bottom: yTop - boxH, top: yTop, near: camZ - 2 * Rw, far: camZ + 2 * Rw };
+      drawGlobe(
+        { tilt: globe.baseTilt, spinAngle: atmoSpin, tex: globe.tex, normTex: globe.normTex, specTex: globe.specTex },
+        // Schatten aus + Cap-Zoom; sheen:0, kleinerer waterGain, gedaempfte Sonne; atmoCol:0 -> KEIN grauer
+        // Shader-Fresnel-Schleier (den blauen Limb-Saum liefert ATMO_GLOW separat)
+        { frontLit: true, cloudOp: G_CLOUD_OP * 0.35, orthoBox: box, sheen: 0, waterGain: 1.2, sunScale: ATMO_SUN,
+          atmoCol: [0, 0, 0], ambient: ATMO_FILL, nightCol: [0.18, 0.24, 0.34] }   // Fuelllicht + helle Nachtseite -> Rand heller
+      );
+    }
+    // Buffer 1:1 auf den ganzen Bildschirm (ueber dem Limb transparent -> Weltraum-Hintergrund scheint durch)
+    push(); drawingContext.globalAlpha = 1; imageMode(CORNER); tint(255, 255 * alpha); image(globeBuf, 0, 0, W, H); noTint(); pop();
+    // Dezenter, schmaler blauer Atmosphaeren-Saum genau an der Kugelkante (nicht mehr das breite Weiss).
+    if (ATMO_GLOW > 0) {
+      const glow = ctx.createRadialGradient(cx, cy, rr * 0.965, cx, cy, rr * 1.10);
+      glow.addColorStop(0.00, 'rgba(150,195,245,0)');
+      glow.addColorStop(0.45, 'rgba(170,205,250,' + (ATMO_GLOW * alpha) + ')');   // Peak an der Kante
+      glow.addColorStop(1.00, 'rgba(140,185,240,0)');
+      push(); ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = glow; ctx.fillRect(0, 0, W, H); pop();
+    }
+
+    // 3) sehr dezenter warmer Smog-Hauch direkt am Limb + Ozon/Magnetfeld-Boegen weiter aussen.
+    if (ATMO_SMOG > 0) {
+      const smog = ctx.createRadialGradient(cx, cy, rr * 0.985, cx, cy, rr * 1.045);
+      smog.addColorStop(0, 'rgba(230,200,140,0)');
+      smog.addColorStop(0.5, 'rgba(230,200,140,' + (ATMO_SMOG * alpha) + ')');
+      smog.addColorStop(1, 'rgba(230,200,140,0)');
+      push(); ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = smog; ctx.fillRect(0, 0, W, H); pop();
+    }
+
+    // Ozon-Bogen (zerrissen, statisch)
+    push(); noFill();
+    ctx.setLineDash([14, 9]); stroke(150, 195, 225, 140 * alpha); strokeWeight(2);
+    ellipse(cx, cy, rr * 2 * 1.075, rr * 2 * 1.075);
+    ctx.setLineDash([]); pop();
+
+    // Magnetfeld: PROZEDURAL (fliessende, geschwaechte Feldlinien + Sonnensturm-Spitzen) statt statischer Boegen.
+    drawMagnetField(cx, cy, rr, alpha, t);
+  }
+
+  ctx.globalAlpha = 1;
+  pop();
+}
+
+// Magnetfeld-Diagramm ueber dem Erd-Rand: klassische Dipol-Feldlinien (wie ein Stabmagnet-Schema),
+// duenne weiss-graue Linien, die am "Pol" (Erd-Rand-Scheitel) entspringen und nach beiden Seiten auffaechern.
+// Feldlinien-Gleichung r = L*sin^2(theta) (theta = Kolatitude von der senkrechten Dipol-Achse).
+// Nur Segmente im Weltraum (ausserhalb der echten, riesigen Erdkugel) werden gezeichnet.
+function drawMagnetField(cx, cyGlobe, rr, alpha, t) {
+  if (ATMO_MAG <= 0) return;
+  const ctx = drawingContext, W = width, H = height, A = alpha * ATMO_MAG;
+
+  const mx = cx, my = ATMO_LIMB * H;             // Dipol-Pol/-Zentrum am sichtbaren Erd-Rand-Scheitel
+  const rSurf = 0.015 * H;                        // winziger Startradius -> alle Linien konvergieren am Pol
+  const N = Math.max(1, ATMO_MAG_LINES | 0);
+  const Lmin = 0.16 * H, Lmax = 2.3 * H;          // innerste (enge) bis aeusserste (weite) Feldlinie
+  const th1 = Math.PI * 0.62;                      // etwas ueber den Aequator hinaus (Rest clippt der Erd-Rand)
+  const rr2 = rr * rr, STEPS = 72;
+
+  // staendiges Schwanken der Gesamt-Intensitaet (geschwaechtes, unruhiges Feld)
+  const sway = 0.60 + 0.24 * Math.sin(t * 0.9) + 0.16 * Math.sin(t * 2.3 + 1.0);   // ~0.20 .. 1.0
+  // kurze Total-Einbrueche: das Feld bricht periodisch (leicht unregelmaessig) fast ganz zusammen
+  let collapse = 1;
+  if (ATMO_MAG_COLLAPSE > 0 && ATMO_MAG_COLLAPSE_EVERY > 0) {
+    const cph = t / ATMO_MAG_COLLAPSE_EVERY + 0.25 * Math.sin(t * 0.13);   // Phase (unregelmaessig)
+    const fr = cph - Math.floor(cph);                                       // 0..1 im Zyklus
+    const d = (fr - 0.82) / 0.05;
+    const dip = Math.exp(-0.5 * d * d);                                     // scharfer, kurzer Einbruch
+    collapse = 1 - ATMO_MAG_COLLAPSE * 0.94 * dip;                          // faellt kurz auf ~0.06
+  }
+  const env = sway * collapse;                                             // Gesamt-Helligkeitshuellkurve
+  const wobAmt = ATMO_MAG_WOBBLE * (1 + 2.4 * (1 - collapse));             // beim Einbruch thrashen die Linien
+
+  push();
+  ctx.globalCompositeOperation = 'lighter';        // weisse Linien addieren sich -> heller Pol-Knoten wie in der Vorlage
+  ctx.lineCap = 'round';
+
+  for (let i = 0; i < N; i++) {
+    const u = N > 1 ? i / (N - 1) : 0;
+    const L = Lmin * Math.pow(Lmax / Lmin, u);      // geometrisch gestreute Schalen
+    const th0 = Math.asin(Math.min(1, Math.sqrt(rSurf / L)));
+    for (let side = -1; side <= 1; side += 2) {     // linke + rechte Meridian-Haelfte
+      const linePhase = i * 0.9 + (side > 0 ? 0.6 : 0.0);   // Puls-Versatz je Linie -> kein Gleichtakt
+      let prev = null;
+      for (let k = 0; k <= STEPS; k++) {
+        const p = k / STEPS;                        // 0 am Pol -> 1 aussen
+        const th = th0 + (th1 - th0) * p;
+        const s = Math.sin(th), c = Math.cos(th), r = L * s * s;
+        // seitliches Schwanken, am Pol verankert (waechst mit Abstand p), pro Linie versetzt
+        const wob = wobAmt * 0.05 * H * p * (Math.sin(t * 0.7 + p * 2.6 + i * 0.5) + 0.5 * Math.sin(t * 1.3 + linePhase));
+        const x = mx + side * r * s + wob;          // rho = r*sin(theta) + Schwanken
+        const y = my - r * c;                       // v = r*cos(theta) (nach oben)
+        const inSpace = ((x - cx) * (x - cx) + (y - cyGlobe) * (y - cyGlobe)) > rr2;   // ausserhalb der Erdkugel?
+        if (!inSpace || x < -80 || x > W + 80 || y < -80 || y > H + 80) { prev = null; continue; }
+        if (prev) {
+          const fade = Math.max(0, 1 - (th - th0) / (th1 - th0));     // Grundhelligkeit (Pol hell)
+          // weicher Licht-Puls, der vom Pol nach aussen wandert (Feld "fliesst")
+          const wave = 0.5 + 0.5 * Math.sin((p * 1.4 - t * ATMO_MAG_FLOW) * TWO_PI + linePhase);
+          const pulse = wave * wave * wave;                           // schmale, weiche Baender
+          const a = A * env * (0.035 + 0.05 * fade + 0.16 * pulse * fade);  // dezent + Puls + Schwanken/Einbruch
+          ctx.strokeStyle = 'rgba(234,238,244,' + a.toFixed(3) + ')';  // duenne weiss-graue Linie
+          ctx.lineWidth = 0.6 + 0.25 * fade + 0.5 * pulse;
+          ctx.beginPath(); ctx.moveTo(prev.x, prev.y); ctx.lineTo(x, y); ctx.stroke();
+        }
+        prev = { x, y };
+      }
+    }
+  }
+
+  ctx.globalCompositeOperation = 'source-over';
+  pop();
+}
+
+// Section-Wasser = der Szene-2-Wasser-Shader (WATER_FRAG) mit der Schnitt-Wasserlinie wl.
+// Nur der Unterwasser-Streifen (unter wl) wird hochskaliert ueber Atmosphaere/Berg geblittet;
+// der Smog-Himmel des Shaders oberhalb bleibt weg (dort steht die Schnitt-Atmosphaere).
+function drawSectionWater(wl, alpha) {
+  if (waterReduceMotion || waterShaderFailed || PERF_FLAT) { drawSectionWaterFallback(wl, alpha); return; }
+  ensureWaterBuffer();
+  if (!waterBuf || !waterShader) { drawSectionWaterFallback(wl, alpha); return; }
+  try {
+    const g = waterBuf;
+    g.clear(); g.noStroke(); g.shader(waterShader);
+    waterShader.setUniform('uTime', millis() / 1000);
+    waterShader.setUniform('uResolution', [g.width, g.height]);
+    waterShader.setUniform('uWaterlineY', wl);          // Schnitt-Wasserlinie (animiert) statt WATERLINE_FRAC
+    waterShader.setUniform('uLightDir', WATER_LIGHTDIR);
+    waterShader.setUniform('uLightColor', WATER_LIGHTCOL);
+    waterShader.setUniform('uSnow', SNOW_AMOUNT);
+    waterShader.setUniform('uCaustics', CAUSTICS_AMOUNT);
+    g.plane(g.width + 2, g.height + 2);
+    g.resetShader();
+    if (!waterProbed) {
+      waterProbed = true;
+      const px = g.get(g.width >> 1, g.height >> 1);
+      if (!px || px[3] < 5) throw new Error('leerer Render (Shader-Compile-Fehler)');
+    }
+  } catch (e) {
+    console.warn('Section-Wasser-Shader -> Fallback drawSectionWaterFallback()', e);
+    waterShaderFailed = true;
+    if (waterBuf) { waterBuf.remove(); waterBuf = null; }
+    waterShader = null;
+    drawSectionWaterFallback(wl, alpha);
+    return;
+  }
+  const W = width, H = height, bw = waterBuf.width, bh = waterBuf.height;
+  const syTop = Math.max(0, Math.floor(wl * bh));
+  push();
+  drawingContext.globalAlpha = 1;                       // Alpha hier via tint, nicht doppelt zum Outer
+  imageMode(CORNER);
+  tint(255, 255 * alpha * SECTION_WATER_OPACITY);       // halbtransparent -> Berg + Tiefwasser-Basis scheinen durch
+  image(waterBuf, 0, wl * H, W, H - wl * H, 0, syTop, bw, bh - syTop);
+  noTint();
+  pop();
+}
+
+// Fallback ohne Shader (reduced-motion / Shader-Fehler): einfacher Wasserverlauf unter der Wasserlinie.
+function drawSectionWaterFallback(wl, alpha) {
+  const W = width, H = height, ctx = drawingContext;
+  const water = ctx.createLinearGradient(0, wl * H, 0, H);
+  water.addColorStop(0.00, 'rgba(40,95,100,0.94)');
+  water.addColorStop(0.35, 'rgba(20,62,84,0.96)');
+  water.addColorStop(0.72, 'rgba(10,34,52,0.98)');
+  water.addColorStop(1.00, 'rgba(3,12,20,1.0)');
+  push();
+  drawingContext.globalAlpha = alpha * SECTION_WATER_OPACITY;   // halbtransparent -> Berg bleibt sichtbar
+  ctx.fillStyle = water; ctx.fillRect(0, wl * H, W, H - wl * H);
+  noFill(); stroke(230, 240, 235, 130); strokeWeight(1.5);
+  beginShape();
+  for (let x = 0; x <= W; x += 24) vertex(x, wl * H + Math.sin(x * 0.03 + millis() * 0.0015) * 1.6);
+  endShape();
+  pop();
+}
+
+// Dezenter, pulsierender Gold-Ring als Section-Hotspot (im lokalen Entity-Frame gezeichnet).
+function drawHotspotMarker(sz, alpha, glow, hover) {
+  const t = millis() * 0.001, pulse = 0.5 + 0.5 * Math.sin(t * 1.8), R = sz * 0.30;
+  push();
+  noFill();
+  stroke(216, 178, 90, alpha * (55 + 55 * pulse) * (hover ? 1.5 : 1)); strokeWeight(1.5);
+  ellipse(0, 0, R * (1.6 + 0.5 * pulse));                       // aeusserer, atmender Ring
+  stroke(216, 178, 90, alpha * 205); strokeWeight(1.5);
+  ellipse(0, 0, R);                                            // fester Ring
+  noStroke(); fill(232, 202, 122, alpha * 255);
+  ellipse(0, 0, R * 0.42 * (hover ? 1.3 : 1));                 // Kern
+  pop();
+}
+
+// =========================================================================
+//  VIZ-UNTERSZENEN (noNav): prozedurale Erklaer-Ansichten wie atmosphere/water.
+//  Erreichbar ueber pulsierende Gold-Marker in der Elternszene; eigener Zoom
+//  (Pivot = Elternszene) + Hotspot-Callouts. drawViz() dispatcht nach sc.viz.
+//  Alle Tuning-Werte sind 'let'-Globals -> direkt editierbar.
+// =========================================================================
+let VIZ_SUN_CORONA = 1.0;    // Staerke von Korona/Strahlenkranz der Sonne
+let VIZ_SUN_GRAN = 1.0;      // Staerke der Granulation (Oberflaechen-Koernung)
+let VIZ_CAPTION = 1.0;       // Deckkraft der kleinen Bild-Ueberschrift je Viz (0 = aus)
+
+// Menue der Viz-Marker je Elternszene. anchor bestimmt die Marker-Position:
+//   'globe' rel. zur Weltkugel (ox/oy in Radien) · 'sun' auf der Sonnenposition ·
+//   'screen' feste Bildkoords (sx/sy in 0..1). label = Marker-Text. id = Ziel-Szene.
+const VIZ_MENU = [
+  { id: 'atmosphere',  parent: 'scene1', label: 'Atmosphere',  anchor: 'globe',  ox: 0.0,  oy: -RIM_MARK_K },
+  { id: 'water',       parent: 'scene1', label: 'Water',       anchor: 'globe',  ox: 0.42, oy: 0.40 },
+  { id: 'sun',         parent: 'scene1', label: 'The sun',     anchor: 'sun' },
+  { id: 'station_cut', parent: 'scene2', label: 'The station', anchor: 'screen', sx: 0.50, sy: 0.26 },
+  { id: 'habitat',     parent: 'scene2', label: 'Living',      anchor: 'screen', sx: 0.22, sy: 0.58 },
+  { id: 'wildlife',    parent: 'scene2', label: 'Wildlife',    anchor: 'screen', sx: 0.82, sy: 0.42 }
+];
+
+function sceneIndexById(id) { return scenes.findIndex(s => s && s.id === id); }
+
+// Bildschirmposition (px) eines Viz-Markers je nach Anker (null, falls Anker fehlt).
+function vizMarkerPos(v) {
+  const W = width, H = height;
+  if (v.anchor === 'globe') {
+    const g = allEntities.find(e => e.isGlobe);
+    if (!g || !(g.radius > 0)) return null;
+    return { x: g.pos.x + (v.ox || 0) * g.radius, y: g.pos.y + (v.oy || 0) * g.radius };
+  }
+  if (v.anchor === 'sun') {
+    const mm = Math.min(W, H), sa = sunOrbitAngle();
+    return { x: W / 2 + Math.cos(sa) * SUN_ORBIT_R * mm, y: H / 2 - Math.sin(sa) * SUN_ORBIT_R * mm };
+  }
+  return { x: (v.sx != null ? v.sx : 0.5) * W, y: (v.sy != null ? v.sy : 0.5) * H };
+}
+function vizMarkerR(v) {
+  if (v.anchor === 'globe') {
+    const g = allEntities.find(e => e.isGlobe);
+    if (g && g.radius > 0) return Math.max(16, g.radius * 0.14);
+  }
+  return Math.max(16, Math.min(width, height) * 0.028);
+}
+
+// ---- Layouts: gemeinsame Geometrie fuer Zeichnung UND Hotspot-Position (vizHotspotNorm). ----
+function sunLayout() {
+  const W = width, H = height, mm = Math.min(W, H);
+  return { cx: W * 0.40, cy: H * 0.52, r: mm * 0.24 };
+}
+function stationLayout() {
+  const W = width, H = height, mm = Math.min(W, H);
+  return { cx: W * 0.40, cy: H * 0.52, hw: mm * 0.16, hh: mm * 0.30 };
+}
+function livingLayout() {
+  const W = width, H = height, mm = Math.min(W, H);
+  const bw = mm * 0.44, bh = mm * 0.40, cx = W * 0.42, cy = H * 0.52;
+  return { cx, cy, bw, bh, x0: cx - bw / 2, y0: cy - bh / 2 };
+}
+
+// Normierte (0..1) Bildschirmposition eines Viz-Hotspots auf seinem gezeichneten Feature.
+// Gleiche Layout-Funktionen wie die Zeichnung -> Hotspot sitzt immer am Feature (seitenverhaeltnis-fest).
+function vizHotspotNorm(id) {
+  const W = width, H = height, P = p => ({ x: p.x / W, y: p.y / H });
+  switch (id) {
+    // Sun
+    case 'sun_core':    { const s = sunLayout(); return P({ x: s.cx,              y: s.cy }); }
+    case 'sun_surface': { const s = sunLayout(); return P({ x: s.cx - 0.44 * s.r, y: s.cy - 0.26 * s.r }); }
+    case 'sun_corona':  { const s = sunLayout(); return P({ x: s.cx + 0.40 * s.r, y: s.cy - 1.16 * s.r }); }
+    case 'sun_storm':   { const s = sunLayout(); return P({ x: s.cx + 0.78 * s.r, y: s.cy + 0.86 * s.r }); }
+    // Station
+    case 'st_hull':     { const s = stationLayout(); return P({ x: s.cx - s.hw,        y: s.cy - s.hh * 0.15 }); }
+    case 'st_life':     { const s = stationLayout(); return P({ x: s.cx,               y: s.cy - s.hh * 0.42 }); }
+    case 'st_ballast':  { const s = stationLayout(); return P({ x: s.cx - s.hw * 0.42, y: s.cy + s.hh * 0.68 }); }
+    case 'st_airlock':  { const s = stationLayout(); return P({ x: s.cx + s.hw,        y: s.cy + s.hh * 0.28 }); }
+    // Living
+    case 'lv_quarters': { const s = livingLayout(); return P({ x: s.x0 + s.bw * 0.17, y: s.y0 + s.bh * 0.22 }); }
+    case 'lv_common':   { const s = livingLayout(); return P({ x: s.x0 + s.bw * 0.50, y: s.y0 + s.bh * 0.50 }); }
+    case 'lv_food':     { const s = livingLayout(); return P({ x: s.x0 + s.bw * 0.83, y: s.y0 + s.bh * 0.28 }); }
+    case 'lv_water':    { const s = livingLayout(); return P({ x: s.x0 + s.bw * 0.50, y: s.y0 + s.bh * 0.88 }); }
+    // Wildlife (volle-Breite-Baender -> feste Fraktionen genuegen)
+    case 'wl_surface':  return { x: 0.30, y: 0.13 };
+    case 'wl_band':     return { x: 0.40, y: 0.40 };
+    case 'wl_deep':     return { x: 0.28, y: 0.82 };
+    case 'wl_angler':   return { x: 0.66, y: 0.70 };
+  }
+  return null;
+}
+
+// kleine Bild-Ueberschrift oben links (Georgia, dezent) -> rahmt die Erklaerung ein.
+function drawVizCaption(title, sub) {
+  if (VIZ_CAPTION <= 0) return;
+  const mm = Math.min(width, height), x = width * 0.055, y = height * 0.085, a = VIZ_CAPTION;
+  push(); noStroke(); textAlign(LEFT, TOP); textFont('Georgia');
+  textSize(Math.max(13, mm * 0.021)); fill(232, 226, 210, 210 * a); text(title, x, y);
+  if (sub) { textSize(Math.max(11, mm * 0.0135)); fill(200, 194, 178, 150 * a); text(sub, x, y + Math.max(20, mm * 0.031)); }
+  pop();
+}
+
+// Pfad-Helfer (rohes Canvas): abgerundetes Rechteck / Stations-Kapsel.
+function roundRectPath(ctx, x, y, w, h, rad) {
+  rad = Math.min(rad, w * 0.5, h * 0.5);
+  ctx.beginPath();
+  ctx.moveTo(x + rad, y);
+  ctx.lineTo(x + w - rad, y); ctx.arcTo(x + w, y, x + w, y + rad, rad);
+  ctx.lineTo(x + w, y + h - rad); ctx.arcTo(x + w, y + h, x + w - rad, y + h, rad);
+  ctx.lineTo(x + rad, y + h); ctx.arcTo(x, y + h, x, y + h - rad, rad);
+  ctx.lineTo(x, y + rad); ctx.arcTo(x, y, x + rad, y, rad);
+  ctx.closePath();
+}
+function stationCapsulePath(ctx, cx, cy, hw, hh) {
+  roundRectPath(ctx, cx - hw, cy - hh, hw * 2, hh * 2, Math.min(hw, hh * 0.5) * 0.95);
+}
+// winzige Figuren-Silhouette (Kopf + Rumpf) im rohen Canvas.
+function drawTinyFigure(ctx, x, y, s, col) {
+  ctx.fillStyle = col;
+  ctx.beginPath(); ctx.arc(x, y - s * 0.62, s * 0.26, 0, TWO_PI); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(x - s * 0.22, y - s * 0.34);
+  ctx.lineTo(x + s * 0.22, y - s * 0.34); ctx.lineTo(x + s * 0.16, y + s * 0.5);
+  ctx.lineTo(x - s * 0.16, y + s * 0.5); ctx.closePath(); ctx.fill();
+}
+
+// Dispatcher: sc.viz -> passende Erklaer-Ansicht.
+function drawViz(kind, alpha) {
+  if (kind === 'sun') drawVizSun(alpha);
+  else if (kind === 'station') drawVizStation(alpha);
+  else if (kind === 'living') drawVizLiving(alpha);
+  else if (kind === 'wildlife') drawVizWildlife(alpha);
+}
+
+// ---- SUN: grosse Sonnenscheibe (Kern/Granulation/Flecken) + Korona + Strahlen + CME-Bogen. ----
+function drawVizSun(alpha) {
+  const W = width, H = height, ctx = drawingContext, t = millis() * 0.001, F = frameCount;
+  const { cx, cy, r } = sunLayout();
+  push(); ctx.globalAlpha = alpha;
+
+  // 1) Weltraum + Sterne
+  const sp = ctx.createLinearGradient(0, 0, 0, H);
+  sp.addColorStop(0, '#0a0500'); sp.addColorStop(1, '#040203');
+  ctx.fillStyle = sp; ctx.fillRect(0, 0, W, H);
+  if (!drawVizSun._stars) {
+    const s = [];
+    for (let i = 0; i < 70; i++) s.push({ x: Math.random(), y: Math.random(), r: 0.4 + Math.random() * 1.1, ph: Math.random() * 6.28 });
+    drawVizSun._stars = s;
+  }
+  noStroke();
+  for (const st of drawVizSun._stars) { fill(240, 232, 210, Math.max(0, 80 + 70 * Math.sin(t * 0.7 + st.ph))); ellipse(st.x * W, st.y * H, st.r); }
+
+  const flick = sunFlicker(t);
+
+  // 2) Korona-Glut (radial, additiv) + lange, langsam rotierende Strahlen
+  push(); ctx.globalCompositeOperation = 'lighter';
+  const glow = ctx.createRadialGradient(cx, cy, r * 0.7, cx, cy, r * 3.0);
+  glow.addColorStop(0.0, 'rgba(255,200,90,' + (0.30 * VIZ_SUN_CORONA).toFixed(3) + ')');
+  glow.addColorStop(0.4, 'rgba(240,140,30,' + (0.13 * VIZ_SUN_CORONA).toFixed(3) + ')');
+  glow.addColorStop(1.0, 'rgba(180,70,0,0)');
+  ctx.fillStyle = glow; ctx.fillRect(0, 0, W, H);
+  for (let i = 0; i < 48; i++) {
+    const ang = (TWO_PI / 48) * i + F * 0.0015;
+    const len = r * (1.4 + noise(i * 0.7, F * 0.004) * 1.5);
+    const fl = 0.6 + 0.4 * Math.sin(F * 0.05 + i * 1.3);
+    stroke(255, 190 + 40 * flick, 70, 30 * fl * VIZ_SUN_CORONA); strokeWeight(Math.max(0.4, 1.4 - (i % 3) * 0.35));
+    line(cx + Math.cos(ang) * r * 1.02, cy + Math.sin(ang) * r * 1.02, cx + Math.cos(ang) * (r + len), cy + Math.sin(ang) * (r + len));
+  }
+  pop();
+
+  // 3) Sonnenscheibe (Kern -> Rand, Limb-Darkening), geclippt fuer Granulation + Flecken
+  const disc = ctx.createRadialGradient(cx, cy, r * 0.1, cx, cy, r);
+  disc.addColorStop(0.0, '#fff3c8'); disc.addColorStop(0.55, '#ffce5c'); disc.addColorStop(0.85, '#f29320'); disc.addColorStop(1.0, '#c65708');
+  ctx.save();
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, TWO_PI); ctx.clip();
+  ctx.fillStyle = disc; ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
+  // Granulation: koernige Konvektionszellen (additiv, driftend)
+  ctx.globalCompositeOperation = 'lighter';
+  if (!drawVizSun._gran) {
+    const g = [];
+    for (let i = 0; i < 90; i++) g.push({ a: Math.random() * TWO_PI, rr: Math.pow(Math.random(), 0.6), s: 0.05 + Math.random() * 0.10, ph: Math.random() * 6.28 });
+    drawVizSun._gran = g;
+  }
+  for (const c of drawVizSun._gran) {
+    const rad = c.rr * r * 0.95, gx = cx + Math.cos(c.a + t * 0.03) * rad, gy = cy + Math.sin(c.a + t * 0.03) * rad;
+    const b = 0.5 + 0.5 * Math.sin(t * 1.2 + c.ph);
+    ctx.fillStyle = 'rgba(255,214,130,' + (0.09 * b * VIZ_SUN_GRAN).toFixed(3) + ')';
+    ctx.beginPath(); ctx.arc(gx, gy, c.s * r, 0, TWO_PI); ctx.fill();
+  }
+  // Sonnenflecken (dunkle Loecher)
+  ctx.globalCompositeOperation = 'source-over';
+  const spots = [{ x: -0.44, y: -0.26, s: 0.15 }, { x: 0.22, y: 0.30, s: 0.11 }, { x: 0.04, y: -0.46, s: 0.07 }];
+  for (const s2 of spots) {
+    const sx = cx + s2.x * r, sy = cy + s2.y * r, sr = s2.s * r;
+    const sg = ctx.createRadialGradient(sx, sy, 0, sx, sy, sr);
+    sg.addColorStop(0, 'rgba(70,26,4,0.85)'); sg.addColorStop(0.6, 'rgba(120,50,8,0.45)'); sg.addColorStop(1, 'rgba(200,110,20,0)');
+    ctx.fillStyle = sg; ctx.fillRect(sx - sr, sy - sr, sr * 2, sr * 2);
+  }
+  ctx.restore();
+
+  // 4) CME/Flare-Bogen unten rechts (periodisch aufflammend)
+  push(); ctx.globalCompositeOperation = 'lighter';
+  const burst = Math.pow(0.5 + 0.5 * Math.sin(t * 0.3), 6);   // meist ~0, kurz hell
+  if (burst > 0.02) {
+    const a0 = 0.28 * PI, a1 = 0.66 * PI;
+    stroke(255, 180, 90, 170 * burst); strokeWeight(2.2); noFill();
+    beginShape();
+    for (let k = 0; k <= 24; k++) {
+      const p = k / 24, ang = a0 + (a1 - a0) * p, arc = r * (1.02 + 0.55 * Math.sin(p * PI) * (1 + burst));
+      vertex(cx + Math.cos(ang) * arc, cy + Math.sin(ang) * arc);
+    }
+    endShape();
+  }
+  pop();
+
+  drawVizCaption('THE SUN', 'the engine — and the threat');
+  ctx.globalAlpha = 1; pop();
+}
+
+// ---- STATION: Wassersaeule + technischer Querschnitt (duenne weiss-graue Blueprint-Linien). ----
+function drawVizStation(alpha) {
+  const W = width, H = height, ctx = drawingContext, t = millis() * 0.001;
+  const { cx, cy, hw, hh } = stationLayout();
+  push(); ctx.globalAlpha = alpha;
+
+  // 1) Wassersaeule: toedliche Oberflaeche (gold) -> sichere Bandzone (blau) -> kalte Tiefe (dunkel)
+  const col = ctx.createLinearGradient(0, 0, 0, H);
+  col.addColorStop(0.00, '#3a2a10'); col.addColorStop(0.13, '#2a3730');
+  col.addColorStop(0.38, '#0f3a44'); col.addColorStop(0.74, '#082230'); col.addColorStop(1.00, '#030a12');
+  ctx.fillStyle = col; ctx.fillRect(0, 0, W, H);
+  push(); ctx.globalCompositeOperation = 'lighter';
+  for (let i = 0; i < 5; i++) { const y = H * (0.03 + i * 0.026); stroke(255, 210, 90, 12 * (0.6 + 0.4 * Math.sin(t + i))); strokeWeight(1); line(0, y, W, y); }
+  pop();
+
+  // 2) Verankerungs-Tether zum Meeresboden
+  stroke(150, 175, 190, 55); strokeWeight(1.5); line(cx, cy + hh, cx, H * 0.985);
+  noStroke(); fill(50, 70, 80, 130); ellipse(cx, H * 0.99, hw * 1.1, hh * 0.10);
+
+  // 3) Druckkoerper (Kapsel): halbtransparent gefuellt + duenne Blueprint-Kontur
+  ctx.lineJoin = 'round';
+  stationCapsulePath(ctx, cx, cy, hw, hh);
+  ctx.fillStyle = 'rgba(20,34,44,0.55)'; ctx.fill();
+  ctx.strokeStyle = 'rgba(226,232,238,0.85)'; ctx.lineWidth = 1.6; ctx.stroke();
+
+  // 4) Innenleben (geclippt): Decks, Saeule, Ballasttanks, warme Fenster
+  ctx.save();
+  stationCapsulePath(ctx, cx, cy, hw, hh); ctx.clip();
+  ctx.strokeStyle = 'rgba(210,220,228,0.26)'; ctx.lineWidth = 1;
+  for (let d = -2; d <= 2; d++) { const y = cy + d * (hh / 3.2); ctx.beginPath(); ctx.moveTo(cx - hw, y); ctx.lineTo(cx + hw, y); ctx.stroke(); }
+  ctx.strokeStyle = 'rgba(210,220,228,0.38)'; ctx.beginPath(); ctx.moveTo(cx, cy - hh); ctx.lineTo(cx, cy + hh); ctx.stroke();
+  ctx.strokeStyle = 'rgba(210,220,228,0.34)';
+  ctx.strokeRect(cx - hw * 0.72, cy + hh * 0.46, hw * 0.6, hh * 0.4);
+  ctx.strokeRect(cx + hw * 0.12, cy + hh * 0.46, hw * 0.6, hh * 0.4);
+  ctx.globalCompositeOperation = 'lighter';
+  for (let i = 0; i < 12; i++) {
+    const wx = cx - hw * 0.66 + (i % 4) * hw * 0.44, wy = cy - hh * 0.62 + Math.floor(i / 4) * hh * 0.34;
+    const b = 0.4 + 0.6 * Math.sin(t * 1.3 + i * 1.7);
+    ctx.fillStyle = 'rgba(255,206,120,' + (0.55 * b).toFixed(3) + ')'; ctx.fillRect(wx, wy, 3.2, 3.2);
+  }
+  ctx.restore();
+
+  // 5) Airlock-Port (rechts)
+  const ax = cx + hw, ay = cy + hh * 0.28;
+  ctx.strokeStyle = 'rgba(226,232,238,0.8)'; ctx.lineWidth = 1.4; ctx.fillStyle = 'rgba(16,28,38,0.75)';
+  ctx.beginPath(); ctx.ellipse(ax, ay, hw * 0.17, hh * 0.13, 0, 0, TWO_PI); ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.ellipse(ax, ay, hw * 0.09, hh * 0.07, 0, 0, TWO_PI); ctx.stroke();
+
+  drawVizCaption('THE STATION', 'a pressure hull in the living band');
+  ctx.globalAlpha = 1; pop();
+}
+
+// ---- LIVING: warmer Habitat-Querschnitt, Wohn-Module + Figuren + Hydroponik + Moon-Pool. ----
+function drawVizLiving(alpha) {
+  const W = width, H = height, ctx = drawingContext, t = millis() * 0.001;
+  const { cx, cy, bw, bh, x0, y0 } = livingLayout();
+  push(); ctx.globalAlpha = alpha;
+
+  // 1) aussen kaltes Wasser
+  const bg = ctx.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, '#0c1a20'); bg.addColorStop(1, '#040b10');
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+
+  // 2) Huelle
+  ctx.fillStyle = 'rgba(18,28,34,0.6)'; ctx.strokeStyle = 'rgba(226,232,238,0.7)'; ctx.lineWidth = 1.6;
+  roundRectPath(ctx, x0 - 8, y0 - 8, bw + 16, bh + 16, 16); ctx.fill(); ctx.stroke();
+
+  // 3) Raster aus Wohn-Modulen (3x3), warm; Sonderraeume Hydroponik + Moon-Pool
+  const cols = 3, rows = 3, gw = bw / cols, gh = bh / rows;
+  for (let r2 = 0; r2 < rows; r2++) for (let c = 0; c < cols; c++) {
+    const rx = x0 + c * gw + 2, ry = y0 + r2 * gh + 2, rw = gw - 4, rh = gh - 4;
+    const isFood = (c === 2 && r2 === 0), isWater = (r2 === rows - 1 && c === 1);
+    if (isWater) {
+      const wg = ctx.createLinearGradient(rx, ry, rx, ry + rh);
+      wg.addColorStop(0, 'rgba(40,110,120,0.85)'); wg.addColorStop(1, 'rgba(10,40,55,0.9)');
+      ctx.fillStyle = wg;
+    } else if (isFood) {
+      const fg = ctx.createLinearGradient(rx, ry, rx, ry + rh);
+      fg.addColorStop(0, 'rgba(60,120,50,0.8)'); fg.addColorStop(1, 'rgba(28,60,26,0.85)');
+      ctx.fillStyle = fg;
+    } else {
+      const rg = ctx.createLinearGradient(rx, ry, rx, ry + rh);
+      rg.addColorStop(0, 'rgba(74,54,28,0.82)'); rg.addColorStop(1, 'rgba(38,28,16,0.82)');
+      ctx.fillStyle = rg;
+    }
+    ctx.fillRect(rx, ry, rw, rh);
+    ctx.strokeStyle = 'rgba(210,200,180,0.22)'; ctx.lineWidth = 1; ctx.strokeRect(rx, ry, rw, rh);
+    // Inhalte
+    if (isFood) {
+      ctx.strokeStyle = 'rgba(150,220,140,0.55)'; ctx.lineWidth = 1;
+      for (let k = 0; k < 3; k++) { const yy = ry + rh * (0.3 + k * 0.24); ctx.beginPath(); ctx.moveTo(rx + rw * 0.15, yy); ctx.lineTo(rx + rw * 0.85, yy); ctx.stroke(); }
+    } else if (isWater) {
+      ctx.save(); ctx.globalCompositeOperation = 'lighter';
+      const b = 0.5 + 0.5 * Math.sin(t * 1.5);
+      ctx.strokeStyle = 'rgba(150,220,235,' + (0.5 * b).toFixed(3) + ')'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(rx + rw * 0.15, ry + rh * 0.35); ctx.lineTo(rx + rw * 0.85, ry + rh * 0.35); ctx.stroke();
+      ctx.restore();
+      drawTinyFigure(ctx, rx + rw * 0.5, ry + rh * 0.34, gh * 0.34, 'rgba(12,16,18,0.85)');
+    } else {
+      // Figuren-Silhouette in einigen Wohn-Raeumen
+      if ((c + r2) % 2 === 0) drawTinyFigure(ctx, rx + rw * 0.5, ry + rh * 0.72, gh * 0.4, 'rgba(20,14,8,0.8)');
+      ctx.save(); ctx.globalCompositeOperation = 'lighter';
+      const wb = 0.35 + 0.35 * Math.sin(t * 0.9 + c * 1.3 + r2 * 2.1);
+      ctx.fillStyle = 'rgba(255,206,130,' + (0.14 * wb).toFixed(3) + ')'; ctx.fillRect(rx, ry, rw, rh * 0.4);
+      ctx.restore();
+    }
+  }
+
+  drawVizCaption('LIVING', 'how the station keeps people');
+  ctx.globalAlpha = 1; pop();
+}
+
+// ---- WILDLIFE: Tiefen-Querschnitt (Baender) mit Fauna: Schwarm + Qualle + Anglerfisch + Biolum. ----
+function drawVizWildlife(alpha) {
+  const W = width, H = height, ctx = drawingContext, t = millis() * 0.001, mm = Math.min(W, H);
+  push(); ctx.globalAlpha = alpha;
+
+  // 1) Tiefen-Verlauf: gold (Oberflaeche) -> teal (Bandzone) -> dunkel (Tiefe)
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0.00, '#b98a2e'); g.addColorStop(0.11, '#556a3e');
+  g.addColorStop(0.26, '#136b6b'); g.addColorStop(0.55, '#0c3a4a'); g.addColorStop(0.78, '#08202e'); g.addColorStop(1.00, '#020a12');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  // toedliches Oberflaechen-Schimmern
+  push(); ctx.globalCompositeOperation = 'lighter';
+  for (let i = 0; i < 5; i++) { const y = H * (0.02 + i * 0.02); stroke(255, 220, 120, 15); strokeWeight(1); line(0, y, W, y); }
+  pop();
+
+  // 2) Bandzone: Fischschwarm (Silhouetten-Punkte, sanft schwankend) um (0.40, 0.40)
+  if (!drawVizWildlife._fish) {
+    const f = [];
+    for (let i = 0; i < 44; i++) { const gx = Math.random() + Math.random() - 1, gy = Math.random() + Math.random() - 1; f.push({ ox: gx * 0.11, oy: gy * 0.06, ph: Math.random() * TWO_PI, s: 0.6 + Math.random() * 0.7 }); }
+    drawVizWildlife._fish = f;
+  }
+  noStroke();
+  const fcx = 0.40 * W + Math.sin(t * 0.3) * W * 0.02, fcy = 0.40 * H;
+  for (const f of drawVizWildlife._fish) {
+    const x = fcx + f.ox * W + Math.sin(t * 0.8 + f.ph) * mm * 0.01, y = fcy + f.oy * H + Math.cos(t * 0.7 + f.ph) * mm * 0.008;
+    fill(12, 22, 26, 200); ellipse(x, y, f.s * mm * 0.011, f.s * mm * 0.005);
+  }
+  // Qualle (Glocke + Tentakel) um (0.60, 0.42)
+  drawJelly(ctx, W * 0.60, H * 0.42, mm * 0.05, t);
+
+  // 3) Tiefe: Anglerfisch mit Leuchtkoeder (0.66, 0.70) + biolumineszente Punkte
+  drawAngler(ctx, W * 0.66, H * 0.70, mm * 0.06, t);
+  push(); ctx.globalCompositeOperation = 'lighter'; noStroke();
+  if (!drawVizWildlife._biolum) {
+    const b = [];
+    for (let i = 0; i < 22; i++) b.push({ x: Math.random(), y: 0.6 + Math.random() * 0.38, ph: Math.random() * 6.28, s: 1 + Math.random() * 2 });
+    drawVizWildlife._biolum = b;
+  }
+  for (const b of drawVizWildlife._biolum) { fill(90, 225, 150, 70 * Math.max(0, 0.4 + 0.6 * Math.sin(t * 0.9 + b.ph))); ellipse(b.x * W, b.y * H, b.s * 3.4); }
+  pop();
+
+  drawVizCaption('WILDLIFE', 'life pressed into a narrow band');
+  ctx.globalAlpha = 1; pop();
+}
+
+// Qualle: durchscheinende Glocke + wehende Tentakel (rohes Canvas, additiv-weich).
+function drawJelly(ctx, x, y, s, t) {
+  const pulse = 0.9 + 0.12 * Math.sin(t * 1.6);
+  ctx.save();
+  const bg = ctx.createRadialGradient(x, y, s * 0.1, x, y, s * pulse);
+  bg.addColorStop(0, 'rgba(210,225,245,0.55)'); bg.addColorStop(1, 'rgba(150,180,225,0)');
+  ctx.fillStyle = bg;
+  ctx.beginPath(); ctx.ellipse(x, y, s * pulse, s * 0.8 * pulse, 0, PI, TWO_PI); ctx.fill();
+  ctx.strokeStyle = 'rgba(200,220,240,0.4)'; ctx.lineWidth = 1;
+  for (let i = 0; i < 6; i++) {
+    const tx = x - s * 0.6 + i * s * 0.24;
+    ctx.beginPath(); ctx.moveTo(tx, y);
+    for (let k = 1; k <= 5; k++) { const p = k / 5; ctx.lineTo(tx + Math.sin(t * 2 + i + p * 3) * s * 0.12, y + p * s * 1.5); }
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+// Anglerfisch: dunkle Silhouette + pulsierender Leuchtkoeder (Biolum, additiv).
+function drawAngler(ctx, x, y, s, t) {
+  ctx.save();
+  ctx.fillStyle = 'rgba(6,12,14,0.9)';
+  ctx.beginPath(); ctx.ellipse(x, y, s, s * 0.62, 0, 0, TWO_PI); ctx.fill();          // Koerper
+  ctx.beginPath(); ctx.moveTo(x + s * 0.9, y); ctx.lineTo(x + s * 1.4, y - s * 0.4); ctx.lineTo(x + s * 1.4, y + s * 0.4); ctx.closePath(); ctx.fill();  // Schwanz
+  // Angel + Koeder
+  ctx.strokeStyle = 'rgba(30,50,55,0.9)'; ctx.lineWidth = 1.2;
+  const lx = x - s * 0.7, ly = y - s * 1.05;
+  ctx.beginPath(); ctx.moveTo(x - s * 0.5, y - s * 0.4); ctx.quadraticCurveTo(x - s * 1.0, y - s * 1.1, lx, ly); ctx.stroke();
+  ctx.globalCompositeOperation = 'lighter';
+  const b = 0.6 + 0.4 * Math.sin(t * 3);
+  const lg = ctx.createRadialGradient(lx, ly, 0, lx, ly, s * 0.5);
+  lg.addColorStop(0, 'rgba(150,255,190,' + (0.9 * b).toFixed(3) + ')'); lg.addColorStop(1, 'rgba(90,220,150,0)');
+  ctx.fillStyle = lg; ctx.beginPath(); ctx.arc(lx, ly, s * 0.5, 0, TWO_PI); ctx.fill();
+  ctx.restore();
+}
+
+// Einstiegs-/Ausstiegs-Marker am Rand (absolute Koords). Setzt sectionHover fuer den Cursor.
+function drawRimMarker(x, y, r, label) {
+  const t = millis() * 0.001, pulse = 0.5 + 0.5 * Math.sin(t * 2.0);
+  const hover = dist(mouseX, mouseY, x, y) < r;
+  if (hover) sectionHover = true;
+  push();
+  translate(x, y);
+  noFill();
+  stroke(216, 178, 90, 65 + 80 * pulse); strokeWeight(1.5); ellipse(0, 0, 24 + 16 * pulse);
+  stroke(216, 178, 90, 225); strokeWeight(1.5); ellipse(0, 0, 15);
+  noStroke(); fill(235, 205, 130, 235); ellipse(0, 0, 6);
+  textAlign(LEFT, CENTER); textSize(11); textFont('Georgia');
+  fill(205, 178, 122, hover ? 230 : 165);
+  text(label, 18, 1);
+  pop();
+}
+
+// Rand-Marker positionieren + zeichnen: Einstiege in die Viz-Unterszenen der AKTUELLEN Elternszene
+// (Szene 1: Atmosphere/Water/Sun · Szene 2: Station/Living/Wildlife) sowie der Zurueck-Marker in
+// einer Viz-Unterszene. Nur ohne Zoom/Wechsel/offenes Panel aktiv. Position je Anker (VIZ_MENU).
+function updateSectionMarkers() {
+  sectionHover = false;
+  sectionMarkers = [];
+  const curId = scenes[currentScene] && scenes[currentScene].id;
+  const active = curId && nextScene < 0 && !zoomTransition && !openEntity;
+  if (active) {
+    for (const v of VIZ_MENU) {
+      if (v.parent !== curId) continue;
+      const idx = sceneIndexById(v.id); if (idx < 0) continue;
+      const p = vizMarkerPos(v); if (!p) continue;
+      const r = vizMarkerR(v);
+      sectionMarkers.push({ x: p.x, y: p.y, r, idx });
+      drawRimMarker(p.x, p.y, r, v.label);
+    }
+  }
+  // In einer Viz-Unterszene: Zurueck-Marker zur Elternszene (oben mittig).
+  const cur = VIZ_MENU.find(v => v.id === curId);
+  const inViz = cur && nextScene < 0 && !zoomTransition && !openEntity;
+  sectionBackMarker.visible = !!inViz;
+  if (inViz) {
+    sectionBackMarker.x = width * 0.5;
+    sectionBackMarker.y = height * 0.06;
+    sectionBackMarker.r = Math.max(16, Math.min(width, height) * 0.02);
+    sectionBackMarker.parentIdx = sceneIndexById(cur.parent);
+    const backLabel = cur.parent === SPACE_ID ? 'Back to Earth' : 'Back to the station';
+    drawRimMarker(sectionBackMarker.x, sectionBackMarker.y, sectionBackMarker.r, backLabel);
+  }
+}
+
+function exitSection() {
+  const idx = sectionBackMarker.parentIdx;
+  if (idx != null && idx >= 0) goToScene(idx);
+  else if (spaceIndex >= 0) goToScene(spaceIndex);
+}
+
+// =========================================================================
 //  INTERAKTION
 // =========================================================================
 function mousePressed() {
   if (!started || openEntity) return;
+  // Rand-Marker (Ein-/Ausstieg) VOR den Entities pruefen -> Klick greift nicht die Kugel
+  if (!zoomTransition && nextScene < 0) {
+    for (const m of sectionMarkers) { if (dist(mouseX, mouseY, m.x, m.y) < m.r) { goToScene(m.idx); return; } }
+    if (sectionBackMarker.visible && dist(mouseX, mouseY, sectionBackMarker.x, sectionBackMarker.y) < sectionBackMarker.r) { exitSection(); return; }
+  }
   for (let i = allEntities.length - 1; i >= 0; i--) {
     const ent = allEntities[i];
     if (ent.def.interactive === false) continue;   // nicht-interaktiv: kein Panel, kein Greifen
@@ -2295,10 +3250,13 @@ function mousePressed() {
       if (ent.isGlobe) { heldEntity = ent; ent.spinVel = 0; ent.tiltVel = 0; }
       // Frame-Sequenz: Halten pausiert
       else if (ent.frames && ent.frames.length) heldEntity = ent;
+      // Section-Hotspot: Etiketten-Callout (Kasten am Punkt, per Linie verbunden)
+      else if (ent.def.hotspot) openCallout(ent);
       else openPanel(ent);
       return;
     }
   }
+  if (calloutEntity) closeCallout();   // Klick ins Leere schliesst das offene Etikett
 }
 
 // Ziehen dreht die gegriffene Kugel nach links/rechts; Tempo merkt sie sich als Schwung
@@ -2320,6 +3278,7 @@ function mouseReleased() { heldEntity = null; }   // Loslassen -> Schwung, dann 
 
 function openPanel(ent) {
   openEntity = ent;
+  if (ent.def.action === 'seaLevelRise') sectionSeaRiseActive = true;   // Meeresspiegel steigt (einmalig)
   const c = ent.def.content || {};
   document.getElementById('panel-title').textContent = c.title || ent.def.label || '';
   document.getElementById('panel-body').textContent = c.body || '';
@@ -2339,15 +3298,89 @@ function closePanel() {
   setDuck(false);
 }
 
+// ===== Etiketten-Callout fuer Section-Hotspots (Wasser/Atmosphaere) =====
+// Klick auf einen Punkt -> kleiner Kasten ploppt neben dem Punkt auf, per Linie damit verbunden.
+let calloutEntity = null;
+
+function openCallout(ent) {
+  calloutEntity = ent;
+  if (ent.def.action === 'seaLevelRise') sectionSeaRiseActive = true;   // Meeresspiegel steigt (einmalig)
+  const c = ent.def.content || {};
+  document.getElementById('callout-title').textContent = c.title || ent.def.label || '';
+  document.getElementById('callout-body').textContent = c.body || '';
+  document.getElementById('callout').classList.add('open');
+  positionCallout(ent);
+}
+
+// Box neben dem Punkt platzieren (im Viewport gehalten) + Verbindungslinie Punkt -> Box-Kante.
+function positionCallout(ent) {
+  const co = document.getElementById('callout');
+  if (!ent || !co.classList.contains('open')) return;
+  const box = document.getElementById('callout-box');
+  const M = 14, GAP = 30;
+  box.style.maxWidth = Math.max(160, width - 2 * M) + 'px';   // an die Canvas-Breite koppeln (nicht an vw)
+  const bw = box.offsetWidth, bh = box.offsetHeight;
+  const px = ent.pos.x, py = ent.pos.y;
+  let bx = px + GAP, by = py - bh - 8;                       // Standard: rechts-oben vom Punkt
+  if (bx + bw > width - M) bx = px - GAP - bw;               // zu weit rechts -> nach links
+  bx = Math.max(M, Math.min(bx, width - M - bw));
+  if (by < M) by = py + 22;                                  // zu weit oben -> unter den Punkt
+  by = Math.max(M, Math.min(by, height - M - bh));
+  box.style.left = Math.round(bx) + 'px';
+  box.style.top = Math.round(by) + 'px';
+  const tx = Math.max(bx, Math.min(px, bx + bw));            // naechster Punkt auf der Box-Kante
+  const ty = Math.max(by, Math.min(py, by + bh));
+  const line = document.getElementById('callout-line');
+  line.setAttribute('x1', px); line.setAttribute('y1', py);
+  line.setAttribute('x2', tx); line.setAttribute('y2', ty);
+  const dot = document.getElementById('callout-dot');
+  dot.setAttribute('cx', px); dot.setAttribute('cy', py);
+}
+
+function closeCallout() {
+  if (!calloutEntity) return;
+  calloutEntity = null;
+  document.getElementById('callout').classList.remove('open');
+}
+
 // =========================================================================
 //  SZENEN-NAVIGATION
 // =========================================================================
 function goToScene(index) {
   if (index === currentScene || nextScene >= 0) return;
   if (index < 0 || index >= scenes.length) return;
-  const isZoom = (currentScene === zoomSeaIndex && index === zoomInteriorIndex) ||
-                 (currentScene === zoomInteriorIndex && index === zoomSeaIndex);
-  if (isZoom) { zoomTransition = true; zoomProgress = 0; zoomDirection = (index === zoomInteriorIndex) ? 1 : -1; }
+  if (calloutEntity) closeCallout();   // offenes Etikett nicht in die naechste Szene mitnehmen
+  // Station-Zoom 2<->3 (fixes Ziel = Stationskuppel)
+  const isSeaInterior = (currentScene === zoomSeaIndex && index === zoomInteriorIndex) ||
+                        (currentScene === zoomInteriorIndex && index === zoomSeaIndex);
+  // Viz-Zoom: Elternszene <-> Viz-Unterszene (Pivot = Elternszene, Ziel = angeklickter Marker-Punkt).
+  // Deckt Szene 1 -> atmosphere/water/sun UND Szene 2 -> station/living/wildlife ab (VIZ_MENU).
+  const curId = scenes[currentScene] && scenes[currentScene].id;
+  const tgtId = scenes[index] && scenes[index].id;
+  const vizIn  = VIZ_MENU.find(v => v.id === tgtId && v.parent === curId);   // rein in die Unterszene
+  const vizOut = VIZ_MENU.find(v => v.id === curId && v.parent === tgtId);   // zurueck zur Elternszene
+  if (isSeaInterior) {
+    zoomTransition = true; zoomProgress = 0;
+    zoomDirection = (index === zoomInteriorIndex) ? 1 : -1;
+    zoomPivotIndex = zoomSeaIndex;
+    zoomTargetX = ZOOM_TARGET_X; zoomTargetY = ZOOM_TARGET_Y; zoomMaxScale = ZOOM_MAX_SCALE;
+  } else if (vizIn || vizOut) {
+    const v = vizIn || vizOut;
+    zoomTransition = true; zoomProgress = 0;
+    zoomDirection = vizIn ? 1 : -1;                    // rein = +1, raus (zur Elternszene) = -1
+    zoomPivotIndex = sceneIndexById(v.parent);
+    zoomMaxScale = SECTION_ZOOM_SCALE;
+    if (vizIn) {
+      const p = vizMarkerPos(v);                       // Ziel = Position des angeklickten Markers
+      if (p) { zoomTargetX = p.x / width; zoomTargetY = p.y / height; }
+      if (v.id === WATER_ID) { sectionSeaRise = 0; sectionSeaRiseActive = false; }   // Wasser startet trocken
+      if (v.id === ATMO_ID) {                          // Atmosphaere: Drehphase vom Globus uebernehmen ->
+        const g = allEntities.find(e => e.isGlobe);    // kein Laengen-Sprung + gleiche Richtung -> echter Zoom
+        if (g) atmoSpin = g.spinAngle;
+      }
+    }
+    // Zoom-out: zoomTargetX/Y bleiben, wo der Punkt war
+  }
   nextScene = index;
   sceneFade = 0;
   updateDots(index);
@@ -2355,24 +3388,41 @@ function goToScene(index) {
   if (started) playSceneAudio(index, 3);
 }
 
+// sichtbare (nav-bare) Szenen-Indizes; noNav-Szenen (z.B. der Schnitt) sind ausgenommen
+function navSceneIndices() {
+  const out = [];
+  scenes.forEach((s, i) => { if (!s.noNav) out.push(i); });
+  return out;
+}
+// naechste/vorherige SICHTBARE Szene (Pfeile/Tasten). -1, wenn die aktuelle Szene nicht nav-bar ist.
+function navStep(dir) {
+  const vis = navSceneIndices();
+  const pos = vis.indexOf(currentScene);
+  if (pos < 0) return -1;   // z.B. im Schnitt: Pfeile ignorieren (Ausstieg nur ueber Randmarker)
+  return vis[(pos + dir + vis.length) % vis.length];
+}
+
 function buildNav() {
   const dots = document.getElementById('dots');
   dots.innerHTML = '';
   scenes.forEach((sc, i) => {
+    if (sc.noNav) return;   // Section o.ae.: kein Nav-Punkt
     const d = document.createElement('div');
     d.className = 'dot' + (i === currentScene ? ' active' : '');
     d.title = sc.name;
+    d.dataset.scene = i;
     d.addEventListener('click', () => goToScene(i));
     dots.appendChild(d);
   });
-  document.getElementById('prev').addEventListener('click', () => goToScene((currentScene - 1 + scenes.length) % scenes.length));
-  document.getElementById('next').addEventListener('click', () => goToScene((currentScene + 1) % scenes.length));
+  document.getElementById('prev').addEventListener('click', () => goToScene(navStep(-1)));
+  document.getElementById('next').addEventListener('click', () => goToScene(navStep(1)));
   document.getElementById('panel-close').addEventListener('click', closePanel);
+  document.getElementById('callout-close').addEventListener('click', closeCallout);
   updateSceneName();
 }
 
 function updateDots(index) {
-  document.querySelectorAll('#dots .dot').forEach((d, i) => d.classList.toggle('active', i === index));
+  document.querySelectorAll('#dots .dot').forEach(d => d.classList.toggle('active', +d.dataset.scene === index));
 }
 function updateSceneName(index = currentScene) {
   const sc = scenes[index];
@@ -2380,15 +3430,17 @@ function updateSceneName(index = currentScene) {
 }
 
 function keyPressed() {
-  if (keyCode === ESCAPE && openEntity) closePanel();
+  if (keyCode === ESCAPE && calloutEntity) closeCallout();
+  else if (keyCode === ESCAPE && openEntity) closePanel();
   else if (key === 'p' || key === 'P') PERF_HUD = !PERF_HUD;   // FPS-HUD ein/aus
-  else if (keyCode === LEFT_ARROW) goToScene((currentScene - 1 + scenes.length) % scenes.length);
-  else if (keyCode === RIGHT_ARROW) goToScene((currentScene + 1) % scenes.length);
+  else if (keyCode === LEFT_ARROW) goToScene(navStep(-1));
+  else if (keyCode === RIGHT_ARROW) goToScene(navStep(1));
 }
 
 function windowResized() {
   pixelDensity(chooseDensity());   // Budget bei Groessenwechsel neu bewerten (vor resizeCanvas)
   resizeCanvas(vw(), vh());
+  if (calloutEntity) positionCallout(calloutEntity);   // offenes Etikett neu ausrichten
   if (spaceResizeTimer) clearTimeout(spaceResizeTimer);
   spaceResizeTimer = setTimeout(() => {
     buildSpace();              // gecachten Weltraum-Backdrop neu bauen (entprellt)

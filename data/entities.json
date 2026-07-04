@@ -5,6 +5,7 @@
       "id": "weltkugel",
       "scene": "scene1",
       "image": "",
+      "zoomAnchor": true,
       "globe": {
         "texture": "assets/images/entities/scene1/earth_day.jpg",
         "normal": "assets/images/entities/scene1/earth_normal.jpg",
@@ -369,6 +370,393 @@
       "scale": 0.045,
       "bob": 0.013,
       "opacity": 0.5
+    },
+
+    {
+      "_kommentar": "SECTION (der Schnitt). Klickbare Hotspots ('hotspot:true' -> pulsierender Gold-Ring statt Bild). interactive:true -> bestehende Klick->Panel-Mechanik. Position = einzelner Pfadpunkt (normiert). Texte englisch. Der 'sea_level'-Hotspot hat zusaetzlich action:'seaLevelRise' -> loest beim Oeffnen den Wasseranstieg aus.",
+      "id": "sec_magnet",
+      "scene": "atmosphere",
+      "hotspot": true,
+      "interactive": true,
+      "layer": 0.9,
+      "label": "Magnetic field",
+      "path": [ { "x": 0.26, "y": 0.12 } ],
+      "loop": "loop",
+      "speed": 0.0,
+      "scale": 0.05,
+      "bob": 0.0,
+      "opacity": 1.0,
+      "content": {
+        "title": "Magnetic field — weakened",
+        "body": "The planet no longer deflects the sun's outbursts. Solar storms bring sudden, lethal radiation spikes — without warning.",
+        "secondaryImage": "",
+        "link": { "url": "", "label": "" }
+      }
+    },
+    {
+      "id": "sec_ozone",
+      "scene": "atmosphere",
+      "hotspot": true,
+      "interactive": true,
+      "layer": 0.9,
+      "label": "Ozone layer",
+      "path": [ { "x": 0.50, "y": 0.24 } ],
+      "loop": "loop",
+      "speed": 0.0,
+      "scale": 0.05,
+      "bob": 0.0,
+      "opacity": 1.0,
+      "content": {
+        "title": "Ozone layer — torn",
+        "body": "CO₂, methane and fossil fires tore the ozone layer open. UV and cosmic radiation reach the surface almost unfiltered.",
+        "secondaryImage": "",
+        "link": { "url": "", "label": "" }
+      }
+    },
+    {
+      "id": "sec_smog",
+      "scene": "atmosphere",
+      "hotspot": true,
+      "interactive": true,
+      "layer": 0.9,
+      "label": "Smog",
+      "path": [ { "x": 0.68, "y": 0.30 } ],
+      "loop": "loop",
+      "speed": 0.0,
+      "scale": 0.05,
+      "bob": 0.0,
+      "opacity": 1.0,
+      "content": {
+        "title": "Photochemical smog — never lifted",
+        "body": "A permanent photochemical haze hangs over the water — toxic, self-renewing. It tints the light a warm, filtered gold.",
+        "secondaryImage": "",
+        "link": { "url": "", "label": "" }
+      }
+    },
+    {
+      "id": "sec_sea_level",
+      "scene": "water",
+      "hotspot": true,
+      "interactive": true,
+      "action": "seaLevelRise",
+      "layer": 0.92,
+      "label": "Sea level",
+      "path": [ { "x": 0.40, "y": 0.55 } ],
+      "loop": "loop",
+      "speed": 0.0,
+      "scale": 0.055,
+      "bob": 0.0,
+      "opacity": 1.0,
+      "content": {
+        "title": "Sea level — risen",
+        "body": "The old coast lies far below. As the ice went and the water warmed, the sea climbed to today's level — swallowing the land where life once held on.",
+        "secondaryImage": "",
+        "link": { "url": "", "label": "" }
+      }
+    },
+    {
+      "id": "sec_band",
+      "scene": "water",
+      "hotspot": true,
+      "interactive": true,
+      "layer": 0.9,
+      "label": "The water",
+      "path": [ { "x": 0.62, "y": 0.70 } ],
+      "loop": "loop",
+      "speed": 0.0,
+      "scale": 0.05,
+      "bob": 0.0,
+      "opacity": 1.0,
+      "content": {
+        "title": "The surface is lethal",
+        "body": "Unprotected, a lethal dose in hours. The most stable water lies in a band just below the surface — warm from above, deep enough against the radiation.",
+        "secondaryImage": "",
+        "link": { "url": "", "label": "" }
+      }
+    },
+    {
+      "id": "sec_deep",
+      "scene": "water",
+      "hotspot": true,
+      "interactive": true,
+      "layer": 0.9,
+      "label": "Cold deep",
+      "path": [ { "x": 0.30, "y": 0.88 } ],
+      "loop": "loop",
+      "speed": 0.0,
+      "scale": 0.05,
+      "bob": 0.0,
+      "opacity": 1.0,
+      "content": {
+        "title": "The cold deep",
+        "body": "Below the warm band the water turns cold and dark. Only a faint bioluminescent green still moves down there.",
+        "secondaryImage": "",
+        "link": { "url": "", "label": "" }
+      }
+    },
+
+    {
+      "_kommentar": "VIZ-HOTSPOTS. Wie die Section-Hotspots (hotspot:true -> pulsierender Gold-Ring, Klick -> Callout-Etikett). Die path-Koords sind PLATZHALTER: die Position wird zur Laufzeit von vizHotspotNorm() auf das gezeichnete Feature gesetzt (id-basiert). Texte englisch. SUN (scene 'sun', aus Szene 1).",
+      "id": "sun_core",
+      "scene": "sun",
+      "hotspot": true,
+      "interactive": true,
+      "layer": 0.9,
+      "label": "Core",
+      "path": [ { "x": 0.40, "y": 0.52 } ],
+      "loop": "loop", "speed": 0.0, "scale": 0.05, "bob": 0.0, "opacity": 1.0,
+      "content": {
+        "title": "Core — fusion",
+        "body": "In the core, hydrogen fuses into helium at about 15 million °C. That outward pressure of light is what holds the star up — and pours across the whole system.",
+        "secondaryImage": "",
+        "link": { "url": "", "label": "" }
+      }
+    },
+    {
+      "id": "sun_surface",
+      "scene": "sun",
+      "hotspot": true,
+      "interactive": true,
+      "layer": 0.9,
+      "label": "Surface",
+      "path": [ { "x": 0.30, "y": 0.46 } ],
+      "loop": "loop", "speed": 0.0, "scale": 0.05, "bob": 0.0, "opacity": 1.0,
+      "content": {
+        "title": "Surface — granulation & spots",
+        "body": "The visible surface boils in convection cells. Cooler magnetic knots show as dark sunspots — the tangles that seed the storms.",
+        "secondaryImage": "",
+        "link": { "url": "", "label": "" }
+      }
+    },
+    {
+      "id": "sun_corona",
+      "scene": "sun",
+      "hotspot": true,
+      "interactive": true,
+      "layer": 0.9,
+      "label": "Corona",
+      "path": [ { "x": 0.50, "y": 0.24 } ],
+      "loop": "loop", "speed": 0.0, "scale": 0.05, "bob": 0.0, "opacity": 1.0,
+      "content": {
+        "title": "Corona & solar wind",
+        "body": "A faint, million-degree halo streams charged particles outward as the solar wind — a constant, thin rain of radiation on everything downwind.",
+        "secondaryImage": "",
+        "link": { "url": "", "label": "" }
+      }
+    },
+    {
+      "id": "sun_storm",
+      "scene": "sun",
+      "hotspot": true,
+      "interactive": true,
+      "layer": 0.9,
+      "label": "Solar storms",
+      "path": [ { "x": 0.55, "y": 0.72 } ],
+      "loop": "loop", "speed": 0.0, "scale": 0.05, "bob": 0.0, "opacity": 1.0,
+      "content": {
+        "title": "Solar storms",
+        "body": "Now and then the field snaps and hurls a burst of plasma outward. With no magnetic shield left below, these arrive at the surface as sudden, lethal spikes.",
+        "secondaryImage": "",
+        "link": { "url": "", "label": "" }
+      }
+    },
+
+    {
+      "_kommentar": "STATION (scene 'station_cut', aus Szene 2). Querschnitt der Unterwasser-Station: Material, Funktion.",
+      "id": "st_hull",
+      "scene": "station_cut",
+      "hotspot": true,
+      "interactive": true,
+      "layer": 0.9,
+      "label": "Pressure hull",
+      "path": [ { "x": 0.28, "y": 0.50 } ],
+      "loop": "loop", "speed": 0.0, "scale": 0.05, "bob": 0.0, "opacity": 1.0,
+      "content": {
+        "title": "Pressure hull — material",
+        "body": "A double steel-and-composite shell holds back the weight of the water above. Rounded and seamless, it is built to be pressed on from every side and hold.",
+        "secondaryImage": "",
+        "link": { "url": "", "label": "" }
+      }
+    },
+    {
+      "id": "st_life",
+      "scene": "station_cut",
+      "hotspot": true,
+      "interactive": true,
+      "layer": 0.9,
+      "label": "Life support",
+      "path": [ { "x": 0.40, "y": 0.36 } ],
+      "loop": "loop", "speed": 0.0, "scale": 0.05, "bob": 0.0, "opacity": 1.0,
+      "content": {
+        "title": "Life support",
+        "body": "Sealed loops scrub the air and recycle every drop of water. Nothing is vented that can be kept — the station breathes on itself.",
+        "secondaryImage": "",
+        "link": { "url": "", "label": "" }
+      }
+    },
+    {
+      "id": "st_ballast",
+      "scene": "station_cut",
+      "hotspot": true,
+      "interactive": true,
+      "layer": 0.9,
+      "label": "Ballast",
+      "path": [ { "x": 0.34, "y": 0.72 } ],
+      "loop": "loop", "speed": 0.0, "scale": 0.05, "bob": 0.0, "opacity": 1.0,
+      "content": {
+        "title": "Ballast & buoyancy",
+        "body": "Flooded and blown tanks trim the station's depth, holding it in the safe band — never surfacing into the radiation, never sinking to the cold.",
+        "secondaryImage": "",
+        "link": { "url": "", "label": "" }
+      }
+    },
+    {
+      "id": "st_airlock",
+      "scene": "station_cut",
+      "hotspot": true,
+      "interactive": true,
+      "layer": 0.9,
+      "label": "Airlock",
+      "path": [ { "x": 0.52, "y": 0.58 } ],
+      "loop": "loop", "speed": 0.0, "scale": 0.05, "bob": 0.0, "opacity": 1.0,
+      "content": {
+        "title": "Airlock",
+        "body": "The only way in or out. Divers cycle through slowly, matching pressure, before the short, shielded swim in the water outside.",
+        "secondaryImage": "",
+        "link": { "url": "", "label": "" }
+      }
+    },
+
+    {
+      "_kommentar": "LIVING (scene 'habitat', aus Szene 2). Wie die Menschen in der Station wohnen.",
+      "id": "lv_quarters",
+      "scene": "habitat",
+      "hotspot": true,
+      "interactive": true,
+      "layer": 0.9,
+      "label": "Quarters",
+      "path": [ { "x": 0.30, "y": 0.40 } ],
+      "loop": "loop", "speed": 0.0, "scale": 0.05, "bob": 0.0, "opacity": 1.0,
+      "content": {
+        "title": "Living quarters",
+        "body": "People sleep in stacked pods along the warm inner ring, close to the core where the light and heat pool.",
+        "secondaryImage": "",
+        "link": { "url": "", "label": "" }
+      }
+    },
+    {
+      "id": "lv_common",
+      "scene": "habitat",
+      "hotspot": true,
+      "interactive": true,
+      "layer": 0.9,
+      "label": "Common space",
+      "path": [ { "x": 0.42, "y": 0.52 } ],
+      "loop": "loop", "speed": 0.0, "scale": 0.05, "bob": 0.0, "opacity": 1.0,
+      "content": {
+        "title": "Common space",
+        "body": "A shared hall at the center — the one room tall enough to stand and gather. Most of a life here happens in this light.",
+        "secondaryImage": "",
+        "link": { "url": "", "label": "" }
+      }
+    },
+    {
+      "id": "lv_food",
+      "scene": "habitat",
+      "hotspot": true,
+      "interactive": true,
+      "layer": 0.9,
+      "label": "Hydroponics",
+      "path": [ { "x": 0.54, "y": 0.40 } ],
+      "loop": "loop", "speed": 0.0, "scale": 0.05, "bob": 0.0, "opacity": 1.0,
+      "content": {
+        "title": "Food & hydroponics",
+        "body": "Green racks grow under lamps tuned to the lost sun. Algae and vegetables close the loop between air, water and the plate.",
+        "secondaryImage": "",
+        "link": { "url": "", "label": "" }
+      }
+    },
+    {
+      "id": "lv_water",
+      "scene": "habitat",
+      "hotspot": true,
+      "interactive": true,
+      "layer": 0.9,
+      "label": "Water access",
+      "path": [ { "x": 0.42, "y": 0.66 } ],
+      "loop": "loop", "speed": 0.0, "scale": 0.05, "bob": 0.0, "opacity": 1.0,
+      "content": {
+        "title": "Water access",
+        "body": "A moon-pool opens to the sea — the door to the wild band outside, for divers and for what they can catch.",
+        "secondaryImage": "",
+        "link": { "url": "", "label": "" }
+      }
+    },
+
+    {
+      "_kommentar": "WILDLIFE (scene 'wildlife', aus Szene 2). Das Leben im Meer, nach Tiefe geschichtet.",
+      "id": "wl_surface",
+      "scene": "wildlife",
+      "hotspot": true,
+      "interactive": true,
+      "layer": 0.9,
+      "label": "Surface",
+      "path": [ { "x": 0.30, "y": 0.13 } ],
+      "loop": "loop", "speed": 0.0, "scale": 0.05, "bob": 0.0, "opacity": 1.0,
+      "content": {
+        "title": "The surface — lifeless",
+        "body": "The top water takes the full radiation. Nothing that stays there lives long; it is bright, warm and empty.",
+        "secondaryImage": "",
+        "link": { "url": "", "label": "" }
+      }
+    },
+    {
+      "id": "wl_band",
+      "scene": "wildlife",
+      "hotspot": true,
+      "interactive": true,
+      "layer": 0.9,
+      "label": "The living band",
+      "path": [ { "x": 0.40, "y": 0.40 } ],
+      "loop": "loop", "speed": 0.0, "scale": 0.05, "bob": 0.0, "opacity": 1.0,
+      "content": {
+        "title": "The living band",
+        "body": "Just below, a narrow layer stays survivable. Schooling fish and drifting jellyfish crowd into it — the whole food web pressed thin.",
+        "secondaryImage": "",
+        "link": { "url": "", "label": "" }
+      }
+    },
+    {
+      "id": "wl_deep",
+      "scene": "wildlife",
+      "hotspot": true,
+      "interactive": true,
+      "layer": 0.9,
+      "label": "The deep",
+      "path": [ { "x": 0.28, "y": 0.82 } ],
+      "loop": "loop", "speed": 0.0, "scale": 0.05, "bob": 0.0, "opacity": 1.0,
+      "content": {
+        "title": "The bioluminescent deep",
+        "body": "Under the band the water turns cold and black. What lives here makes its own light — faint green sparks moving in the dark.",
+        "secondaryImage": "",
+        "link": { "url": "", "label": "" }
+      }
+    },
+    {
+      "id": "wl_angler",
+      "scene": "wildlife",
+      "hotspot": true,
+      "interactive": true,
+      "layer": 0.9,
+      "label": "Anglerfish",
+      "path": [ { "x": 0.66, "y": 0.70 } ],
+      "loop": "loop", "speed": 0.0, "scale": 0.05, "bob": 0.0, "opacity": 1.0,
+      "content": {
+        "title": "Anglerfish",
+        "body": "Predators of the deep lure prey with a glowing tip. In a darkened ocean, light itself becomes bait.",
+        "secondaryImage": "",
+        "link": { "url": "", "label": "" }
+      }
     }
   ]
 }

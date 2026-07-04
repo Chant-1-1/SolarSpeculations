@@ -65,6 +65,33 @@
   }
   #panel-close:hover { color: var(--fg); }
 
+  /* --- Callout-Etikett (Hotspots in Wasser/Atmosphaere): Klick -> Kasten ploppt auf, per Linie
+         mit dem Punkt verbunden (wie Architektur-Labels). --- */
+  #callout { position: fixed; inset: 0; z-index: 35; display: none; pointer-events: none; }
+  #callout.open { display: block; }
+  #callout svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+  #callout-box {
+    position: absolute; pointer-events: auto;
+    width: 300px; padding: 0.9rem 1.15rem 1rem;   /* max-width setzt positionCallout relativ zur Canvas */
+    background: rgba(10, 14, 22, 0.82); backdrop-filter: blur(3px);
+    border: 1px solid rgba(216, 178, 90, 0.35);
+    color: #e8e2d2; box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+    opacity: 0; transform: scale(0.94);
+    transition: opacity 0.22s ease, transform 0.22s cubic-bezier(.2,.7,.2,1);
+  }
+  #callout.open #callout-box { opacity: 1; transform: scale(1); }
+  #callout-box h3 {
+    margin: 0 0 0.45rem; padding-right: 1.1rem; color: #d8b25a; font-weight: 400;
+    font-size: 0.72rem; letter-spacing: 0.14em; text-transform: uppercase;
+    font-family: ui-monospace, Menlo, monospace;
+  }
+  #callout-box .body { margin: 0; white-space: pre-wrap; font-size: 0.92rem; line-height: 1.6; color: rgba(232, 226, 210, 0.9); }
+  #callout-close {
+    position: absolute; top: 0.35rem; right: 0.55rem; cursor: pointer;
+    background: none; border: none; color: #9a937f; font-size: 1.2rem; line-height: 1; font-family: inherit;
+  }
+  #callout-close:hover { color: #e8e2d2; }
+
   /* --- Szenen-Navigation --- */
   #nav {
     position: fixed; left: 50%; bottom: 1.6rem; transform: translateX(-50%);
@@ -105,6 +132,18 @@
     <img class="secondary" id="panel-secondary" alt="" style="display:none" />
     <a class="link" id="panel-link" href="#" target="_blank" rel="noopener" style="display:none"></a>
   </aside>
+
+  <div id="callout" aria-hidden="true">
+    <svg>
+      <line id="callout-line" x1="0" y1="0" x2="0" y2="0" stroke="rgba(216,178,90,0.7)" stroke-width="1"></line>
+      <circle id="callout-dot" cx="0" cy="0" r="3.5" fill="none" stroke="rgba(216,178,90,0.9)" stroke-width="1.2"></circle>
+    </svg>
+    <div id="callout-box">
+      <button id="callout-close" aria-label="schliessen">×</button>
+      <h3 id="callout-title"></h3>
+      <div class="body" id="callout-body"></div>
+    </div>
+  </div>
 
   <div id="scene-name"></div>
   <nav id="nav">
