@@ -6,19 +6,24 @@
 <title>SolarSpeculations</title>
 <link rel="icon" href="data:," />
 <style>
+  /* ===== DESCENT-Designsprache: schwarz, Courier-Mono, lowercase + Letter-Spacing,
+     duenne Gold-Linien auf dunklen Flaechen, Vignette, Glow-Cursor. Akzentfarbe ist
+     das Smog-Gold des Projekts (statt DESCENT-Tuerkis) — passt zur Story. ===== */
   :root {
-    --fg: #1c1c1c;
-    --muted: #6b6b6b;
-    --panel-bg: rgba(250, 249, 246, 0.96);
-    --accent: #b07d0a;
+    --accent: #d8b25a;              /* Smog-Gold */
+    --text: rgba(228, 222, 204, 0.92);
+    --dim: #9a937f;                 /* gedimmtes Warmgrau */
+    --line: rgba(216, 178, 90, 0.35);
   }
-  * { box-sizing: border-box; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body {
-    margin: 0; padding: 0; height: 100%; overflow: hidden;
-    background: #ffffff; color: var(--fg);
-    font-family: "Iowan Old Style", Georgia, "Times New Roman", serif;
+    height: 100%; overflow: hidden;
+    background: #000; color: var(--dim);
+    font-family: 'Courier New', ui-monospace, monospace;
     -webkit-font-smoothing: antialiased;
   }
+  /* Custom-Glow-Cursor nur auf Geraeten mit echtem Hover (Desktop) */
+  @media (hover: hover) { html, body, canvas { cursor: none; } }
 
   /* --- Schwarz-Weiss-Modus: GPU-komponierter Graustufen-Filter ueber die ganze Seite.
          Kostenlos (kein per-Frame p5 filter(GRAY)/Pixel-Readback pro Frame). Am <body>, nicht
@@ -33,96 +38,82 @@
   #canvas-holder { position: fixed; inset: 0; }
   canvas { display: block; }
 
-  /* --- Start-Overlay (Browser-Autoplay-Policy: Audio erst nach Geste) --- */
+  /* --- Glow-Cursor (DESCENT): kleiner Leuchtpunkt, waechst + waermt bei Hover, grau beim Greifen --- */
+  #cursor {
+    position: fixed; left: -100px; top: -100px; width: 10px; height: 10px;
+    border-radius: 50%; background: rgba(232, 214, 164, 0.65);
+    box-shadow: 0 0 12px rgba(216, 178, 90, 0.8);
+    pointer-events: none; transform: translate(-50%, -50%); z-index: 1000;
+    transition: width 0.18s, height 0.18s, background 0.18s;
+  }
+  #cursor.hover { width: 22px; height: 22px; background: rgba(255, 228, 170, 0.75); box-shadow: 0 0 22px rgba(255, 220, 150, 0.9); }
+  #cursor.grab  { width: 16px; height: 16px; background: rgba(210, 200, 175, 0.5);  box-shadow: 0 0 14px rgba(216, 178, 90, 0.5); }
+
+  /* --- Vignette (DESCENT): dunkle Raender, lenkt den Blick zur Mitte --- */
+  #vignette {
+    position: fixed; inset: 0; pointer-events: none; z-index: 10;
+    background: radial-gradient(ellipse at center, transparent 32%, rgba(0,0,0,0.35) 70%, rgba(0,0,0,0.9) 100%);
+  }
+
+  @keyframes pulse { 0%, 100% { opacity: 0.25; } 50% { opacity: 0.7; } }
+
+  /* --- Start-Overlay (Browser-Autoplay-Policy: Audio erst nach Geste). DESCENT-Aufbau:
+         Intro-Zeilen -> Welt-Zeile -> pulsierendes "click to enter" unten. --- */
   #gate {
     position: fixed; inset: 0; z-index: 50;
-    display: flex; flex-direction: column; align-items: center; justify-content: center;
-    background: radial-gradient(ellipse at center, #ffffff 0%, #eef0f2 90%);
-    cursor: pointer; transition: opacity 1.2s ease;
-    text-align: center; padding: 2rem; color: var(--fg);
+    display: flex; flex-direction: column; align-items: center; justify-content: flex-end;
+    padding-bottom: 12vh; background: #000;
+    cursor: pointer; transition: opacity 1.5s ease; text-align: center;
   }
-  #gate h1 { font-weight: 400; letter-spacing: 0.18em; font-size: clamp(1.6rem, 5vw, 3rem); margin: 0 0 1.2rem; }
-  #gate p { color: var(--muted); letter-spacing: 0.12em; font-size: 0.95rem; }
   #gate.hidden { opacity: 0; pointer-events: none; }
+  #gate .intro { color: rgba(230, 224, 205, 0.95); font-size: 14px; letter-spacing: 0.16em; line-height: 2.2; max-width: 560px; margin: 0 2rem 42px; }
+  #gate .world { color: rgba(216, 178, 90, 0.85); font-size: 11px; letter-spacing: 0.45em; text-transform: lowercase; margin-bottom: 50px; }
+  #gate .text  { color: var(--dim); font-size: 13px; letter-spacing: 0.35em; text-transform: lowercase; animation: pulse 3s ease-in-out infinite; }
 
   /* --- Lade-/Statusanzeige --- */
   #status {
     position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
-    z-index: 40; color: var(--muted); letter-spacing: 0.12em; font-size: 0.9rem;
+    z-index: 45; color: var(--dim); letter-spacing: 0.35em; font-size: 12px;
+    text-transform: lowercase; animation: pulse 3s ease-in-out infinite;
   }
 
-  /* --- Inhalts-Panel (Drawer von rechts) --- */
-  #panel {
-    position: fixed; top: 0; right: 0; z-index: 30;
-    width: min(440px, 92vw); height: 100%;
-    background: var(--panel-bg); backdrop-filter: blur(6px);
-    border-left: 1px solid rgba(216, 178, 90, 0.25);
-    transform: translateX(100%); transition: transform 0.6s cubic-bezier(.2,.7,.2,1);
-    display: flex; flex-direction: column; padding: 3rem 2.2rem 2.2rem;
-    overflow-y: auto;
+  /* --- Reader-Overlay (DESCENT-Textpanel): Szene dimmt ab, Text zentriert in ruhiger Typo,
+         optionales Bild darueber, "click to return" unten. Klick irgendwo schliesst. Ersetzt
+         das fruehere Seiten-Panel UND die Callout-Etiketten. --- */
+  #reader {
+    position: fixed; inset: 0; z-index: 40;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    padding: 7vh 8vw; background: rgba(0, 0, 4, 0.82);
+    opacity: 0; pointer-events: none; transition: opacity 0.7s ease; cursor: pointer;
   }
-  #panel.open { transform: translateX(0); }
-  #panel h2 { font-weight: 400; font-size: 1.7rem; margin: 0 0 1.2rem; letter-spacing: 0.04em; }
-  #panel .body { white-space: pre-wrap; line-height: 1.7; color: var(--fg); font-size: 1.02rem; }
-  #panel img.secondary { width: 100%; margin: 1.6rem 0 0; border-radius: 2px; opacity: 0.95; }
-  #panel a.link {
-    display: inline-block; margin-top: 1.6rem; color: var(--accent);
-    text-decoration: none; border-bottom: 1px solid rgba(216,178,90,0.4);
-    letter-spacing: 0.06em; font-size: 0.95rem;
+  #reader.open { opacity: 1; pointer-events: all; }
+  #reader img { max-width: min(76vw, 880px); max-height: 46vh; object-fit: contain; margin-bottom: 4.5vh; opacity: 0.92; display: none; }
+  #reader h3 { font-weight: 400; color: var(--accent); font-size: 12px; letter-spacing: 0.42em; text-transform: lowercase; margin-bottom: 3.4vh; }
+  #reader .body { color: var(--text); font-size: 15px; letter-spacing: 0.05em; line-height: 2.15; text-align: center; max-width: 660px; white-space: pre-wrap; }
+  #reader a.link {
+    display: none; margin-top: 3.5vh; color: var(--accent); text-decoration: none;
+    border-bottom: 1px solid var(--line); font-size: 12px; letter-spacing: 0.2em; text-transform: lowercase;
   }
-  #panel-close {
-    position: absolute; top: 1.1rem; right: 1.3rem; cursor: pointer;
-    color: var(--muted); font-size: 1.5rem; line-height: 1; background: none; border: none;
+  #reader .hint {
+    position: absolute; bottom: 3.4vh; left: 50%; transform: translateX(-50%);
+    color: rgba(154, 147, 127, 0.55); font-size: 10px; letter-spacing: 0.42em; text-transform: lowercase;
   }
-  #panel-close:hover { color: var(--fg); }
 
-  /* --- Callout-Etikett (Hotspots in Wasser/Atmosphaere): Klick -> Kasten ploppt auf, per Linie
-         mit dem Punkt verbunden (wie Architektur-Labels). --- */
-  #callout { position: fixed; inset: 0; z-index: 35; display: none; pointer-events: none; }
-  #callout.open { display: block; }
-  #callout svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
-  #callout-box {
-    position: absolute; pointer-events: auto;
-    width: 300px; padding: 0.9rem 1.15rem 1rem;   /* max-width setzt positionCallout relativ zur Canvas */
-    background: rgba(10, 14, 22, 0.82); backdrop-filter: blur(3px);
-    border: 1px solid rgba(216, 178, 90, 0.35);
-    color: #e8e2d2; box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
-    opacity: 0; transform: scale(0.94);
-    transition: opacity 0.22s ease, transform 0.22s cubic-bezier(.2,.7,.2,1);
+  /* --- Szenen-Menue oben links (DESCENT): "i · the earth" usw., aktiver Eintrag mit Gold-Kante.
+         Ersetzt die Punkte-Navigation; Pfeiltasten funktionieren weiter. --- */
+  #scene-menu { position: fixed; top: 20px; left: 20px; z-index: 20; display: flex; flex-direction: column; gap: 8px; transition: opacity 0.6s ease; }
+  .scene-btn {
+    background: none; border: none; border-left: 2px solid transparent;
+    color: rgba(154, 147, 127, 0.6); font-family: inherit; font-size: 13px;
+    letter-spacing: 0.3em; text-transform: lowercase; cursor: pointer; text-align: left;
+    padding: 4px 8px; transition: color 0.3s, border-color 0.3s, padding 0.3s;
   }
-  #callout.open #callout-box { opacity: 1; transform: scale(1); }
-  #callout-box h3 {
-    margin: 0 0 0.45rem; padding-right: 1.1rem; color: #d8b25a; font-weight: 400;
-    font-size: 0.72rem; letter-spacing: 0.14em; text-transform: uppercase;
-    font-family: ui-monospace, Menlo, monospace;
-  }
-  #callout-box .body { margin: 0; white-space: pre-wrap; font-size: 0.92rem; line-height: 1.6; color: rgba(232, 226, 210, 0.9); }
-  #callout-close {
-    position: absolute; top: 0.35rem; right: 0.55rem; cursor: pointer;
-    background: none; border: none; color: #9a937f; font-size: 1.2rem; line-height: 1; font-family: inherit;
-  }
-  #callout-close:hover { color: #e8e2d2; }
+  .scene-btn:hover { color: rgba(228, 222, 204, 0.85); }
+  .scene-btn.active { color: rgba(232, 214, 164, 0.9); border-left: 2px solid rgba(216, 178, 90, 0.55); padding-left: 12px; }
 
-  /* --- Szenen-Navigation --- */
-  #nav {
-    position: fixed; left: 50%; bottom: 1.6rem; transform: translateX(-50%);
-    z-index: 20; display: flex; align-items: center; gap: 0.9rem;
-    transition: opacity 0.6s ease;
-  }
-  #nav button.arrow {
-    background: none; border: none; color: var(--muted); cursor: pointer;
-    font-size: 1.4rem; padding: 0.2rem 0.5rem;
-  }
-  #nav button.arrow:hover { color: var(--fg); }
-  #nav .dots { display: flex; gap: 0.6rem; }
-  #nav .dot {
-    width: 8px; height: 8px; border-radius: 50%; cursor: pointer;
-    background: rgba(0,0,0,0.22); transition: background 0.3s, transform 0.3s;
-  }
-  #nav .dot.active { background: var(--accent); transform: scale(1.3); }
   #scene-name {
     position: fixed; left: 1.6rem; bottom: 1.5rem; z-index: 20;
-    color: var(--muted); letter-spacing: 0.16em; font-size: 0.85rem; text-transform: uppercase;
+    color: rgba(154, 147, 127, 0.7); letter-spacing: 0.35em; font-size: 11px; text-transform: lowercase;
     transition: opacity 0.6s ease;
   }
 </style>
@@ -132,36 +123,24 @@
   <div id="status">loading …</div>
 
   <div id="gate" class="hidden">
-    <h1>SolarSpeculations</h1>
-    <p>click to enter</p>
+    <div class="intro">an ocean planet under a sun no one may face.<br>a station of floating stone, breathing with the sea.<br><br>find the signals.&nbsp; listen.</div>
+    <div class="world">solarspeculations&nbsp;·&nbsp;a world after the collapse</div>
+    <div class="text">click to enter</div>
   </div>
 
-  <aside id="panel">
-    <button id="panel-close" aria-label="close">×</button>
-    <h2 id="panel-title"></h2>
-    <div class="body" id="panel-body"></div>
-    <img class="secondary" id="panel-secondary" alt="" style="display:none" />
-    <a class="link" id="panel-link" href="#" target="_blank" rel="noopener" style="display:none"></a>
-  </aside>
+  <div id="vignette"></div>
+  <div id="cursor"></div>
 
-  <div id="callout" aria-hidden="true">
-    <svg>
-      <line id="callout-line" x1="0" y1="0" x2="0" y2="0" stroke="rgba(216,178,90,0.7)" stroke-width="1"></line>
-      <circle id="callout-dot" cx="0" cy="0" r="3.5" fill="none" stroke="rgba(216,178,90,0.9)" stroke-width="1.2"></circle>
-    </svg>
-    <div id="callout-box">
-      <button id="callout-close" aria-label="close">×</button>
-      <h3 id="callout-title"></h3>
-      <div class="body" id="callout-body"></div>
-    </div>
+  <div id="reader" aria-hidden="true">
+    <img id="reader-img" alt="" />
+    <h3 id="reader-title"></h3>
+    <div class="body" id="reader-body"></div>
+    <a class="link" id="reader-link" href="#" target="_blank" rel="noopener"></a>
+    <div class="hint">click to return</div>
   </div>
 
+  <nav id="scene-menu" aria-label="scenes"></nav>
   <div id="scene-name"></div>
-  <nav id="nav">
-    <button class="arrow" id="prev" aria-label="previous scene">‹</button>
-    <div class="dots" id="dots"></div>
-    <button class="arrow" id="next" aria-label="next scene">›</button>
-  </nav>
 
   <script src="lib/p5.min.js"></script>
   <script src="lib/Tone.js"></script>

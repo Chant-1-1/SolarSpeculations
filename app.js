@@ -658,7 +658,7 @@ class Entity {
       drawIslandPlaceholder(sz, wlLocalY, alpha);
     } else if (!handled && this.def.hotspot) {
       // Section-Hotspot: dezenter pulsierender Gold-Ring (kein Bild) -> ruhige Klickpunkte im Schnitt
-      drawHotspotMarker(sz, alpha, glow, hoverEntity === this);
+      drawHotspotMarker(this, sz, alpha, hoverEntity === this);
     } else if (!handled && this.def.sceneImage) {
       // Szenen-Bild-Slot ohne geladenes Bild -> NICHTS zeichnen (kein Platzhalter-Kleks);
       // die Unterszene zeigt dann einfach weiter ihr prozedurales Motiv.
@@ -680,16 +680,17 @@ class Entity {
     }
     pop();
 
-    // Hover-Label
-    if (hoverEntity === this && alpha > 0.4) {
+    // Hover-Label (DESCENT: lowercase Mono, hell auf dunklem Schleier)
+    if (hoverEntity === this && alpha > 0.4 && this.def.label) {
       push();
       textAlign(CENTER, BOTTOM);
-      textSize(14);
+      textSize(11);
+      const lbl = this.def.label.toLowerCase();
       const ty = y - this.radius - 10;
       noStroke();
-      fill(255, 225); rect(x - textWidth(this.def.label) / 2 - 8, ty - 20, textWidth(this.def.label) + 16, 24, 3);
-      fill(20, 20, 20, 255 * Math.min(1, glow * 3 + 0.5));
-      text(this.def.label, x, ty);
+      fill(3, 6, 8, 190); rect(x - textWidth(lbl) / 2 - 9, ty - 18, textWidth(lbl) + 18, 23, 3);
+      fill(232, 214, 164, 255 * Math.min(1, glow * 3 + 0.5));
+      text(lbl, x, ty);
       pop();
     }
   }
@@ -921,8 +922,14 @@ function setup() {
   c.parent('canvas-holder');
   pixelDensity(chooseDensity());
   imageMode(CENTER);
-  textFont('Georgia');
+  textFont('Courier New');   // DESCENT-Typo: Mono auch fuer alle Canvas-Texte
   applyBW();        // ?bw-Startzustand auf die Seite anwenden
+  // Glow-Cursor (DESCENT): DOM-Punkt folgt der Maus; Zustaende (hover/grab) setzt updateUICursor().
+  const curEl = document.getElementById('cursor');
+  if (curEl) document.addEventListener('mousemove', e => {
+    curEl.style.left = e.clientX + 'px';
+    curEl.style.top = e.clientY + 'px';
+  });
   noLoop(); // erst nach Datenladen + Geste loopen
 
   // Barrierefreiheit: bei prefers-reduced-motion das ruhige drawUnderwater() statt des bewegten Shaders
@@ -938,7 +945,7 @@ function setup() {
       gate.addEventListener('click', startExperience, { once: true });
     })
     .catch(err => {
-      document.getElementById('status').textContent = 'Fehler beim Laden: ' + err.message;
+      document.getElementById('status').textContent = 'failed to load: ' + err.message;
       console.error(err);
     });
 }
@@ -2258,6 +2265,7 @@ function draw() {
   atmoSpin += (atmoGlobe && atmoGlobe.baseVel < 0 ? -1 : 1) * ATMO_SPIN_VEL * dt;
 
   // Entities aktualisieren + zeichnen (nur sichtbare Szenen)
+  const prevHover = hoverEntity;
   hoverEntity = null;
   for (const ent of allEntities) {
     if (currentSceneAlphaFor(ent) <= 0.01) continue;
@@ -2271,6 +2279,8 @@ function draw() {
       if (currentSceneAlphaFor(ent) > 0.4 && ent.contains(mouseX, mouseY)) { hoverEntity = ent; break; }
     }
   }
+  // DESCENT: leiser Ping beim ERSTEN Beruehren eines Hotspots (nur bei Hover-Wechsel)
+  if (hoverEntity && hoverEntity !== prevHover && hoverEntity.def.hotspot) playHoverPing();
   for (const ent of allEntities) {
     if (currentSceneAlphaFor(ent) <= 0.01) continue;
     const entIsPivot = zoomPivotIndex >= 0 && ent.def.scene === scenes[zoomPivotIndex]?.id;
@@ -2285,12 +2295,40 @@ function draw() {
 
   updateSectionMarkers();   // Rand-Ein-/Ausstiegs-Marker positionieren + zeichnen (Kugel-Oberrand / Schnitt oben)
 
-  if (heldEntity) cursor('grabbing');
-  else if (sectionHover) cursor('pointer');
-  else if (hoverEntity) cursor((hoverEntity.frames || hoverEntity.isGlobe) ? 'grab' : 'pointer');
-  else cursor('default');
+  updateUICursor();   // Glow-Cursor-Zustand (statt nativer cursor()-Styles, die cursor:none ueberschreiben wuerden)
 
   if (PERF_HUD) drawPerfHud();
+}
+
+// Glow-Cursor (DESCENT): Zustaende auf dem DOM-Punkt spiegeln. 'grab' beim Greifen/Kugel,
+// 'hover' ueber Hotspots/Markern. Der native Cursor ist per CSS (cursor:none) versteckt.
+function updateUICursor() {
+  const el = document.getElementById('cursor');
+  if (!el) return;
+  const grab = heldEntity || (hoverEntity && (hoverEntity.frames || hoverEntity.isGlobe));
+  el.classList.toggle('grab', !!grab);
+  el.classList.toggle('hover', !grab && !!(sectionHover || hoverEntity));
+}
+
+// leiser Hover-Ping (DESCENT): kurzer Sinus-Blip beim ersten Beruehren eines Hotspots.
+// Optional — ohne Audio-Graph oder vor der Eintritts-Geste passiert einfach nichts.
+let pingSynth = null, lastPingMs = 0;
+function playHoverPing() {
+  if (!audio || !started) return;
+  const now = millis();
+  if (now - lastPingMs < 150) return;   // entprellen
+  lastPingMs = now;
+  try {
+    if (!pingSynth) {
+      pingSynth = new Tone.Synth({
+        oscillator: { type: 'sine' },
+        envelope: { attack: 0.001, decay: 0.10, sustain: 0, release: 0.06 },
+        volume: -26
+      });
+      pingSynth.connect(audio.buses.short);
+    }
+    pingSynth.triggerAttackRelease(1150 + Math.random() * 90, 0.07);
+  } catch (e) { /* Audio ist optional */ }
 }
 
 // GPU-/Renderer-String einmalig ermitteln (fuer ?perf): zeigt, ob Hardware-Beschleunigung aktiv
@@ -2323,7 +2361,7 @@ function drawPerfHud() {
   noStroke(); fill(0, 0, 0, 160); rectMode(CORNER);
   rect(8, 8, 360, 74, 6);
   fill(perfFpsEMA >= 55 ? color(120, 230, 140) : perfFpsEMA >= 40 ? color(240, 210, 110) : color(240, 120, 110));
-  textAlign(LEFT, TOP); textSize(16); textFont('Georgia');
+  textAlign(LEFT, TOP); textSize(16); textFont('Courier New');
   text(perfFpsEMA.toFixed(0) + ' fps', 16, 12);
   fill(220); textSize(11);
   text('Dichte ' + d.toFixed(2) + '  ·  ' + mpx.toFixed(1) + ' MPix', 16, 36);
@@ -2491,7 +2529,7 @@ function drawWaterSection(alpha) {
   if (hasWater) {
     const yr = Math.floor(2026 + (3126 - 2026) * sectionSeaRise);
     push();
-    noStroke(); textAlign(LEFT, TOP); textFont('Georgia'); textSize(13);
+    noStroke(); textAlign(LEFT, TOP); textFont('Courier New'); textSize(13);
     fill(210, 228, 228, 215);
     text('sea level — year ' + yr, W * 0.06, wl * H + 14);
     pop();
@@ -2793,16 +2831,40 @@ function drawSectionWaterFallback(wl, alpha) {
 }
 
 // Dezenter, pulsierender Gold-Ring als Section-Hotspot (im lokalen Entity-Frame gezeichnet).
-function drawHotspotMarker(sz, alpha, glow, hover) {
-  const t = millis() * 0.001, pulse = 0.5 + 0.5 * Math.sin(t * 1.8), R = sz * 0.30;
+function drawHotspotMarker(ent, sz, alpha, hover) {
+  // DESCENT-Orb: pulsierender, additiv gestufter Glow + heller Kern + kreisende Satelliten-
+  // Partikel. Besuchte Hotspots (ent.visited, gesetzt beim Oeffnen des Readers) sind gedimmt.
+  if (!ent.sats) {   // Satelliten einmalig pro Hotspot wuerfeln (Radius relativ zum Orb)
+    ent.sats = [];
+    for (let i = 0; i < 10; i++) ent.sats.push({
+      a: Math.random() * TWO_PI,           // Startwinkel
+      r: 0.9 + Math.random() * 1.2,        // Bahnradius (in Orb-Radien)
+      s: (0.2 + Math.random() * 0.7) * (Math.random() < 0.5 ? -1 : 1),   // Winkeltempo
+      sz: 0.8 + Math.random() * 1.6        // Punktgroesse (px)
+    });
+  }
+  const visited = !!ent.visited;
+  const col = visited ? [120, 110, 88] : [216, 178, 90];       // Gold; besucht = stumpfes Warmgrau
+  const p = 0.7 + 0.3 * Math.sin(millis() * 0.0025 + ent.bobPhase);
+  const R = sz * 0.30;
   push();
-  noFill();
-  stroke(216, 178, 90, alpha * (55 + 55 * pulse) * (hover ? 1.5 : 1)); strokeWeight(1.5);
-  ellipse(0, 0, R * (1.6 + 0.5 * pulse));                       // aeusserer, atmender Ring
-  stroke(216, 178, 90, alpha * 205); strokeWeight(1.5);
-  ellipse(0, 0, R);                                            // fester Ring
-  noStroke(); fill(232, 202, 122, alpha * 255);
-  ellipse(0, 0, R * 0.42 * (hover ? 1.3 : 1));                 // Kern
+  noStroke();
+  // gestufter Glow (mehrere weiche Scheiben addieren sich zum Leuchten)
+  for (let i = 6; i > 0; i--) {
+    fill(col[0], col[1], col[2], alpha * (visited ? 2.5 : 9) * p * (hover ? 1.4 : 1));
+    ellipse(0, 0, R * 0.55 * i);
+  }
+  // heller Kern
+  fill(Math.min(255, col[0] + 30), Math.min(255, col[1] + 40), col[2] + 30, alpha * (visited ? 90 : 235) * p);
+  ellipse(0, 0, R * 0.34 * (hover ? 1.25 : 1));
+  // Satelliten
+  for (const s of ent.sats) {
+    s.a += s.s * 0.016;
+    fill(col[0], col[1], col[2], alpha * (visited ? 25 : 110) * p);
+    ellipse(Math.cos(s.a) * s.r * R, Math.sin(s.a) * s.r * R, s.sz);
+  }
+  // Hover: heller Hof (wie DESCENT)
+  if (hover) { fill(255, 240, 200, alpha * 55); ellipse(0, 0, R * 1.5); }
   pop();
 }
 
@@ -2891,11 +2953,11 @@ function vizHotspotNorm(id) {
   return null;
 }
 
-// kleine Bild-Ueberschrift oben links (Georgia, dezent) -> rahmt die Erklaerung ein.
+// kleine Bild-Ueberschrift oben links (Mono, dezent) -> rahmt die Erklaerung ein.
 function drawVizCaption(title, sub) {
   if (VIZ_CAPTION <= 0) return;
   const mm = Math.min(width, height), x = width * 0.055, y = height * 0.085, a = VIZ_CAPTION;
-  push(); noStroke(); textAlign(LEFT, TOP); textFont('Georgia');
+  push(); noStroke(); textAlign(LEFT, TOP); textFont('Courier New');
   textSize(Math.max(13, mm * 0.021)); fill(232, 226, 210, 210 * a); text(title, x, y);
   if (sub) { textSize(Math.max(11, mm * 0.0135)); fill(200, 194, 178, 150 * a); text(sub, x, y + Math.max(20, mm * 0.031)); }
   pop();
@@ -3244,9 +3306,9 @@ function drawRimMarker(x, y, r, label) {
   stroke(216, 178, 90, 65 + 80 * pulse); strokeWeight(1.5); ellipse(0, 0, 24 + 16 * pulse);
   stroke(216, 178, 90, 225); strokeWeight(1.5); ellipse(0, 0, 15);
   noStroke(); fill(235, 205, 130, 235); ellipse(0, 0, 6);
-  textAlign(LEFT, CENTER); textSize(11); textFont('Georgia');
+  textAlign(LEFT, CENTER); textSize(11); textFont('Courier New');
   fill(205, 178, 122, hover ? 230 : 165);
-  text(label, 18, 1);
+  text(label.toLowerCase(), 18, 1);   // DESCENT: lowercase Mono-Labels
   pop();
 }
 
@@ -3301,14 +3363,12 @@ function exitSection() {
 function toggleStationInfo() {
   stationInfoOn = !stationInfoOn;
   if (stationInfoOn) wildlifeInfoOn = false;             // die beiden Szene-2-Erklaerungen schliessen sich aus
-  if (!stationInfoOn && calloutEntity) closeCallout();   // beim Ausblenden ein offenes Etikett mitnehmen
 }
 
 // "Wildlife" (Szene 2): Erklaer-Hotspots zum Meeresleben ein-/ausblenden — statt eine Unterszene zu oeffnen.
 function toggleWildlifeInfo() {
   wildlifeInfoOn = !wildlifeInfoOn;
   if (wildlifeInfoOn) stationInfoOn = false;             // nie beide gleichzeitig aktiv
-  if (!wildlifeInfoOn && calloutEntity) closeCallout();
 }
 
 // =========================================================================
@@ -3335,13 +3395,11 @@ function mousePressed() {
       if (ent.isGlobe) { heldEntity = ent; ent.spinVel = 0; ent.tiltVel = 0; }
       // Frame-Sequenz: Halten pausiert
       else if (ent.frames && ent.frames.length) heldEntity = ent;
-      // Section-Hotspot: Etiketten-Callout (Kasten am Punkt, per Linie verbunden)
-      else if (ent.def.hotspot) openCallout(ent);
+      // Hotspot + normales Entity: Reader-Overlay (DESCENT-Textpanel)
       else openPanel(ent);
       return;
     }
   }
-  if (calloutEntity) closeCallout();   // Klick ins Leere schliesst das offene Etikett
 }
 
 // Ziehen dreht die gegriffene Kugel nach links/rechts; Tempo merkt sie sich als Schwung
@@ -3361,71 +3419,31 @@ function mouseDragged() {
 
 function mouseReleased() { heldEntity = null; }   // Loslassen -> Schwung, dann zurueck auf Normaltempo
 
+// ===== Reader-Overlay (DESCENT-Textpanel): EINE Praesentation fuer alle Inhalte =====
+// Klick auf einen Hotspot/ein Entity -> Szene dimmt ab, Titel + Text zentriert (optionales Bild
+// darueber, optionaler Link darunter), "click to return" unten. Klick irgendwo oder ESC schliesst.
+// Ersetzt das fruehere Seiten-Panel UND die Callout-Etiketten.
 function openPanel(ent) {
   openEntity = ent;
+  ent.visited = true;   // besuchte Hotspots werden gedimmt gezeichnet (DESCENT)
   if (ent.def.action === 'seaLevelRise') sectionSeaRiseActive = true;   // Meeresspiegel steigt (einmalig)
   const c = ent.def.content || {};
-  document.getElementById('panel-title').textContent = c.title || ent.def.label || '';
-  document.getElementById('panel-body').textContent = c.body || '';
-  const sec = document.getElementById('panel-secondary');
-  if (c.secondaryImage) { sec.src = c.secondaryImage; sec.style.display = 'block'; }
-  else { sec.style.display = 'none'; }
-  const link = document.getElementById('panel-link');
+  document.getElementById('reader-title').textContent = c.title || ent.def.label || '';
+  document.getElementById('reader-body').textContent = c.body || '';
+  const img = document.getElementById('reader-img');
+  if (c.secondaryImage) { img.src = c.secondaryImage; img.style.display = 'block'; }
+  else { img.style.display = 'none'; }
+  const link = document.getElementById('reader-link');
   if (c.link && c.link.url) { link.href = c.link.url; link.textContent = c.link.label || 'more'; link.style.display = 'inline-block'; }
   else { link.style.display = 'none'; }
-  document.getElementById('panel').classList.add('open');
+  document.getElementById('reader').classList.add('open');
   setDuck(true);
 }
 
 function closePanel() {
   openEntity = null;
-  document.getElementById('panel').classList.remove('open');
+  document.getElementById('reader').classList.remove('open');
   setDuck(false);
-}
-
-// ===== Etiketten-Callout fuer Section-Hotspots (Wasser/Atmosphaere) =====
-// Klick auf einen Punkt -> kleiner Kasten ploppt neben dem Punkt auf, per Linie damit verbunden.
-let calloutEntity = null;
-
-function openCallout(ent) {
-  calloutEntity = ent;
-  if (ent.def.action === 'seaLevelRise') sectionSeaRiseActive = true;   // Meeresspiegel steigt (einmalig)
-  const c = ent.def.content || {};
-  document.getElementById('callout-title').textContent = c.title || ent.def.label || '';
-  document.getElementById('callout-body').textContent = c.body || '';
-  document.getElementById('callout').classList.add('open');
-  positionCallout(ent);
-}
-
-// Box neben dem Punkt platzieren (im Viewport gehalten) + Verbindungslinie Punkt -> Box-Kante.
-function positionCallout(ent) {
-  const co = document.getElementById('callout');
-  if (!ent || !co.classList.contains('open')) return;
-  const box = document.getElementById('callout-box');
-  const M = 14, GAP = 30;
-  box.style.maxWidth = Math.max(160, width - 2 * M) + 'px';   // an die Canvas-Breite koppeln (nicht an vw)
-  const bw = box.offsetWidth, bh = box.offsetHeight;
-  const px = ent.pos.x, py = ent.pos.y;
-  let bx = px + GAP, by = py - bh - 8;                       // Standard: rechts-oben vom Punkt
-  if (bx + bw > width - M) bx = px - GAP - bw;               // zu weit rechts -> nach links
-  bx = Math.max(M, Math.min(bx, width - M - bw));
-  if (by < M) by = py + 22;                                  // zu weit oben -> unter den Punkt
-  by = Math.max(M, Math.min(by, height - M - bh));
-  box.style.left = Math.round(bx) + 'px';
-  box.style.top = Math.round(by) + 'px';
-  const tx = Math.max(bx, Math.min(px, bx + bw));            // naechster Punkt auf der Box-Kante
-  const ty = Math.max(by, Math.min(py, by + bh));
-  const line = document.getElementById('callout-line');
-  line.setAttribute('x1', px); line.setAttribute('y1', py);
-  line.setAttribute('x2', tx); line.setAttribute('y2', ty);
-  const dot = document.getElementById('callout-dot');
-  dot.setAttribute('cx', px); dot.setAttribute('cy', py);
-}
-
-function closeCallout() {
-  if (!calloutEntity) return;
-  calloutEntity = null;
-  document.getElementById('callout').classList.remove('open');
 }
 
 // =========================================================================
@@ -3434,7 +3452,7 @@ function closeCallout() {
 function goToScene(index) {
   if (index === currentScene || nextScene >= 0) return;
   if (index < 0 || index >= scenes.length) return;
-  if (calloutEntity) closeCallout();   // offenes Etikett nicht in die naechste Szene mitnehmen
+  if (openEntity) closePanel();        // offenes Reader-Overlay nicht in die naechste Szene mitnehmen
   stationInfoOn = false;               // Station-Info-Hotspots nicht in eine andere Szene mitnehmen
   wildlifeInfoOn = false;              // ebenso die Wildlife-Info-Hotspots
   // Station-Zoom 2<->3 (fixes Ziel = Stationskuppel)
@@ -3489,27 +3507,28 @@ function navStep(dir) {
   return vis[(pos + dir + vis.length) % vis.length];
 }
 
+// Szenen-Menue oben links (DESCENT): "i · the earth" usw. statt Punkte-Navigation.
+// noNav-Szenen (Viz-Unterszenen) tauchen nicht auf; Pfeiltasten navigieren weiter.
 function buildNav() {
-  const dots = document.getElementById('dots');
-  dots.innerHTML = '';
+  const menu = document.getElementById('scene-menu');
+  menu.innerHTML = '';
+  const roman = ['i', 'ii', 'iii', 'iv', 'v', 'vi', 'vii', 'viii'];
+  let n = 0;
   scenes.forEach((sc, i) => {
-    if (sc.noNav) return;   // Section o.ae.: kein Nav-Punkt
-    const d = document.createElement('div');
-    d.className = 'dot' + (i === currentScene ? ' active' : '');
-    d.title = sc.name;
-    d.dataset.scene = i;
-    d.addEventListener('click', () => goToScene(i));
-    dots.appendChild(d);
+    if (sc.noNav) return;   // Viz-Unterszenen o.ae.: kein Menue-Eintrag
+    const b = document.createElement('button');
+    b.className = 'scene-btn' + (i === currentScene ? ' active' : '');
+    b.textContent = (roman[n++] || '·') + ' · ' + (sc.name || '');
+    b.dataset.scene = i;
+    b.addEventListener('click', () => goToScene(i));
+    menu.appendChild(b);
   });
-  document.getElementById('prev').addEventListener('click', () => goToScene(navStep(-1)));
-  document.getElementById('next').addEventListener('click', () => goToScene(navStep(1)));
-  document.getElementById('panel-close').addEventListener('click', closePanel);
-  document.getElementById('callout-close').addEventListener('click', closeCallout);
+  document.getElementById('reader').addEventListener('click', closePanel);   // Klick irgendwo schliesst
   updateSceneName();
 }
 
 function updateDots(index) {
-  document.querySelectorAll('#dots .dot').forEach(d => d.classList.toggle('active', +d.dataset.scene === index));
+  document.querySelectorAll('#scene-menu .scene-btn').forEach(d => d.classList.toggle('active', +d.dataset.scene === index));
 }
 function updateSceneName(index = currentScene) {
   const sc = scenes[index];
@@ -3517,8 +3536,7 @@ function updateSceneName(index = currentScene) {
 }
 
 function keyPressed() {
-  if (keyCode === ESCAPE && calloutEntity) closeCallout();
-  else if (keyCode === ESCAPE && openEntity) closePanel();
+  if (keyCode === ESCAPE && openEntity) closePanel();
   else if (key === 'p' || key === 'P') PERF_HUD = !PERF_HUD;   // FPS-HUD ein/aus
   else if (key === 's' || key === 'S') toggleBW();             // Schwarz-Weiss ein/aus
   else if (keyCode === LEFT_ARROW) goToScene(navStep(-1));
@@ -3534,7 +3552,6 @@ function toggleBW() { bwMode = !bwMode; applyBW(); }
 function windowResized() {
   pixelDensity(chooseDensity());   // Budget bei Groessenwechsel neu bewerten (vor resizeCanvas)
   resizeCanvas(vw(), vh());
-  if (calloutEntity) positionCallout(calloutEntity);   // offenes Etikett neu ausrichten
   if (spaceResizeTimer) clearTimeout(spaceResizeTimer);
   spaceResizeTimer = setTimeout(() => {
     buildSpace();              // gecachten Weltraum-Backdrop neu bauen (entprellt)
