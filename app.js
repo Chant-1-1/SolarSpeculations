@@ -961,14 +961,8 @@ let waterReduceMotion = false; // prefers-reduced-motion -> Fallback (Ruhe statt
 let waterProbed = false;       // einmalige Sicht-Pruefung nach dem ersten Render (faengt stillen Compile-Fehler)
 const WATER_RENDER_SCALE = 0.5;// halbe Aufloesung -> ein Fragment-Pass, dann hochskaliert (60fps)
 const WATER_MAX = 860;         // Deckel fuer die laengste Buffer-Kante
-// ----- SONNEN-SHADER (Scene 1): eigener kleiner, QUADRATISCHER WebGL-Buffer (fixe Aufloesung) -----
-// Die Sonne lebt im lokalen UV-Raum dieses Buffers (Scheibe + Protuberanzen + Korona); die Orbit-
-// Position bleibt 2D und wird per ADD-Blit gesetzt. Faellt wie Wasser/Solar auf 2D zurueck.
-let sunBuf = null;
-let sunShader = null;
-let sunShaderFailed = false;   // Shader nicht nutzbar -> dauerhaft 2D-Fallback drawSunFallback()
-let sunProbed = false;         // einmalige Sicht-Pruefung nach dem ersten Render
-const SUN_BUF = 512;           // feste Kantenlaenge (auflösungsunabhaengig, beim Blit skaliert)
+// Die Orbit-Sonne (Szene 1) nutzt jetzt denselben prozeduralen FBM-Shader wie die 'the sun'-
+// Unterszene (VIZSUN_FRAG / drawVizSunShader) — kein eigener Sonnen-Shader mehr noetig.
 const WATER_LIGHTDIR = [0.18, 1.0];       // Richtung ZUM Licht (uv-Raum, leicht rechts wie die Scene-1-Sonne)
 const WATER_LIGHTCOL = [1.0, 0.95, 0.82]; // warm-weiss/gold (gefilterte Sonne durch den Smog)
 
@@ -1595,85 +1589,6 @@ void main(){
   gl_FragColor = vec4(col, 1.0);
 }`;
 
-// =========================================================================
-//  SONNEN-SHADER (Scene 1) — lebendiger Stern statt statischer Verlauf.
-//  Realismus-Technik wie das Meer: geteilter GLSL_NOISE (fbm/worley) + domain warping.
-//  Bausteine: Randverdunkelung (limb darkening), Granulation (Konvektionszellen),
-//  turbulente Protuberanzen am Rand, rauschdurchzogene Korona. OPAKE Ausgabe auf
-//  Schwarz -> wird additiv (ADD) an die Orbit-Position geblittet. uHeat/uIntensity
-//  kommen aus dem CPU-Flackern (bleibt erhalten).
-// =========================================================================
-const SUN_FRAG = `
-precision highp float;
-uniform float uTime;
-uniform vec2  uResolution;
-uniform float uHeat;        // 0..1: Rotverschiebung gold -> rot-orange (atmet mit dem Flackern)
-uniform float uIntensity;   // Helligkeits-Pumpen (Flackern)
-` + GLSL_NOISE + `
-void main(){
-  vec2 uv = gl_FragCoord.xy / uResolution;
-  vec2 p  = uv - 0.5;                       // zentriert, Scheibe in der Mitte
-  float r = length(p);
-  float ang = atan(p.y, p.x);
-  float t = uTime;
-
-  const float RD = 0.165;                   // Scheibenradius in UV
-
-  // organische Verformung (domain warping) fuer Granulation + Protuberanzen
-  vec2 warp = vec2(fbm(p*6.0 + t*0.04), fbm(p*6.0 + 5.2 - t*0.05));
-
-  // ----- Oberflaeche: Granulation (Konvektionszellen) + Randverdunkelung -----
-  float gran  = fbm(p*15.0 + warp*1.4 + t*0.03);
-  float cells = worley(p*11.0 + warp*0.8, t*0.18);         // grosse Zellen, langsam wabernd
-  float mu    = sqrt(max(0.0, 1.0 - (r*r)/(RD*RD)));       // cos(Blickwinkel) -> limb darkening
-  float limb  = 0.30 + 0.70*mu;
-  float surf  = limb * (0.78 + 0.40*gran) * (0.72 + 0.45*(1.0 - cells));
-  float disk  = smoothstep(RD, RD - 0.012, r);             // weiche Scheibenkante
-
-  // ----- Hitze-Farbe: gold -> aggressives Rot-Orange (Flackern + Granulationstiefe) -----
-  vec3 hot   = vec3(1.0, 0.42, 0.12);
-  vec3 gold  = vec3(1.0, 0.83, 0.42);
-  vec3 white = vec3(1.0, 0.96, 0.86);
-  vec3 base    = mix(gold, hot, clamp(uHeat*0.55 + (1.0 - gran)*0.35, 0.0, 1.0));
-  vec3 diskCol = mix(base, white, smoothstep(0.75, 1.25, surf)) * surf * uIntensity;
-  vec3 col = diskCol * disk;
-
-  // ----- Protuberanzen/Flares: turbulente Zungen knapp ueber dem Rand -----
-  float fl = fbm(vec2(ang*2.2, r*7.0 - t*0.5) + warp*2.2);
-  fl = pow(max(0.0, fl), 1.6);
-  float promOuter = RD + 0.075 * fl;                       // Reichweite der Zunge nach aussen
-  float prom = smoothstep(promOuter, RD - 0.01, r);        // 1 am Rand .. 0 aussen
-  prom *= (1.0 - disk) * fl;                               // nur ausserhalb der Scheibe
-  col += hot * prom * (0.9 + 0.7*uHeat) * uIntensity;
-
-  // ----- Korona: weicher Aussen-Glow mit wandernden Straehnen -----
-  float corona = clamp(exp(-(r - RD) * 6.5), 0.0, 1.0) * (1.0 - disk);
-  float streak = 0.55 + 0.70*fbm(vec2(ang*3.0, r*3.5 - t*0.25));
-  col += mix(hot, gold, 0.5) * corona * streak * (0.45 + 0.40*uIntensity);
-
-  // kreisfoermige Randmaske: garantiert Schwarz VOR der quadratischen Buffer-Kante (r=0.5),
-  // sonst wuerde der additive Blit einen sichtbaren rechteckigen Glow-Rand zeigen.
-  col *= smoothstep(0.5, 0.34, r);
-
-  gl_FragColor = vec4(col, 1.0);                           // opak auf Schwarz -> additiv geblittet
-}`;
-
-// kleinen quadratischen WebGL-Buffer + Sonnen-Shader anlegen. Bei Fehler -> 2D-Fallback.
-function ensureSunBuffer() {
-  if (waterReduceMotion || sunShaderFailed || sunBuf) return;
-  try {
-    const buf = createGraphics(SUN_BUF, SUN_BUF, WEBGL);
-    buf.pixelDensity(1);                                   // feste Aufloesung (kein Retina-Doppeln)
-    const sh = buf.createShader(WATER_VERT, SUN_FRAG);     // generischer Vollbild-Vertex (wie Wasser)
-    sunBuf = buf; sunShader = sh; sunProbed = false;
-  } catch (e) {
-    console.warn('Sonnen-Shader nicht verfuegbar -> 2D-Fallback drawSunFallback()', e);
-    sunShaderFailed = true;
-    if (sunBuf) { sunBuf.remove(); sunBuf = null; }
-    sunShader = null;
-  }
-}
-
 // eigenen WebGL-Buffer + Shader anlegen (reduzierte Aufloesung). Bei Fehler -> 2D-Fallback.
 function ensureSolarBuffer() {
   if (waterReduceMotion || solarShaderFailed || solarBuf) return;
@@ -2043,51 +1958,30 @@ function sunFlicker(t) {
   return 0.5 + 0.5 * f;   // 0..1, betont
 }
 
-// Sonne: WebGL-Shader-Pfad (lebendiger Stern). Faellt auf das 2D-drawSunFallback() zurueck bei
-// reduced-motion, createShader-Fehler oder leerem ersten Render. Flackern bleibt CPU-seitig und
-// geht als uHeat/uIntensity in den Shader (das Pumpen bleibt damit erhalten).
+// Sonne (Orbit, Szene 1): dieselbe prozedurale, brodelnde FBM-Scheibe wie in der 'the sun'-
+// Unterszene (drawVizSunShader) — keine Korona, nur Rand-Eruptionen. Ein dezenter Glow bleibt,
+// damit die kleine Sonne im Weltraum noch als Lichtquelle liest. Faellt auf drawSunFallback()
+// zurueck bei reduced-motion / Shader-Fehler.
 function drawSun(x, y, r) {
-  if (waterReduceMotion || sunShaderFailed || PERF_FLAT) { drawSunFallback(x, y, r); return; }
-  ensureSunBuffer();
-  if (!sunBuf || !sunShader) { drawSunFallback(x, y, r); return; }
-  const t = millis() / 1000;
+  if (waterReduceMotion || vizSunFailed || PERF_FLAT) { drawSunFallback(x, y, r); return; }
+  const ctx = drawingContext, t = millis() / 1000;
+  const R = r * 1.8;                        // Scheibenradius ~ frueheres Erscheinungsbild
   const flick = sunFlicker(t);
-  const heat = 0.45 + 0.45 * flick;        // Rotverschiebung atmet mit
-  const intensity = 0.85 + 0.40 * flick;   // Helligkeit pumpt
-  try {
-    const g = sunBuf;
-    g.clear();
-    g.noStroke();
-    g.shader(sunShader);
-    sunShader.setUniform('uTime', t);
-    sunShader.setUniform('uResolution', [g.width, g.height]);
-    sunShader.setUniform('uHeat', heat);
-    sunShader.setUniform('uIntensity', intensity);
-    g.plane(g.width + 2, g.height + 2);                  // Vollbild-Quad (kleiner Overscan gegen Randnaht)
-    g.resetShader();
-    // einmalige Sicht-Pruefung: rendert der Shader nichts (stiller Compile-Fehler) -> Fallback.
-    // Mitte = heller Scheibenkern -> pruefe RGB-Summe (alpha ist konstant opak).
-    if (!sunProbed) {
-      sunProbed = true;
-      const px = g.get(g.width >> 1, g.height >> 1);
-      if (!px || (px[0] + px[1] + px[2]) < 8) throw new Error('leerer Sun-Render (vermutlich Shader-Compile-Fehler)');
-    }
-  } catch (e) {
-    console.warn('Sonnen-Shader Render fehlgeschlagen -> 2D-Fallback drawSunFallback()', e);
-    sunShaderFailed = true;
-    if (sunBuf) { sunBuf.remove(); sunBuf = null; }
-    sunShader = null;
-    drawSunFallback(x, y, r);
-    return;
-  }
-  // additiv an die Orbit-Position blitten; Buffer deckt Scheibe + Protuberanzen + Korona.
-  // D = Blit-Durchmesser ~ Korona-Reichweite (Scheibenradius RD=0.165 -> Kern ~ r auf dem Schirm).
-  push();
-  blendMode(ADD);
-  imageMode(CENTER);
-  const D = r * 11;
-  image(sunBuf, x, y, D, D);
+  // dezenter Glow (kein Korona-Feuerwerk) -> die Orbit-Sonne bleibt als Lichtpunkt lesbar
+  push(); blendMode(ADD); noStroke();
+  const GR = R * 2.6;
+  let glow = ctx.createRadialGradient(x, y, R * 0.55, x, y, GR);
+  glow.addColorStop(0.0, 'rgba(255,196,96,' + (0.18 + 0.07 * flick).toFixed(3) + ')');
+  glow.addColorStop(0.45, 'rgba(240,150,50,0.06)');
+  glow.addColorStop(1.0, 'rgba(200,90,0,0)');
+  ctx.fillStyle = glow; ctx.fillRect(x - GR, y - GR, GR * 2, GR * 2);
   pop();
+  // brodelnde FBM-Scheibe + Rand-Eruptionen (Shader-Pfad, sonst 2D-Fallback)
+  if (drawVizSunShader(x, y, R, t)) {
+    updateVizSunEruptions(x, y, R, t, ctx);
+  } else {
+    drawSunFallback(x, y, r);
+  }
 }
 
 // 2D-Fallback (reduced-motion / Shader-Fehler): der prozedurale Sonnensturm auf Canvas-Basis.
@@ -2213,11 +2107,10 @@ function draw() {
       if (zoomProgress >= 1) {
         currentScene = nextScene; nextScene = -1; sceneFade = 1;
         zoomTransition = false; zoomProgress = 0;
-        fireAutoAnno();
       }
     } else {
       sceneFade = Math.min(1, sceneFade + dt * SCENE_FADE_SPEED);
-      if (sceneFade >= 1) { currentScene = nextScene; nextScene = -1; sceneFade = 1; fireAutoAnno(); }
+      if (sceneFade >= 1) { currentScene = nextScene; nextScene = -1; sceneFade = 1; }
     }
   }
 
@@ -2619,12 +2512,18 @@ function drawWaterSky(W, H, ctx) {
     stroke(255, 240, 120, 62 * flick); strokeWeight(0.5);
     line(sunX, sunY, sunX + Math.cos(ang) * len, sunY + Math.sin(ang) * len);
   }
-  noStroke();                                             // geschichtete Sonnenscheibe
-  fill(255, 160, 0, 22); circle(sunX, sunY, 180);
-  fill(255, 200, 30, 48); circle(sunX, sunY, 90);
-  fill(255, 230, 80, 118); circle(sunX, sunY, 44);
-  fill(255, 248, 150, 195); circle(sunX, sunY, 22);
-  fill(255, 255, 220, 235); circle(sunX, sunY, 10);
+  // Sonnenscheibe: dieselbe brodelnde FBM-Sonne wie in der 'the sun'-Unterszene + Rand-Eruptionen.
+  const sunR = Math.min(W, H) * 0.06, ts = millis() * 0.001;
+  if (drawVizSunShader(sunX, sunY, sunR, ts)) {
+    updateVizSunEruptions(sunX, sunY, sunR, ts, ctx);
+  } else {
+    noStroke();                                           // geschichtete Scheibe als 2D-Fallback
+    fill(255, 160, 0, 22); circle(sunX, sunY, 180);
+    fill(255, 200, 30, 48); circle(sunX, sunY, 90);
+    fill(255, 230, 80, 118); circle(sunX, sunY, 44);
+    fill(255, 248, 150, 195); circle(sunX, sunY, 22);
+    fill(255, 255, 220, 235); circle(sunX, sunY, 10);
+  }
   for (let i = 0; i < 7; i++) {                           // horizontale UV-Schimmerbaender
     const y = H * (0.06 + i * 0.05), fl = Math.sin(F * 0.03 + i * 1.4) * 0.25 + 0.75;
     stroke(255, 220, 60, 14 * fl); strokeWeight(0.5); line(0, y, W, y);
@@ -3610,9 +3509,6 @@ function closePanel() {
 // =========================================================================
 let annoEntity = null;
 let annoBuilt = null;   // Zustand der letzten SVG-Erzeugung {x,y,r,w,h} -> Rebuild bei Resize
-// Beim Rein-Zoomen in eine Unterszene mit Anno-Hotspot (the sun/water/atmosphere): dessen id,
-// damit das Diagramm nach Ende des Zooms automatisch aufgeht (ohne Extra-Klick). fireAutoAnno().
-let pendingAutoAnno = null;
 
 function annoStationEnt() { return allEntities.find(e => e.def.id === 'station' && e.def.scene === 'scene2'); }
 
@@ -3628,15 +3524,6 @@ function openAnno(ent) {
   buildAnnoSVG();
   document.getElementById('anno').classList.add('open');
   setDuck(true);
-}
-
-// nach dem Rein-Zoomen in eine Unterszene (the sun/water/atmosphere): den gemerkten Anno-Hotspot
-// automatisch oeffnen -> die Erklaerung ist sofort da, ohne noch einmal auf den Punkt zu klicken.
-function fireAutoAnno() {
-  if (!pendingAutoAnno) return;
-  const ent = allEntities.find(e => e.def.id === pendingAutoAnno);
-  pendingAutoAnno = null;
-  if (ent && ent.def.scene === scenes[currentScene].id && !openEntity) openAnno(ent);
 }
 
 // --- kleine SVG-String-Helfer (Farben: gold/dim/light wie im Rest des Looks) ---
@@ -3889,9 +3776,8 @@ function goToScene(index) {
     if (vizIn) {
       const p = vizMarkerPos(v);                       // Ziel = Position des angeklickten Markers
       if (p) { zoomTargetX = p.x / width; zoomTargetY = p.y / height; }
-      // Anno-Hotspot der Zielszene beim Ankommen automatisch oeffnen (kein Extra-Klick noetig).
-      const auto = allEntities.find(e => e.def.anno && e.def.scene === tgtId);
-      pendingAutoAnno = auto ? auto.def.id : null;
+      // Anno-Diagramm oeffnet NICHT automatisch: die Unterszenen (the sun/water/atmosphere) haben
+      // — wie Szene 2 (station/wildlife/living) — einen Hotspot, den man selbst anklickt.
       if (v.id === WATER_ID) { sectionSeaRise = 0; sectionSeaRiseActive = false; }   // Wasser startet trocken
       if (v.id === ATMO_ID) {                          // Atmosphaere: Drehphase vom Globus uebernehmen ->
         const g = allEntities.find(e => e.isGlobe);    // kein Laengen-Sprung + gleiche Richtung -> echter Zoom
