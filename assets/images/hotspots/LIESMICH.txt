@@ -1,28 +1,27 @@
-HOTSPOT-GRAFIKEN fuer das Reader-Overlay (der dunkle Text-Screen beim Klick auf einen Hotspot).
+HOTSPOT-GRAFIKEN/BILDER — Dateien einfach HIER in diesen Ordner legen (kein Unterordner noetig):
 
-So geht's — Dateien einfach HIER in diesen Ordner legen (kein Unterordner noetig):
-
-  <hotspot-id>1.png   (oder .webp)   -> Haupt-Grafik, erscheint gross ueber dem Text
-  <hotspot-id>2.png, <hotspot-id>3.png ...  -> weitere unterstuetzende Bilder daneben
-
-Beispiele:
-  sec_ozone1.png        -> Grafik zum "Ozone layer"-Hotspot
-  dwelling1.webp        -> Grafik zu "Dwelling in the stone"
-  st2_floating1.png + st2_floating2.png  -> Grafik + Zusatzbild
+  <hotspot-id>1.png   (oder .webp oder .svg)   -> erstes Bild
+  <hotspot-id>2.png, <hotspot-id>3.png ...     -> weitere Bilder daneben
 
 Die Reihe endet bei der ersten Luecke (gibt es <id>3 nicht, wird <id>4 nicht mehr gesucht).
-WebP wird vor PNG bevorzugt. Die Bilder werden bei JEDEM Oeffnen des Hotspots frisch gesucht —
-eine neu abgelegte Datei erscheint also sofort, ohne die Seite neu zu laden.
+Pro Nummer wird .webp vor .png vor .svg bevorzugt. Die Bilder werden bei JEDEM Oeffnen des
+Hotspots frisch gesucht — eine neu abgelegte Datei erscheint sofort, ohne die Seite neu zu laden.
 
-Alle Hotspot-IDs (aus data/entities.json):
+WO die Bilder erscheinen:
 
-  Szene 2 — Station-Info:    st2_floating, st2_below, st2_light, st2_keel, st2_grown, st2_breathing
-  Szene 2 — Wildlife-Info:   wl_ecology, wl_station
-  the atmosphere:            sec_magnet, sec_ozone, sec_smog
-  the water:                 sec_sea_level, sec_band, sec_deep
-  the sun:                   sun_surface, sun_corona, sun_storm
-  the station (Querschnitt): st_hull, st_life, st_ballast, st_airlock
-  living:                    dwelling, the_sway, finding_the_way
+1) READER-Hotspots (dunkler Text-Screen): Bilder erscheinen GROSS ueber dem Text.
+   IDs:  the atmosphere:  sec_magnet, sec_ozone, sec_smog
+         the water:       sec_sea_level, sec_band, sec_deep
+         the sun:         sun_surface, sun_corona, sun_storm
 
-Groesse/Layout: ein Bild wird gross zentriert (max. ~38% Bildschirmhoehe), mehrere stehen
-nebeneinander und brechen um. Querformat ~1600px Breite ist ein guter Richtwert.
+2) IN-SZENE-Diagramme (Szene 2): die Szene dimmt nur leicht ab, die ECHTE Station wird
+   direkt beschriftet (Diagramm-Definition: app.js -> buildAnnoSVG). Eigene Bilder
+   erscheinen als kleine Reihe UEBER dem Kurztext unten.
+   IDs:  hs_station, hs_wildlife, hs_living
+
+(Derzeit unverlinkte Unterszenen: st_hull, st_life, st_ballast, st_airlock,
+ dwelling, the_sway, finding_the_way — Schema funktioniert dort genauso.)
+
+Beispiele:
+  hs_station1.png       -> Bild im Stations-Diagramm (ueber dem Kurztext)
+  sec_ozone1.png        -> grosse Grafik zum "Ozone layer"-Hotspot im Reader

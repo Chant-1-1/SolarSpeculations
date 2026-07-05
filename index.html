@@ -25,17 +25,26 @@
   /* Custom-Glow-Cursor nur auf Geraeten mit echtem Hover (Desktop) */
   @media (hover: hover) { html, body, canvas { cursor: none; } }
 
-  /* --- Schwarz-Weiss-Modus: GPU-komponierter Graustufen-Filter, aber NICHT mehr am <body>,
-         sondern auf den einzelnen Ebenen (Canvas + UI). Grund: das SONNENLICHT soll auch im
-         SW-Modus gold bleiben — dafuer liegt der UNgefilterte Layer #sun-tint (mix-blend-mode:
-         color) ueber dem grau gefilterten Canvas und gibt der Sonne ihren Farbton zurueck.
-         Laege der Filter am body, wuerde er auch den Tint-Layer grau rechnen.
+  /* --- Schwarz-Weiss-Modus: GPU-komponierter Graustufen-Filter NUR auf dem Canvas.
+         Text/UI (Menue, Reader, Gate, Cursor, Captions) bleiben bewusst UNgefiltert -> gold.
+         Auf dem Canvas bleiben Sonne + Hotspots gold ueber die UNgefilterten Tint-Layer
+         #sun-tint / #bw-tints (mix-blend-mode: color), die den Graustufen darunter den
+         Farbton zurueckgeben (Position setzt app.js pro Frame).
          Bewusst OHNE transition: der Uebergang none->grayscale(1) interpoliert in Chromium nicht
          (bleibt bei 0 haengen). Toggle: Taste 's' oder Start mit ?bw. */
-  body.bw #canvas-holder, body.bw #scene-menu, body.bw #scene-name,
-  body.bw #reader, body.bw #gate, body.bw #status, body.bw #cursor { filter: grayscale(1); }
+  body.bw #canvas-holder { filter: grayscale(1); }
   #canvas-holder { position: fixed; inset: 0; }
   canvas { display: block; }
+
+  /* --- Hotspot-Tints (nur SW-Modus): weicher Gold-GLOW (screen-Blend, addiert Licht) ueber den
+         sichtbaren Hotspot-Orbs und Rand-Markern — wirkt wie das Orb-Leuchten selbst. Bewusst
+         NICHT color-Blend: der wuerde auf hellen Flaechen (Bimsstein) die ganze Kreisflaeche
+         satt-gold faerben. Verwaltet updateBWTints() in app.js. --- */
+  #bw-tints { position: fixed; inset: 0; pointer-events: none; z-index: 12; display: none; }
+  #bw-tints div {
+    position: absolute; border-radius: 50%; mix-blend-mode: screen;
+    background: radial-gradient(circle, rgba(216,178,90,0.55) 0%, rgba(216,178,90,0.25) 40%, rgba(216,178,90,0) 68%);
+  }
 
   /* --- Sonnenlicht-Tint (nur im SW-Modus sichtbar): ungefilterter Layer, der die Graustufen
          darunter per mix-blend-mode:color wieder gold faerbt. Position/Groesse setzt
@@ -99,11 +108,18 @@
          das fruehere Seiten-Panel UND die Callout-Etiketten. --- */
   #reader {
     position: fixed; inset: 0; z-index: 40;
-    display: flex; flex-direction: column; align-items: center; justify-content: center;
-    padding: 7vh 8vw; background: rgba(0, 0, 4, 0.82);
+    overflow-y: auto; background: rgba(0, 0, 4, 0.82);
     opacity: 0; pointer-events: none; transition: opacity 0.7s ease; cursor: pointer;
+    scrollbar-width: thin; scrollbar-color: rgba(216, 178, 90, 0.3) transparent;
   }
   #reader.open { opacity: 1; pointer-events: all; }
+  /* Wrapper zentriert kurzen Inhalt; langer Inhalt (Diagramm + Text) waechst nach unten und
+     scrollt, statt oben abgeschnitten zu werden (klassisches min-height-Flex-Muster). */
+  #reader-inner {
+    min-height: 100%; display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    padding: 7vh 8vw 9vh;
+  }
   /* Medienzone: Hotspot-Grafik + unterstuetzende Bilder (assets/images/hotspots/<id>1.png, ...).
      Ein Bild -> gross; mehrere -> nebeneinander, umbrechend. Leer -> Zone verschwindet. */
   #reader-media {
@@ -119,7 +135,33 @@
     border-bottom: 1px solid var(--line); font-size: 12px; letter-spacing: 0.2em; text-transform: lowercase;
   }
   #reader .hint {
-    position: absolute; bottom: 3.4vh; left: 50%; transform: translateX(-50%);
+    position: fixed; bottom: 3.4vh; left: 50%; transform: translateX(-50%);
+    color: rgba(154, 147, 127, 0.55); font-size: 10px; letter-spacing: 0.42em; text-transform: lowercase;
+  }
+
+  /* --- In-Szene-Diagramm (#anno, Szene 2): leichter Dim-Schleier, die ECHTE Station bleibt
+         als Hintergrund sichtbar; Linien/Labels beschriften sie direkt (SVG, von app.js
+         gebaut und live am Stein verankert). Kurztext unten, eigene Bilder als Reihe darueber.
+         DOM statt Canvas -> bleibt im SW-Modus ungefiltert (Diagramm bleibt gold). --- */
+  #anno {
+    position: fixed; inset: 0; z-index: 30; background: rgba(0, 0, 4, 0.55);
+    opacity: 0; pointer-events: none; transition: opacity 0.6s ease; cursor: pointer;
+  }
+  #anno.open { opacity: 1; pointer-events: all; }
+  #anno svg { position: absolute; inset: 0; }
+  #anno-media {
+    position: absolute; left: 50%; transform: translateX(-50%); bottom: 17vh;
+    display: flex; gap: 1.5vw; align-items: flex-end; justify-content: center;
+  }
+  #anno-media:empty { display: none; }
+  #anno-media img { max-height: 20vh; max-width: 30vw; object-fit: contain; opacity: 0.95; }
+  #anno-caption {
+    position: absolute; left: 50%; transform: translateX(-50%); bottom: 6.5vh;
+    width: min(720px, 86vw); text-align: center;
+    color: var(--text); font-size: 14px; letter-spacing: 0.05em; line-height: 1.9;
+  }
+  #anno .hint {
+    position: absolute; bottom: 2.4vh; left: 50%; transform: translateX(-50%);
     color: rgba(154, 147, 127, 0.55); font-size: 10px; letter-spacing: 0.42em; text-transform: lowercase;
   }
 
@@ -155,13 +197,23 @@
   <div id="vignette"></div>
   <div id="sun-tint"></div>
   <div id="sun-tint-band"></div>
+  <div id="bw-tints"></div>
   <div id="cursor"></div>
 
   <div id="reader" aria-hidden="true">
-    <div id="reader-media"></div>
-    <h3 id="reader-title"></h3>
-    <div class="body" id="reader-body"></div>
-    <a class="link" id="reader-link" href="#" target="_blank" rel="noopener"></a>
+    <div id="reader-inner">
+      <div id="reader-media"></div>
+      <h3 id="reader-title"></h3>
+      <div class="body" id="reader-body"></div>
+      <a class="link" id="reader-link" href="#" target="_blank" rel="noopener"></a>
+    </div>
+    <div class="hint">click to return</div>
+  </div>
+
+  <div id="anno" aria-hidden="true">
+    <svg id="anno-svg" font-family="'Courier New',monospace"></svg>
+    <div id="anno-media"></div>
+    <div id="anno-caption"></div>
     <div class="hint">click to return</div>
   </div>
 

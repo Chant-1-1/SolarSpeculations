@@ -71,15 +71,6 @@ let sectionMarkers = [];    // Einstiegs-Marker auf der Kugel (Szene 1): {x,y,r,
 let sectionBackMarker = { x: 0, y: 0, r: 0, visible: false };
 let sectionHover = false;   // Maus ueber einem Randmarker -> Pointer-Cursor
 
-// "The station"-Marker in Szene 2 oeffnet KEINE eigene Szene mehr, sondern blendet Erklaer-Hotspots
-// direkt auf dem bereits sichtbaren Bimsstein ein (stationInfo-Entities). stationInfoT = weiche Ein-/Ausblende.
-let stationInfoOn = false;
-let stationInfoT = 0;
-// Analog fuer den "Wildlife"-Marker in Szene 2: blendet Erklaer-Hotspots zum Meeresleben direkt in
-// Szene 2 ein (wildlifeInfo-Entities), statt eine eigene Unterszene zu oeffnen. wildlifeInfoT = weiche Blende.
-let wildlifeInfoOn = false;
-let wildlifeInfoT = 0;
-
 let started = false;      // Audio-Geste erfolgt?
 let openEntity = null;    // aktuell geoeffnetes Inhalts-Panel
 let hoverEntity = null;
@@ -519,15 +510,6 @@ class Entity {
       const a = atmoHotspotNorm(this.def.id);
       if (a) return a;
     }
-    // Station-Info-Hotspots (Szene 2): an der LIVE-Position des Bimssteins ausgerichtet, mit
-    // radius-relativem Offset (stOff) -> sie sitzen fest auf dem Stein und folgen Bob/Resize.
-    if (this.def.stationInfo) {
-      const st = allEntities.find(e => e.def.id === 'station' && e.def.scene === 'scene2');
-      if (st && st.pos && st.radius > 0) {
-        const o = this.def.stOff || { x: 0, y: 0 };
-        return { x: (st.pos.x + o.x * st.radius) / width, y: (st.pos.y + o.y * st.radius) / height };
-      }
-    }
     // Viz-Hotspots (sun/station/living/wildlife): dynamisch auf ihrem gezeichneten Feature
     if (this.def.hotspot) {
       const v = vizHotspotNorm(this.def.id);
@@ -809,10 +791,6 @@ function currentSceneAlphaFor(ent) {
   if (zoomTransition && zoomPivotIndex >= 0 && ent.def.scene === scenes[zoomPivotIndex]?.id && !ent.def.zoomAnchor) {
     alpha *= 1 - Math.max(0, Math.min(1, (zoomProgress - 0.15) / 0.35));
   }
-  // Station-Info-Hotspots erscheinen nur, wenn der "The station"-Marker aktiviert wurde (weiche Blende).
-  if (ent.def.stationInfo) alpha *= stationInfoT;
-  // Wildlife-Info-Hotspots analog, gekoppelt an den "Wildlife"-Marker.
-  if (ent.def.wildlifeInfo) alpha *= wildlifeInfoT;
   return alpha;
 }
 function sceneFadeT() { return nextScene >= 0 ? sceneFade : 0; }
@@ -2251,11 +2229,6 @@ function draw() {
   const duckTarget = openEntity ? 1 : 0;
   duck += (duckTarget - duck) * Math.min(1, dt * 4);
 
-  // Station-Info-Hotspots weich ein-/ausblenden (Ziel aus stationInfoOn)
-  stationInfoT += ((stationInfoOn ? 1 : 0) - stationInfoT) * Math.min(1, dt * 6);
-  // Wildlife-Info-Hotspots analog (Ziel aus wildlifeInfoOn)
-  wildlifeInfoT += ((wildlifeInfoOn ? 1 : 0) - wildlifeInfoT) * Math.min(1, dt * 6);
-
   // Meeresspiegel-Anstieg im Wasser-Schnitt (klick-getriggert): langsam von alt -> jetzt
   if (sectionSeaRiseActive && sectionSeaRise < 1) sectionSeaRise = Math.min(1, sectionSeaRise + dt / SEA_RISE_DURATION);
   // Erd-Limb (Atmosphaeren-Szene) dreht in DIESELBE Richtung wie der Globus weiter, nur langsamer.
@@ -2297,6 +2270,7 @@ function draw() {
 
   updateUICursor();   // Glow-Cursor-Zustand (statt nativer cursor()-Styles, die cursor:none ueberschreiben wuerden)
   updateSunTint();    // SW-Modus: Sonnenlicht-Layer auf die sichtbare Sonne legen (sonst aus)
+  updateAnno();       // offenes In-Szene-Diagramm dem Bob des Steins nachfuehren
 
   if (PERF_HUD) drawPerfHud();
 }
@@ -2342,6 +2316,38 @@ function updateSunTint() {
     band.style.height = spec.h + 'px';
     band.style.opacity = a;
   } else band.style.opacity = 0;
+  updateBWTints();
+}
+
+// SW-Modus: auch HOTSPOTS + MARKER bleiben gold. Gleicher Trick wie beim Sonnenlicht — ein Pool
+// kleiner ungefilterter Gold-Kreise (#bw-tints, mix-blend-mode: color) wird pro Frame auf die
+// sichtbaren Hotspot-Orbs und Rand-Marker gelegt (grosszuegig dimensioniert; auf dunklem Grund
+// ist der Farbton-Blend ausserhalb der Leuchtpunkte unsichtbar). Marker-Kreise reichen nach
+// rechts ueber das Label. DOM-Text (Menue, Reader, Captions) ist gar nicht erst gefiltert.
+function updateBWTints() {
+  const pool = document.getElementById('bw-tints');
+  if (!pool) return;
+  if (!bwMode) { pool.style.display = 'none'; return; }
+  pool.style.display = 'block';
+  const specs = [];
+  for (const ent of allEntities) {
+    if (!ent.def.hotspot) continue;
+    if (currentSceneAlphaFor(ent) <= 0.05) continue;
+    const d = ent.radius * 2.6;   // ~Ausdehnung des Orb-Glows
+    specs.push({ x: ent.pos.x, y: ent.pos.y, w: d, h: d });
+  }
+  for (const m of sectionMarkers) specs.push({ x: m.x, y: m.y, w: m.r * 4, h: m.r * 4 });
+  if (sectionBackMarker.visible) specs.push({ x: sectionBackMarker.x, y: sectionBackMarker.y, w: sectionBackMarker.r * 4, h: sectionBackMarker.r * 4 });
+  while (pool.children.length < specs.length) pool.appendChild(document.createElement('div'));
+  for (let i = 0; i < pool.children.length; i++) {
+    const d = pool.children[i], s = specs[i];
+    if (!s) { d.style.display = 'none'; continue; }
+    d.style.display = 'block';
+    d.style.left = (s.x - s.w / 2) + 'px';
+    d.style.top = (s.y - s.h / 2) + 'px';
+    d.style.width = s.w + 'px';
+    d.style.height = s.h + 'px';
+  }
 }
 
 // Glow-Cursor (DESCENT): Zustaende auf dem DOM-Punkt spiegeln. 'grab' beim Greifen/Kugel,
@@ -2925,13 +2931,13 @@ let VIZ_CAPTION = 1.0;       // Deckkraft der kleinen Bild-Ueberschrift je Viz (
 // Menue der Viz-Marker je Elternszene. anchor bestimmt die Marker-Position:
 //   'globe' rel. zur Weltkugel (ox/oy in Radien) · 'sun' auf der Sonnenposition ·
 //   'screen' feste Bildkoords (sx/sy in 0..1). label = Marker-Text. id = Ziel-Szene.
+// Szene 2 hat KEINE Marker mehr: Station/Wildlife/Living sind dort jetzt normale Hotspot-
+// Entities (hs_station/hs_wildlife/hs_living in entities.json), die den Reader oeffnen.
+// Die Viz-Unterszenen station_cut/habitat/wildlife bleiben definiert, sind aber unverlinkt.
 const VIZ_MENU = [
   { id: 'atmosphere',  parent: 'scene1', label: 'Atmosphere',  anchor: 'globe',  ox: 0.0,  oy: -RIM_MARK_K },
   { id: 'water',       parent: 'scene1', label: 'Water',       anchor: 'globe',  ox: 0.42, oy: 0.40 },
-  { id: 'sun',         parent: 'scene1', label: 'The sun',     anchor: 'sun' },
-  { id: 'station_cut', parent: 'scene2', label: 'The station', anchor: 'screen', sx: 0.50, sy: 0.26 },
-  { id: 'habitat',     parent: 'scene2', label: 'Living',      anchor: 'screen', sx: 0.22, sy: 0.58 },
-  { id: 'wildlife',    parent: 'scene2', label: 'Wildlife',    anchor: 'screen', sx: 0.82, sy: 0.42 }
+  { id: 'sun',         parent: 'scene1', label: 'The sun',     anchor: 'sun' }
 ];
 
 function sceneIndexById(id) { return scenes.findIndex(s => s && s.id === id); }
@@ -3367,20 +3373,11 @@ function updateSectionMarkers() {
   if (active) {
     for (const v of VIZ_MENU) {
       if (v.parent !== curId) continue;
-      // Waehrend die Station-Erklaerung an ist, nur den "The station"-Marker zeigen; die uebrigen
-      // Szene-2-Marker (Living/Wildlife) ausblenden -> sie haben nichts mit der Station zu tun.
-      if (stationInfoOn && v.id !== 'station_cut') continue;
-      // Ebenso: waehrend die Wildlife-Erklaerung an ist, nur den "Wildlife"-Marker zeigen.
-      if (wildlifeInfoOn && v.id !== 'wildlife') continue;
       const idx = sceneIndexById(v.id); if (idx < 0) continue;
       const p = vizMarkerPos(v); if (!p) continue;
       const r = vizMarkerR(v);
       sectionMarkers.push({ x: p.x, y: p.y, r, idx, id: v.id });
-      // "The station"/"Wildlife" oeffnen keine Unterszene, sondern schalten ihre Erklaer-Hotspots um.
-      const label = v.id === 'station_cut' ? (stationInfoOn ? 'Hide the station' : v.label)
-                  : v.id === 'wildlife'    ? (wildlifeInfoOn ? 'Hide wildlife' : v.label)
-                  : v.label;
-      drawRimMarker(p.x, p.y, r, label);
+      drawRimMarker(p.x, p.y, r, v.label);
     }
   }
   // In einer Viz-Unterszene: Zurueck-Marker zur Elternszene (oben mittig).
@@ -3403,18 +3400,6 @@ function exitSection() {
   else if (spaceIndex >= 0) goToScene(spaceIndex);
 }
 
-// "The station" (Szene 2): Erklaer-Hotspots am Bimsstein ein-/ausblenden — statt eine Unterszene zu oeffnen.
-function toggleStationInfo() {
-  stationInfoOn = !stationInfoOn;
-  if (stationInfoOn) wildlifeInfoOn = false;             // die beiden Szene-2-Erklaerungen schliessen sich aus
-}
-
-// "Wildlife" (Szene 2): Erklaer-Hotspots zum Meeresleben ein-/ausblenden — statt eine Unterszene zu oeffnen.
-function toggleWildlifeInfo() {
-  wildlifeInfoOn = !wildlifeInfoOn;
-  if (wildlifeInfoOn) stationInfoOn = false;             // nie beide gleichzeitig aktiv
-}
-
 // =========================================================================
 //  INTERAKTION
 // =========================================================================
@@ -3423,11 +3408,7 @@ function mousePressed() {
   // Rand-Marker (Ein-/Ausstieg) VOR den Entities pruefen -> Klick greift nicht die Kugel
   if (!zoomTransition && nextScene < 0) {
     for (const m of sectionMarkers) {
-      if (dist(mouseX, mouseY, m.x, m.y) < m.r) {
-        if (m.id === 'station_cut') { toggleStationInfo(); return; }   // keine Unterszene: Hotspots am Stein umschalten
-        if (m.id === 'wildlife')    { toggleWildlifeInfo(); return; }  // keine Unterszene: Meeresleben-Hotspots umschalten
-        goToScene(m.idx); return;
-      }
+      if (dist(mouseX, mouseY, m.x, m.y) < m.r) { goToScene(m.idx); return; }
     }
     if (sectionBackMarker.visible && dist(mouseX, mouseY, sectionBackMarker.x, sectionBackMarker.y) < sectionBackMarker.r) { exitSection(); return; }
   }
@@ -3439,6 +3420,8 @@ function mousePressed() {
       if (ent.isGlobe) { heldEntity = ent; ent.spinVel = 0; ent.tiltVel = 0; }
       // Frame-Sequenz: Halten pausiert
       else if (ent.frames && ent.frames.length) heldEntity = ent;
+      // anno-Hotspot (Szene 2): In-Szene-Diagramm ueber der echten Station
+      else if (ent.def.anno) openAnno(ent);
       // Hotspot + normales Entity: Reader-Overlay (DESCENT-Textpanel)
       else openPanel(ent);
       return;
@@ -3489,8 +3472,158 @@ function openPanel(ent) {
 
 function closePanel() {
   openEntity = null;
+  annoEntity = null;
   document.getElementById('reader').classList.remove('open');
+  document.getElementById('anno').classList.remove('open');
   setDuck(false);
+}
+
+// =========================================================================
+//  IN-SZENE-DIAGRAMME (Szene 2): 'anno'-Hotspots (hs_station/hs_wildlife/hs_living)
+//  dimmen die Szene nur LEICHT — die ECHTE Station bleibt sichtbar und wird direkt
+//  beschriftet (Linien/Labels als DOM-SVG in #anno, live an der Stein-Position
+//  verankert). DOM statt Canvas: bleibt im SW-Modus ungefiltert -> Diagramm gold.
+//  Kurztext (content.body) unten, eigene Bilder (hotspots/<id>N.png) darueber.
+// =========================================================================
+let annoEntity = null;
+let annoBuilt = null;   // Zustand der letzten SVG-Erzeugung {x,y,r,w,h} -> Rebuild bei Resize
+
+function annoStationEnt() { return allEntities.find(e => e.def.id === 'station' && e.def.scene === 'scene2'); }
+
+function openAnno(ent) {
+  openEntity = ent;
+  annoEntity = ent;
+  ent.visited = true;
+  document.getElementById('anno-caption').textContent = (ent.def.content && ent.def.content.body) || '';
+  const media = document.getElementById('anno-media');
+  media.innerHTML = '';
+  loadHotspotMedia(ent, media);   // eigene Bilder (hs_station1.png, ...) erscheinen ueber dem Kurztext
+  buildAnnoSVG();
+  document.getElementById('anno').classList.add('open');
+  setDuck(true);
+}
+
+// --- kleine SVG-String-Helfer (Farben: gold/dim/light wie im Rest des Looks) ---
+const ANNO_GOLD = '#d8b25a', ANNO_DIM = '#9a937f', ANNO_LIGHT = '#e0dac8';
+function aTxt(x, y, text, opts = {}) {
+  const size = opts.size || 15, lines = Array.isArray(text) ? text : [text];
+  const t = lines.map((ln, i) => `<tspan x="${x}" dy="${i === 0 ? 0 : size + 7}">${ln}</tspan>`).join('');
+  return `<text x="${x}" y="${y}" fill="${opts.fill || ANNO_GOLD}" font-size="${size}" text-anchor="${opts.anchor || 'start'}" letter-spacing="2">${t}</text>`;
+}
+function aLine(x1, y1, x2, y2, opts = {}) {
+  return `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${opts.stroke || 'rgba(154,147,127,0.6)'}" stroke-width="${opts.w || 1}"${opts.dash ? ` stroke-dasharray="${opts.dash}"` : ''}/>`;
+}
+function aDot(x, y, r, fill) { return `<circle cx="${x}" cy="${y}" r="${r}" fill="${fill}"/>`; }
+function aCircle(x, y, r, opts = {}) {
+  return `<circle cx="${x}" cy="${y}" r="${r}" fill="none" stroke="${opts.stroke || ANNO_GOLD}" stroke-width="${opts.w || 1.2}"${opts.dash ? ` stroke-dasharray="${opts.dash}"` : ''}/>`;
+}
+
+// baut das Beschriftungs-SVG fuer das offene anno-Diagramm. Stein-relative Koordinaten
+// (Einheit = Stein-RADIUS, Ursprung = Stein-Mitte) werden hier in Pixel gebacken;
+// updateAnno() verschiebt die Stein-Gruppe pro Frame mit dem Bob des Steins mit.
+// Labels links/rechts werden an den Bildschirmrand geklemmt (schmale Fenster).
+function buildAnnoSVG() {
+  const st = annoStationEnt(), svg = document.getElementById('anno-svg');
+  if (!annoEntity || !st || !svg) return;
+  const bx = st.pos.x, by = st.pos.y, r = st.radius, W = width, H = height;
+  annoBuilt = { x: bx, y: by, r, w: W, h: H };
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.setAttribute('width', W);
+  svg.setAttribute('height', H);
+  const X = u => Math.round(bx + u * r), Y = v => Math.round(by + v * r);
+  const RX = u => Math.min(X(u), W - 340);   // rechte Label-Spalte (start-anchored) im Bild halten
+  const LX = u => Math.max(X(u), 450);       // linke Label-Spalte (end-anchored) im Bild halten
+  const kind = annoEntity.def.anno;
+  const scr = [], stn = [];
+
+  if (kind === 'station') {
+    // Wasserlinie als Diagramm-Hilfslinie
+    scr.push(aLine(24, WATERLINE_FRAC * H, W - 24, WATERLINE_FRAC * H, { dash: '10 8', stroke: 'rgba(154,147,127,0.35)' }));
+    scr.push(aTxt(W - 26, WATERLINE_FRAC * H - 10, 'waterline', { anchor: 'end', fill: ANNO_DIM, size: 13 }));
+    // Solar Space (Oeffnung oben am Stein)
+    stn.push(aCircle(X(-0.08), Y(-0.82), r * 0.16));
+    stn.push(aLine(X(0), Y(-1.22), X(-0.06), Y(-1.0)));
+    stn.push(aTxt(X(0), Y(-1.34), ['solar space —', 'the only daylight room'], { anchor: 'middle', size: 16 }));
+    // gefundene Raeume (Poren)
+    stn.push(aCircle(X(-0.42), Y(-0.12), r * 0.10, { stroke: 'rgba(224,218,200,0.75)', w: 1 }));
+    stn.push(aCircle(X(-0.22), Y(0.10), r * 0.07, { stroke: 'rgba(224,218,200,0.75)', w: 1 }));
+    stn.push(aLine(LX(-1.32), Y(-0.18), X(-0.55), Y(-0.14)));
+    stn.push(aTxt(LX(-1.32), Y(-0.24), ['rooms are found', 'in the stone’s cavities'], { anchor: 'end', fill: ANNO_LIGHT }));
+    // lebendes Licht
+    stn.push(aDot(X(0.34), Y(-0.30), 3, ANNO_GOLD));
+    stn.push(aDot(X(0.45), Y(-0.22), 2.4, 'rgba(216,178,90,0.75)'));
+    stn.push(aDot(X(0.55), Y(-0.32), 2.8, ANNO_GOLD));
+    stn.push(aLine(RX(1.32), Y(-0.34), X(0.62), Y(-0.28)));
+    stn.push(aTxt(RX(1.32), Y(-0.40), ['living light —', 'grown in the passages'], { anchor: 'start' }));
+    // Ballast / Schwerpunkt tief
+    stn.push(aCircle(X(0.12), Y(0.68), 7, { stroke: ANNO_LIGHT, w: 1.2 }));
+    stn.push(aLine(X(0.12) - 7, Y(0.68), X(0.12) + 7, Y(0.68), { stroke: ANNO_LIGHT, w: 1.2 }));
+    stn.push(aLine(X(0.12), Y(0.68) - 7, X(0.12), Y(0.68) + 7, { stroke: ANNO_LIGHT, w: 1.2 }));
+    stn.push(aLine(RX(1.32), Y(0.52), X(0.42), Y(0.62)));
+    stn.push(aTxt(RX(1.32), Y(0.46), ['ballast — the weight', 'sits deep'], { anchor: 'start', fill: ANNO_LIGHT }));
+    // Atmen der Welt (Wellenlinie unten links)
+    stn.push(`<path d="M ${LX(-1.32) - 220} ${Y(0.82)} q 14 -10 28 0 t 28 0 t 28 0" fill="none" stroke="rgba(154,147,127,0.7)" stroke-width="1.1"/>`);
+    stn.push(aTxt(LX(-1.32), Y(0.62), ['currents groan through the hull —', '“the breathing of the world”'], { anchor: 'end', fill: ANNO_DIM }));
+    // Drift (bild-relativ oben rechts an der Wasserlinie -> kollidiert nie mit dem Kurztext)
+    scr.push(aTxt(W - 36, WATERLINE_FRAC * H + 54, 'slow drift — steered by sunlight', { anchor: 'end', size: 14 }));
+    scr.push(aLine(W - 260, WATERLINE_FRAC * H + 74, W - 110, WATERLINE_FRAC * H + 74, { stroke: ANNO_GOLD, w: 1.2 }));
+    scr.push(`<path d="M ${W - 110} ${WATERLINE_FRAC * H + 74} l -9 -5 v 10 Z" fill="${ANNO_GOLD}"/>`);
+  }
+
+  if (kind === 'wildlife') {
+    // toedliche Oberflaeche + kalte Tiefe (bild-relativ)
+    scr.push(aTxt(W / 2, H * 0.17, ['the surface is lethal —', 'light kills from above'], { anchor: 'middle', size: 16 }));
+    scr.push(aLine(W * 0.38, H * 0.215, W * 0.38, H * 0.27, { stroke: ANNO_GOLD }));
+    scr.push(`<path d="M ${W * 0.38} ${H * 0.27} l -5 -8 h 10 Z" fill="${ANNO_GOLD}"/>`);
+    scr.push(aLine(W * 0.62, H * 0.215, W * 0.62, H * 0.27, { stroke: ANNO_GOLD }));
+    scr.push(`<path d="M ${W * 0.62} ${H * 0.27} l -5 -8 h 10 Z" fill="${ANNO_GOLD}"/>`);
+    scr.push(aTxt(W - 36, H * 0.77, 'the cold deep — near-empty', { anchor: 'end', fill: ANNO_DIM }));
+    // Krill (Basis des Nahrungsnetzes) im freien Wasser links
+    scr.push(aTxt(Math.max(W * 0.10, 320), H * 0.46, ['krill —', 'anchor of the food web'], { anchor: 'end', fill: ANNO_LIGHT }));
+    stn.push(aLine(Math.max(W * 0.10, 320) + 10, H * 0.46, X(-1.35), Y(-0.05)));
+    // Reef-Effekt: Ring um den Stein
+    stn.push(`<ellipse cx="${X(0)}" cy="${Y(0)}" rx="${r * 1.30}" ry="${r * 1.22}" fill="none" stroke="rgba(216,178,90,0.55)" stroke-width="1.2" stroke-dasharray="9 8"/>`);
+    stn.push(aLine(RX(1.55), Y(-0.62), X(1.12), Y(-0.52)));
+    stn.push(aTxt(RX(1.55), Y(-0.68), ['life gathers at the station —', 'a drifting reef'], { anchor: 'start', fill: ANNO_LIGHT }));
+    // Sea Devils
+    stn.push(aLine(RX(1.45), Y(0.42), X(1.05), Y(0.35)));
+    stn.push(aTxt(RX(1.45), Y(0.36), ['sea devils — their glow', 'becomes the people’s light'], { anchor: 'start' }));
+  }
+
+  if (kind === 'living') {
+    // Raeume + Verzurrung (links)
+    stn.push(aCircle(X(-0.40), Y(-0.22), r * 0.10, { stroke: 'rgba(224,218,200,0.75)', w: 1 }));
+    stn.push(aLine(LX(-1.30), Y(-0.28), X(-0.52), Y(-0.24)));
+    stn.push(aTxt(LX(-1.30), Y(-0.34), 'rooms are found, not built', { anchor: 'end', fill: ANNO_LIGHT }));
+    stn.push(aLine(LX(-1.30), Y(0.28), X(-0.55), Y(0.32)));
+    stn.push(aTxt(LX(-1.30), Y(0.22), ['everything is tied down —', 'or it belongs to the sea'], { anchor: 'end', fill: ANNO_DIM }));
+    // gewachsenes Licht (rechts)
+    stn.push(aDot(X(0.36), Y(-0.12), 3, ANNO_GOLD));
+    stn.push(aDot(X(0.48), Y(-0.05), 2.4, 'rgba(216,178,90,0.75)'));
+    stn.push(aDot(X(0.58), Y(-0.15), 2.8, ANNO_GOLD));
+    stn.push(aLine(RX(1.30), Y(-0.16), X(0.65), Y(-0.10)));
+    stn.push(aTxt(RX(1.30), Y(-0.22), ['the light is grown', 'on the walls'], { anchor: 'start' }));
+    // Sway: Roll-Boegen ueber dem Stein + Schwerpunkt
+    stn.push(`<path d="M ${X(-0.95)} ${Y(-1.05)} A ${r} ${r} 0 0 1 ${X(-0.55)} ${Y(-1.28)}" fill="none" stroke="rgba(154,147,127,0.7)" stroke-width="1.1"/>`);
+    stn.push(`<path d="M ${X(0.55)} ${Y(-1.28)} A ${r} ${r} 0 0 1 ${X(0.95)} ${Y(-1.05)}" fill="none" stroke="rgba(154,147,127,0.7)" stroke-width="1.1"/>`);
+    stn.push(aCircle(X(0.05), Y(0.70), 7, { stroke: ANNO_LIGHT, w: 1.2 }));
+    stn.push(aLine(X(0.05) - 7, Y(0.70), X(0.05) + 7, Y(0.70), { stroke: ANNO_LIGHT, w: 1.2 }));
+    stn.push(aLine(X(0.05), Y(0.70) - 7, X(0.05), Y(0.70) + 7, { stroke: ANNO_LIGHT, w: 1.2 }));
+    stn.push(aLine(RX(1.30), Y(0.56), X(0.35), Y(0.66)));
+    stn.push(aTxt(RX(1.30), Y(0.50), ['ballast low — the roll', 'stays slow and shallow'], { anchor: 'start', fill: ANNO_LIGHT }));
+    // (die vier Sinne stehen im Kurztext unten — kein eigenes Label, sonst kollidiert es dort)
+  }
+
+  svg.innerHTML = `<g>${scr.join('')}</g><g id="anno-stone">${stn.join('')}</g>`;
+}
+
+// pro Frame: Stein-Gruppe folgt dem Bob des Steins; bei Resize/Groessenwechsel komplett neu bauen.
+function updateAnno() {
+  if (!annoEntity || !annoBuilt) return;
+  const st = annoStationEnt(); if (!st) return;
+  if (Math.abs(width - annoBuilt.w) > 1 || Math.abs(height - annoBuilt.h) > 1 || Math.abs(st.radius - annoBuilt.r) > 1) { buildAnnoSVG(); return; }
+  const g = document.getElementById('anno-stone');
+  if (g) g.setAttribute('transform', `translate(${(st.pos.x - annoBuilt.x).toFixed(1)},${(st.pos.y - annoBuilt.y).toFixed(1)})`);
 }
 
 // ===== Hotspot-Grafiken fuer den Reader =====
@@ -3509,6 +3642,7 @@ async function loadHotspotMedia(ent, container) {
     let src = null;
     if (await probeImage(base + i + '.webp')) src = base + i + '.webp';        // WebP bevorzugt
     else if (await probeImage(base + i + '.png')) src = base + i + '.png';     // PNG-Fallback
+    else if (await probeImage(base + i + '.svg')) src = base + i + '.svg';     // SVG (Diagramme)
     else break;                                                                 // Luecke -> Ende
     if (openEntity !== ent) return;   // Reader wurde inzwischen geschlossen/neu befuellt
     addReaderImage(container, src);
@@ -3530,8 +3664,6 @@ function goToScene(index) {
   if (index === currentScene || nextScene >= 0) return;
   if (index < 0 || index >= scenes.length) return;
   if (openEntity) closePanel();        // offenes Reader-Overlay nicht in die naechste Szene mitnehmen
-  stationInfoOn = false;               // Station-Info-Hotspots nicht in eine andere Szene mitnehmen
-  wildlifeInfoOn = false;              // ebenso die Wildlife-Info-Hotspots
   // Station-Zoom 2<->3 (fixes Ziel = Stationskuppel)
   const isSeaInterior = (currentScene === zoomSeaIndex && index === zoomInteriorIndex) ||
                         (currentScene === zoomInteriorIndex && index === zoomSeaIndex);
@@ -3601,6 +3733,7 @@ function buildNav() {
     menu.appendChild(b);
   });
   document.getElementById('reader').addEventListener('click', closePanel);   // Klick irgendwo schliesst
+  document.getElementById('anno').addEventListener('click', closePanel);     // ebenso das In-Szene-Diagramm
   updateSceneName();
 }
 
