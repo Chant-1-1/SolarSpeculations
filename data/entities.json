@@ -428,173 +428,56 @@
     },
 
     {
-      "_kommentar": "SECTION (der Schnitt). Klickbare Hotspots ('hotspot:true' -> pulsierender Gold-Ring statt Bild). interactive:true -> bestehende Klick->Panel-Mechanik. Position = einzelner Pfadpunkt (normiert). Texte englisch. Der 'sea_level'-Hotspot hat zusaetzlich action:'seaLevelRise' -> loest beim Oeffnen den Wasseranstieg aus.",
-      "id": "sec_magnet",
+      "_kommentar": "UNTERSZENEN-HOTSPOTS (konsolidiert, wie Szene 2): je EIN Hotspot pro Unterszene mit 'anno' -> In-Szene-Diagramm ueber der ECHTEN Szene (Erd-Rand+Schichten / Berg+Wasser / Sonne; Definition in app.js buildAnnoSVG). body = Kurztext unten. Eigene Bilder: assets/images/hotspots/hs_atmosphere1.png etc. hs_water loest beim Oeffnen den Wasseranstieg aus (action:seaLevelRise).",
+      "id": "hs_atmosphere",
       "scene": "atmosphere",
       "hotspot": true,
       "interactive": true,
+      "anno": "atmosphere",
       "layer": 0.9,
-      "label": "Magnetic field",
-      "path": [ { "x": 0.26, "y": 0.12 } ],
-      "loop": "loop",
-      "speed": 0.0,
-      "scale": 0.05,
-      "bob": 0.0,
-      "opacity": 1.0,
+      "label": "The atmosphere",
+      "path": [ { "x": 0.50, "y": 0.30 } ],
+      "loop": "loop", "speed": 0.0, "scale": 0.05, "bob": 0.0, "opacity": 1.0,
       "content": {
-        "title": "Magnetic field",
-        "body": "The planet's magnetic field has weakened, and it no longer deflects the sun's outbursts. Solar storms reach the surface as sudden, lethal spikes of radiation — without warning.",
+        "title": "The atmosphere",
+        "body": "The shield is gone: the magnetic field has weakened and the ozone layer is torn, so raw radiation reaches the surface. A permanent photochemical smog never lifts — it tints the light a warm, filtered gold.",
         "secondaryImage": "",
         "link": { "url": "", "label": "" }
       }
     },
     {
-      "id": "sec_ozone",
-      "scene": "atmosphere",
-      "hotspot": true,
-      "interactive": true,
-      "layer": 0.9,
-      "label": "Ozone layer",
-      "path": [ { "x": 0.50, "y": 0.24 } ],
-      "loop": "loop",
-      "speed": 0.0,
-      "scale": 0.05,
-      "bob": 0.0,
-      "opacity": 1.0,
-      "content": {
-        "title": "Ozone layer",
-        "body": "CO₂, methane and the fossil fires tore the ozone layer open. UV and cosmic radiation now reach the surface almost unfiltered.",
-        "secondaryImage": "",
-        "link": { "url": "", "label": "" }
-      }
-    },
-    {
-      "id": "sec_smog",
-      "scene": "atmosphere",
-      "hotspot": true,
-      "interactive": true,
-      "layer": 0.9,
-      "label": "Smog",
-      "path": [ { "x": 0.68, "y": 0.30 } ],
-      "loop": "loop",
-      "speed": 0.0,
-      "scale": 0.05,
-      "bob": 0.0,
-      "opacity": 1.0,
-      "content": {
-        "title": "Photochemical smog",
-        "body": "A permanent photochemical haze hangs over the water, toxic and self-renewing. It never lifts — and it tints the light a warm, filtered gold.",
-        "secondaryImage": "",
-        "link": { "url": "", "label": "" }
-      }
-    },
-    {
-      "id": "sec_sea_level",
+      "id": "hs_water",
       "scene": "water",
       "hotspot": true,
       "interactive": true,
+      "anno": "water",
       "action": "seaLevelRise",
       "layer": 0.92,
-      "label": "Sea level",
-      "path": [ { "x": 0.40, "y": 0.55 } ],
-      "loop": "loop",
-      "speed": 0.0,
-      "scale": 0.055,
-      "bob": 0.0,
-      "opacity": 1.0,
-      "content": {
-        "title": "Sea level",
-        "body": "The old coast lies far below. As the ice went and the water warmed, the sea climbed to today's level — swallowing the land where life once held on.",
-        "secondaryImage": "",
-        "link": { "url": "", "label": "" }
-      }
-    },
-    {
-      "id": "sec_band",
-      "scene": "water",
-      "hotspot": true,
-      "interactive": true,
-      "layer": 0.9,
       "label": "The water",
-      "path": [ { "x": 0.62, "y": 0.70 } ],
-      "loop": "loop",
-      "speed": 0.0,
-      "scale": 0.05,
-      "bob": 0.0,
-      "opacity": 1.0,
+      "path": [ { "x": 0.40, "y": 0.55 } ],
+      "loop": "loop", "speed": 0.0, "scale": 0.055, "bob": 0.0, "opacity": 1.0,
       "content": {
-        "title": "The living band",
-        "body": "At the surface, an unprotected body takes a lethal dose within hours. The most stable water lies in a band just below — warmed from above, deep enough to blunt the radiation.",
-        "secondaryImage": "",
-        "link": { "url": "", "label": "" }
-      }
-    },
-    {
-      "id": "sec_deep",
-      "scene": "water",
-      "hotspot": true,
-      "interactive": true,
-      "layer": 0.9,
-      "label": "Cold deep",
-      "path": [ { "x": 0.30, "y": 0.88 } ],
-      "loop": "loop",
-      "speed": 0.0,
-      "scale": 0.05,
-      "bob": 0.0,
-      "opacity": 1.0,
-      "content": {
-        "title": "The cold deep",
-        "body": "Below the warm band, the water turns cold and dark. Only a faint bioluminescent green still moves down there.",
+        "title": "The water",
+        "body": "As the ice went and the water warmed, the sea climbed far above the old coast. The surface takes a lethal dose within hours; life holds to a warmed band just below, above the cold and near-empty deep.",
         "secondaryImage": "",
         "link": { "url": "", "label": "" }
       }
     },
 
     {
-      "_kommentar": "VIZ-HOTSPOTS. Wie die Section-Hotspots (hotspot:true -> pulsierender Gold-Ring, Klick -> Callout-Etikett). Die path-Koords sind PLATZHALTER: die Position wird zur Laufzeit von vizHotspotNorm() auf das gezeichnete Feature gesetzt (id-basiert). Texte englisch. SUN (scene 'sun', aus Szene 1).",
-      "id": "sun_surface",
+      "_kommentar": "SUN-Hotspot (konsolidiert): ein Hotspot, 'anno' -> In-Szene-Diagramm ueber der grossen Sonnenscheibe (sunLayout).",
+      "id": "hs_sun",
       "scene": "sun",
       "hotspot": true,
       "interactive": true,
+      "anno": "sun",
       "layer": 0.9,
-      "label": "The lethal source",
-      "path": [ { "x": 0.30, "y": 0.46 } ],
+      "label": "The sun",
+      "path": [ { "x": 0.60, "y": 0.28 } ],
       "loop": "loop", "speed": 0.0, "scale": 0.05, "bob": 0.0, "opacity": 1.0,
       "content": {
-        "title": "The lethal source",
-        "body": "No one sees the sun directly; her light arrives filtered to a faint gold. Raw, it kills at the surface within hours — the reason is written in the sky.",
-        "secondaryImage": "",
-        "link": { "url": "", "label": "" }
-      }
-    },
-    {
-      "id": "sun_corona",
-      "scene": "sun",
-      "hotspot": true,
-      "interactive": true,
-      "layer": 0.9,
-      "label": "The engine",
-      "path": [ { "x": 0.50, "y": 0.24 } ],
-      "loop": "loop", "speed": 0.0, "scale": 0.05, "bob": 0.0, "opacity": 1.0,
-      "content": {
-        "title": "The engine",
-        "body": "The sun's uneven heat sets the whole water column turning — the currents that never rest. The people call this motion the breathing of the world.",
-        "secondaryImage": "",
-        "link": { "url": "", "label": "" }
-      }
-    },
-    {
-      "id": "sun_storm",
-      "scene": "sun",
-      "hotspot": true,
-      "interactive": true,
-      "layer": 0.9,
-      "label": "Solar storms",
-      "path": [ { "x": 0.55, "y": 0.72 } ],
-      "loop": "loop", "speed": 0.0, "scale": 0.05, "bob": 0.0, "opacity": 1.0,
-      "content": {
-        "title": "Solar storms",
-        "body": "Now and then the sun's field snaps and hurls a burst of plasma outward. With no magnetic shield left below, each burst arrives at the surface as a sudden, lethal spike.",
+        "title": "The sun",
+        "body": "No one sees the sun directly; her light arrives filtered to a faint gold, yet raw it kills within hours. Her uneven heat turns the whole water column — and when her field snaps, the burst reaches the surface unshielded.",
         "secondaryImage": "",
         "link": { "url": "", "label": "" }
       }

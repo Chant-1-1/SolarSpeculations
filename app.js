@@ -505,12 +505,7 @@ class Entity {
 
   // normierte Position (0..1) entlang des Pfades (+ bob, + optionales Pendeln/Zittern)
   normPos() {
-    // Atmosphaeren-Hotspots: dynamisch auf ihren Schicht-Bogen setzen (statt fester Pfad-Koords)
-    if (this.def.scene === ATMO_ID && ATMO_HOTSPOTS[this.def.id]) {
-      const a = atmoHotspotNorm(this.def.id);
-      if (a) return a;
-    }
-    // Viz-Hotspots (sun/station/living/wildlife): dynamisch auf ihrem gezeichneten Feature
+    // Viz-Hotspots (station_cut/habitat, derzeit unverlinkt): dynamisch auf ihrem Feature
     if (this.def.hotspot) {
       const v = vizHotspotNorm(this.def.id);
       if (v) return v;
@@ -2651,28 +2646,8 @@ let ATMO_MAG_WOBBLE = 0.6;         // staendiges seitliches Schwanken des Feldes
 let ATMO_MAG_COLLAPSE = 1.0;       // Tiefe der kurzen Total-Einbrueche (0 = nie, 1 = Feld verschwindet ganz)
 let ATMO_MAG_COLLAPSE_EVERY = 6.5; // mittlerer Abstand der Einbrueche in Sekunden
 
-// Atmosphaeren-Hotspots sitzen DYNAMISCH auf ihren Schicht-Boegen (nicht mehr feste Bildschirm-Koords) ->
-// unabhaengig von Fenster-/Seitenverhaeltnis immer auf der richtigen Schicht.
-//   rf = Radius-Faktor (muss zu den in drawAtmosphere gezeichneten Boegen passen:
-//        Smog ~Limb=1.0, Ozon=1.075, Magnetfeld innerster Bogen=1.20)
-//   ox = horizontaler Offset vom Kugel-Scheitel (Anteil Breite; +rechts, -links)
-const ATMO_HOTSPOTS = {
-  sec_smog:   { rf: 1.03,  ox:  0.26 },   // Smog: direkt ueber dem Erd-Rand (weit unten)
-  sec_ozone:  { rf: 1.075, ox:  0.03 },   // Ozon: mittlerer Bogen
-  sec_magnet: { rf: 1.20,  ox: -0.20 }    // Magnetfeld: innerer Magnetfeld-Bogen (tiefer als vorher)
-};
-
-// Normierte (0..1) Bildschirmposition eines Atmosphaeren-Hotspots auf seinem Schicht-Bogen.
-// Gleiche Geometrie wie drawAtmosphere: Kugelmittelpunkt (cx,cy) weit unter dem Bild, Radius rr.
-function atmoHotspotNorm(id) {
-  const p = ATMO_HOTSPOTS[id]; if (!p) return null;
-  const W = width, H = height;
-  const rr = W / (2 * ATMO_CAP_HALFW);           // On-Screen-Kugelradius (px)
-  const cx = W * 0.5, cy = ATMO_LIMB * H + rr;   // Kugelmittelpunkt (cy weit unter dem Bild)
-  const dx = p.ox * W, R = rr * p.rf;
-  const yy = cy - Math.sqrt(Math.max(0, R * R - dx * dx));  // oberer Halbkreis
-  return { x: (cx + dx) / W, y: yy / H };
-}
+// (Die frueheren dynamischen Atmosphaeren-Hotspots sind konsolidiert: EIN 'hs_atmosphere'-Hotspot
+//  oeffnet jetzt das In-Szene-Diagramm; die Bogen-Geometrie lebt in buildAnnoSVG -> 'atmosphere'.)
 
 function drawAtmosphere(alpha) {
   const W = width, H = height, ctx = drawingContext, t = millis() * 0.001;
@@ -2984,10 +2959,7 @@ function livingLayout() {
 function vizHotspotNorm(id) {
   const W = width, H = height, P = p => ({ x: p.x / W, y: p.y / H });
   switch (id) {
-    // Sun
-    case 'sun_surface': { const s = sunLayout(); return P({ x: s.cx - 0.44 * s.r, y: s.cy - 0.26 * s.r }); }
-    case 'sun_corona':  { const s = sunLayout(); return P({ x: s.cx + 0.40 * s.r, y: s.cy - 1.16 * s.r }); }
-    case 'sun_storm':   { const s = sunLayout(); return P({ x: s.cx + 0.78 * s.r, y: s.cy + 0.86 * s.r }); }
+    // (Sun-Hotspots konsolidiert -> hs_sun mit fester path-Position + anno-Diagramm)
     // Station
     case 'st_hull':     { const s = stationLayout(); return P({ x: s.cx - s.hw,        y: s.cy - s.hh * 0.15 }); }
     case 'st_life':     { const s = stationLayout(); return P({ x: s.cx,               y: s.cy - s.hh * 0.42 }); }
@@ -3003,11 +2975,12 @@ function vizHotspotNorm(id) {
   return null;
 }
 
-// kleine Bild-Ueberschrift oben links (Mono, dezent) -> rahmt die Erklaerung ein.
+// kleine Bild-Ueberschrift oben RECHTS (Mono, dezent) -> rahmt die Erklaerung ein.
+// (Oben links sitzt seit dem DESCENT-Umbau das Szenen-Menue -> Kollision vermeiden.)
 function drawVizCaption(title, sub) {
   if (VIZ_CAPTION <= 0) return;
-  const mm = Math.min(width, height), x = width * 0.055, y = height * 0.085, a = VIZ_CAPTION;
-  push(); noStroke(); textAlign(LEFT, TOP); textFont('Courier New');
+  const mm = Math.min(width, height), x = width * 0.945, y = height * 0.085, a = VIZ_CAPTION;
+  push(); noStroke(); textAlign(RIGHT, TOP); textFont('Courier New');
   textSize(Math.max(13, mm * 0.021)); fill(232, 226, 210, 210 * a); text(title, x, y);
   if (sub) { textSize(Math.max(11, mm * 0.0135)); fill(200, 194, 178, 150 * a); text(sub, x, y + Math.max(20, mm * 0.031)); }
   pop();
@@ -3494,6 +3467,7 @@ function openAnno(ent) {
   openEntity = ent;
   annoEntity = ent;
   ent.visited = true;
+  if (ent.def.action === 'seaLevelRise') sectionSeaRiseActive = true;   // hs_water: Anstieg starten
   document.getElementById('anno-caption').textContent = (ent.def.content && ent.def.content.body) || '';
   const media = document.getElementById('anno-media');
   media.innerHTML = '';
@@ -3518,23 +3492,29 @@ function aCircle(x, y, r, opts = {}) {
   return `<circle cx="${x}" cy="${y}" r="${r}" fill="none" stroke="${opts.stroke || ANNO_GOLD}" stroke-width="${opts.w || 1.2}"${opts.dash ? ` stroke-dasharray="${opts.dash}"` : ''}/>`;
 }
 
-// baut das Beschriftungs-SVG fuer das offene anno-Diagramm. Stein-relative Koordinaten
-// (Einheit = Stein-RADIUS, Ursprung = Stein-Mitte) werden hier in Pixel gebacken;
-// updateAnno() verschiebt die Stein-Gruppe pro Frame mit dem Bob des Steins mit.
+// baut das Beschriftungs-SVG fuer das offene anno-Diagramm. Koordinaten werden relativ zum
+// Anker-Feature der Szene in Pixel gebacken (Szene 2: Bimsstein · water: Wasserlinie ·
+// atmosphere: Erd-Rand-Geometrie · sun: sunLayout); updateAnno() fuehrt die getrackte Gruppe
+// (#anno-stone) pro Frame nach (Stein-Bob bzw. steigender Meeresspiegel).
 // Labels links/rechts werden an den Bildschirmrand geklemmt (schmale Fenster).
 function buildAnnoSVG() {
-  const st = annoStationEnt(), svg = document.getElementById('anno-svg');
-  if (!annoEntity || !st || !svg) return;
-  const bx = st.pos.x, by = st.pos.y, r = st.radius, W = width, H = height;
-  annoBuilt = { x: bx, y: by, r, w: W, h: H };
+  const svg = document.getElementById('anno-svg');
+  if (!annoEntity || !svg) return;
+  const W = width, H = height, kind = annoEntity.def.anno;
+  annoBuilt = { x: 0, y: 0, r: 0, wl: 0, w: W, h: H };
   svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
   svg.setAttribute('width', W);
   svg.setAttribute('height', H);
+  const scr = [], stn = [];
+
+  // ===== Szene-2-Familie: am Bimsstein verankert (Einheit = Stein-Radius, Ursprung = Mitte) =====
+  if (kind === 'station' || kind === 'wildlife' || kind === 'living') {
+  const st = annoStationEnt(); if (!st) return;
+  const bx = st.pos.x, by = st.pos.y, r = st.radius;
+  annoBuilt.x = bx; annoBuilt.y = by; annoBuilt.r = r;
   const X = u => Math.round(bx + u * r), Y = v => Math.round(by + v * r);
   const RX = u => Math.min(X(u), W - 340);   // rechte Label-Spalte (start-anchored) im Bild halten
   const LX = u => Math.max(X(u), 450);       // linke Label-Spalte (end-anchored) im Bild halten
-  const kind = annoEntity.def.anno;
-  const scr = [], stn = [];
 
   if (kind === 'station') {
     // Wasserlinie als Diagramm-Hilfslinie
@@ -3613,17 +3593,77 @@ function buildAnnoSVG() {
     stn.push(aTxt(RX(1.30), Y(0.50), ['ballast low — the roll', 'stays slow and shallow'], { anchor: 'start', fill: ANNO_LIGHT }));
     // (die vier Sinne stehen im Kurztext unten — kein eigenes Label, sonst kollidiert es dort)
   }
+  }   // Ende Szene-2-Familie
+
+  // ===== ATMOSPHERE: beschriftet die ECHTEN Schicht-Boegen (gleiche Geometrie wie drawAtmosphere:
+  //       Kugelmittelpunkt weit unter dem Bild; Punkt auf Bogen rf bei horizontalem Offset ox) =====
+  if (kind === 'atmosphere') {
+    const rr = W / (2 * ATMO_CAP_HALFW), cx = W * 0.5, cyG = ATMO_LIMB * H + rr;
+    const P = (rf, ox) => ({ x: cx + ox * W, y: cyG - Math.sqrt(Math.max(0, (rr * rf) * (rr * rf) - (ox * W) * (ox * W))) });
+    // Magnetfeld (fliessende Linien, links oben)
+    const pm = P(1.20, -0.22);
+    scr.push(aDot(pm.x, pm.y, 3.5, ANNO_LIGHT));
+    scr.push(aLine(Math.max(W * 0.06, 24) + 140, H * 0.10 + 40, pm.x, pm.y - 8));
+    scr.push(aTxt(Math.max(W * 0.06, 24), H * 0.10, ['magnetic field — weakened,', 'solar storms break through'], { fill: ANNO_LIGHT }));
+    // Ozon (gestrichelter Bogen, oben Mitte)
+    const po = P(1.075, 0.06);
+    scr.push(aDot(po.x, po.y, 3.5, ANNO_GOLD));
+    scr.push(aLine(Math.min(W * 0.62, W - 320) + 40, H * 0.22 + 28, po.x + 4, po.y - 8));
+    scr.push(aTxt(Math.min(W * 0.62, W - 320), H * 0.22, ['ozone layer —', 'torn open'], { fill: ANNO_GOLD }));
+    // Smog (warmer Saum direkt am Erd-Rand, rechts)
+    const ps = P(1.02, 0.30);
+    scr.push(aDot(ps.x, ps.y, 3.5, ANNO_GOLD));
+    scr.push(aLine(W - 240, H * 0.48 + 26, ps.x, ps.y - 8));
+    scr.push(aTxt(W - 36, H * 0.48, ['photochemical smog — never lifts,', 'it makes the gold light'], { anchor: 'end', fill: ANNO_GOLD }));
+  }
+
+  // ===== WATER: Labels an der (steigenden) Wasserlinie — die getrackte Gruppe wandert mit dem
+  //       Meeresspiegel nach oben ins Bild (updateAnno); Berg/Tiefe bild-relativ =====
+  if (kind === 'water') {
+    const wl = SECTION_OLD_SEA_Y + (SECTION_NEW_SEA_Y - SECTION_OLD_SEA_Y) * sectionSeaRise;
+    annoBuilt.wl = wl;
+    const wy = wl * H;
+    stn.push(aLine(24, wy, W - 24, wy, { dash: '10 8', stroke: 'rgba(216,178,90,0.45)' }));
+    stn.push(aTxt(W - 36, wy - 46, ['the sea climbed —', 'the old coast lies far below'], { anchor: 'end', fill: ANNO_LIGHT }));
+    stn.push(aTxt(W - 36, wy + 66, ['the living band —', 'warmed above, shielded from the light'], { anchor: 'end', fill: ANNO_GOLD }));
+    scr.push(aTxt(Math.max(W * 0.10, 340), H * 0.36, ['the drowned land —', 'where life once held on'], { anchor: 'end', fill: ANNO_LIGHT }));
+    scr.push(aLine(Math.max(W * 0.10, 340) - 60, H * 0.36 + 34, W * 0.31, H * 0.66));   // -> Berggipfel
+    scr.push(aTxt(W - 36, H * 0.80, 'the cold deep — dark and near-empty', { anchor: 'end', fill: ANNO_DIM }));
+  }
+
+  // ===== SUN: beschriftet die grosse Sonnenscheibe (gleiche Geometrie wie drawVizSun: sunLayout) =====
+  if (kind === 'sun') {
+    const s = sunLayout(), cx = s.cx, cy = s.cy, r = s.r;
+    // die toedliche Quelle (Scheibe, oben links)
+    scr.push(aLine(Math.max(cx - r * 1.5, 40) + 130, cy - r * 1.42 + 30, cx - r * 0.60, cy - r * 0.74));
+    scr.push(aTxt(Math.max(cx - r * 1.5, 40), cy - r * 1.46, ['the lethal source —', 'filtered to a faint gold'], { fill: ANNO_LIGHT }));
+    // der Motor (Korona/Hitze, rechts oben)
+    scr.push(aLine(Math.min(cx + r * 1.35, W - 340), cy - r * 0.66, cx + r * 0.98, cy - r * 0.50));
+    scr.push(aTxt(Math.min(cx + r * 1.35, W - 340), cy - r * 0.76, ['the engine — her heat turns', 'the whole water column'], { fill: ANNO_GOLD }));
+    // Sonnenstuerme (CME-Bogen, rechts unter dem Motor-Label — NICHT tiefer, sonst Kurztext-Kollision)
+    scr.push(aLine(Math.min(cx + r * 1.35, W - 340), cy + r * 0.70, cx + r * 0.72, cy + r * 0.95));
+    scr.push(aTxt(Math.min(cx + r * 1.35, W - 340), cy + r * 0.60, ['solar storms — each burst', 'reaches the surface unshielded'], { fill: ANNO_LIGHT }));
+  }
 
   svg.innerHTML = `<g>${scr.join('')}</g><g id="anno-stone">${stn.join('')}</g>`;
 }
 
-// pro Frame: Stein-Gruppe folgt dem Bob des Steins; bei Resize/Groessenwechsel komplett neu bauen.
+// pro Frame: getrackte Gruppe nachfuehren — Szene 2: Bob des Steins · water: steigender
+// Meeresspiegel · atmosphere/sun: statisch (nur Resize-Rebuild).
 function updateAnno() {
   if (!annoEntity || !annoBuilt) return;
-  const st = annoStationEnt(); if (!st) return;
-  if (Math.abs(width - annoBuilt.w) > 1 || Math.abs(height - annoBuilt.h) > 1 || Math.abs(st.radius - annoBuilt.r) > 1) { buildAnnoSVG(); return; }
+  if (Math.abs(width - annoBuilt.w) > 1 || Math.abs(height - annoBuilt.h) > 1) { buildAnnoSVG(); return; }
+  const kind = annoEntity.def.anno;
   const g = document.getElementById('anno-stone');
-  if (g) g.setAttribute('transform', `translate(${(st.pos.x - annoBuilt.x).toFixed(1)},${(st.pos.y - annoBuilt.y).toFixed(1)})`);
+  if (!g) return;
+  if (kind === 'station' || kind === 'wildlife' || kind === 'living') {
+    const st = annoStationEnt(); if (!st) return;
+    if (Math.abs(st.radius - annoBuilt.r) > 1) { buildAnnoSVG(); return; }
+    g.setAttribute('transform', `translate(${(st.pos.x - annoBuilt.x).toFixed(1)},${(st.pos.y - annoBuilt.y).toFixed(1)})`);
+  } else if (kind === 'water') {
+    const wl = SECTION_OLD_SEA_Y + (SECTION_NEW_SEA_Y - SECTION_OLD_SEA_Y) * sectionSeaRise;
+    g.setAttribute('transform', `translate(0,${((wl - annoBuilt.wl) * height).toFixed(1)})`);
+  }
 }
 
 // ===== Hotspot-Grafiken fuer den Reader =====

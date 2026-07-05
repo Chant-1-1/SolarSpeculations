@@ -7,21 +7,18 @@ Die Reihe endet bei der ersten Luecke (gibt es <id>3 nicht, wird <id>4 nicht meh
 Pro Nummer wird .webp vor .png vor .svg bevorzugt. Die Bilder werden bei JEDEM Oeffnen des
 Hotspots frisch gesucht — eine neu abgelegte Datei erscheint sofort, ohne die Seite neu zu laden.
 
-WO die Bilder erscheinen:
+ALLE Haupt-Hotspots sind In-Szene-Diagramme: die Szene dimmt nur leicht ab und das echte
+Motiv (Bimsstein / Erd-Rand / Berg+Wasser / Sonne) wird direkt beschriftet (Definition:
+app.js -> buildAnnoSVG). Eigene Bilder erscheinen als kleine Reihe UEBER dem Kurztext unten.
 
-1) READER-Hotspots (dunkler Text-Screen): Bilder erscheinen GROSS ueber dem Text.
-   IDs:  the atmosphere:  sec_magnet, sec_ozone, sec_smog
-         the water:       sec_sea_level, sec_band, sec_deep
-         the sun:         sun_surface, sun_corona, sun_storm
-
-2) IN-SZENE-Diagramme (Szene 2): die Szene dimmt nur leicht ab, die ECHTE Station wird
-   direkt beschriftet (Diagramm-Definition: app.js -> buildAnnoSVG). Eigene Bilder
-   erscheinen als kleine Reihe UEBER dem Kurztext unten.
-   IDs:  hs_station, hs_wildlife, hs_living
-
-(Derzeit unverlinkte Unterszenen: st_hull, st_life, st_ballast, st_airlock,
- dwelling, the_sway, finding_the_way — Schema funktioniert dort genauso.)
+  Szene 2:          hs_station, hs_wildlife, hs_living
+  the atmosphere:   hs_atmosphere
+  the water:        hs_water
+  the sun:          hs_sun
 
 Beispiele:
-  hs_station1.png       -> Bild im Stations-Diagramm (ueber dem Kurztext)
-  sec_ozone1.png        -> grosse Grafik zum "Ozone layer"-Hotspot im Reader
+  hs_station1.png       -> Bild im Stations-Diagramm
+  hs_atmosphere1.png    -> Bild im Atmosphaeren-Diagramm
+
+(Derzeit unverlinkte Unterszenen mit Reader-Hotspots: st_hull, st_life, st_ballast,
+ st_airlock, dwelling, the_sway, finding_the_way — dort erscheinen Bilder gross ueber dem Text.)
