@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="de">
+<html lang="en">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
@@ -129,15 +129,15 @@
 </head>
 <body>
   <div id="canvas-holder"></div>
-  <div id="status">lade …</div>
+  <div id="status">loading …</div>
 
   <div id="gate" class="hidden">
     <h1>SolarSpeculations</h1>
-    <p>Klicken, um einzutreten</p>
+    <p>click to enter</p>
   </div>
 
   <aside id="panel">
-    <button id="panel-close" aria-label="schliessen">×</button>
+    <button id="panel-close" aria-label="close">×</button>
     <h2 id="panel-title"></h2>
     <div class="body" id="panel-body"></div>
     <img class="secondary" id="panel-secondary" alt="" style="display:none" />
@@ -150,7 +150,7 @@
       <circle id="callout-dot" cx="0" cy="0" r="3.5" fill="none" stroke="rgba(216,178,90,0.9)" stroke-width="1.2"></circle>
     </svg>
     <div id="callout-box">
-      <button id="callout-close" aria-label="schliessen">×</button>
+      <button id="callout-close" aria-label="close">×</button>
       <h3 id="callout-title"></h3>
       <div class="body" id="callout-body"></div>
     </div>
@@ -158,9 +158,9 @@
 
   <div id="scene-name"></div>
   <nav id="nav">
-    <button class="arrow" id="prev" aria-label="vorherige Szene">‹</button>
+    <button class="arrow" id="prev" aria-label="previous scene">‹</button>
     <div class="dots" id="dots"></div>
-    <button class="arrow" id="next" aria-label="naechste Szene">›</button>
+    <button class="arrow" id="next" aria-label="next scene">›</button>
   </nav>
 
   <script src="lib/p5.min.js"></script>

@@ -14,7 +14,7 @@
         "baseVel": -0.10,
         "tilt": 0.20
       },
-      "label": "Weltkugel",
+      "label": "The earth",
       "path": [
         { "x": 0.5, "y": 0.5 }
       ],
@@ -24,8 +24,8 @@
       "bob": 0.010,
       "opacity": 1.0,
       "content": {
-        "title": "Weltkugel",
-        "body": "Test-Rasterbild. Steht mittig und wackelt nur leicht (bob).\nWeitere Objekte einfach als neue Entities mit eigenem Bild ergänzen.",
+        "title": "The earth",
+        "body": "This is the world after the collapse: an ocean planet under a sun no one may face. The land is drowned and the sky is torn. What remains of humanity drifts on the water that shelters it.",
         "secondaryImage": "",
         "link": { "url": "", "label": "" }
       }

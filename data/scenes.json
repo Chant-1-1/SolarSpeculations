@@ -3,7 +3,7 @@
   "scenes": [
     {
       "id": "scene1",
-      "name": "Weltkugel-Test",
+      "name": "the earth",
       "background": "",
       "backgroundTint": "#05060b",
       "space": true,
@@ -13,14 +13,14 @@
     },
     {
       "id": "scene2",
-      "name": "die station",
+      "name": "the station",
       "background": "",
       "backgroundTint": "#081826",
       "underwater": true
     },
     {
       "id": "scene3",
-      "name": "das eye",
+      "name": "the eye",
       "background": "assets/images/backgrounds/scene3_interior.png",
       "backgroundTint": "#eee9df",
       "interior": true

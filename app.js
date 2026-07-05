@@ -3371,7 +3371,7 @@ function openPanel(ent) {
   if (c.secondaryImage) { sec.src = c.secondaryImage; sec.style.display = 'block'; }
   else { sec.style.display = 'none'; }
   const link = document.getElementById('panel-link');
-  if (c.link && c.link.url) { link.href = c.link.url; link.textContent = c.link.label || 'mehr'; link.style.display = 'inline-block'; }
+  if (c.link && c.link.url) { link.href = c.link.url; link.textContent = c.link.label || 'more'; link.style.display = 'inline-block'; }
   else { link.style.display = 'none'; }
   document.getElementById('panel').classList.add('open');
   setDuck(true);
