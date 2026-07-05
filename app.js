@@ -3029,7 +3029,153 @@ function drawViz(kind, alpha) {
   else if (kind === 'wildlife') drawVizWildlife(alpha, hasImg);
 }
 
-// ---- SUN: grosse Sonnenscheibe (Kern/Granulation/Flecken) + Korona + Strahlen + CME-Bogen. ----
+// =========================================================================
+//  VIZ-SONNE (Shader): brodelnde FBM-Oberflaeche nach der sun.3dapp.online-Referenz —
+//  hohe Noise-Frequenz (fbmFrequency ~8.9), harte Emissive-Schwelle (0.01..0.98),
+//  KEINE Korona, kein Bloom; dazu ein Eruptions-System am Rand (Protuberanz-Schleifen,
+//  Intervall 0.5–6.7 s, bis 35 aktiv, Deckkraft 0.86, Groesse 3..10 -> Anteil des Radius).
+//  Faellt bei Shader-Fehler/reduced-motion auf die bisherige 2D-Sonne zurueck.
+//  SW-Modus: der #sun-tint-Layer (mix-blend color) gibt der grauen Scheibe den Goldton
+//  zurueck — die Helligkeits-Struktur (Brodeln/Eruptionen) bleibt dabei voll erhalten.
+// =========================================================================
+let vizSunBuf = null, vizSunShader = null, vizSunFailed = false, vizSunProbed = false;
+const VIZSUN_BUF = 640;   // Buffer-Kantenlaenge (px); Scheibe belegt 80% davon
+const VIZSUN_FRAG = `
+precision highp float;
+uniform float uTime;
+uniform vec2  uResolution;
+` + GLSL_NOISE + `
+void main(){
+  vec2 uv = gl_FragCoord.xy / uResolution;
+  vec2 p  = uv - 0.5;
+  float r = length(p);
+  float t = uTime;
+  const float RD = 0.40;                        // Scheibenradius in UV (fuellt den Buffer)
+
+  // brodelnde Oberflaeche: domain-warped FBM, hohe Frequenz (Referenz: fbmFrequency 8.9)
+  vec2 q = p / RD;                              // auf Scheibenradius normiert
+  vec2 warp = vec2(fbm(q*3.0 + t*0.05), fbm(q*3.0 + 7.3 - t*0.06));
+  float n1 = fbm(q*8.9  + warp*1.6 + t*0.10);   // Haupt-Granulation, brodelt zeitlich
+  float n2 = fbm(q*17.0 - warp*1.2 - t*0.14);   // feinere zweite Lage
+  float boil = clamp(n1*0.72 + n2*0.28, 0.0, 1.0);
+
+  // Emissive-Schwelle (Referenz: thresholdMin 0.01 / max 0.98) -> helle Adern, dunkle Zellraender
+  float emiss = pow(smoothstep(0.01, 0.98, boil), 1.35);
+
+  float mu   = sqrt(max(0.0, 1.0 - (r*r)/(RD*RD)));
+  float limb = 0.35 + 0.65*mu;                  // Randverdunkelung
+  float disk = smoothstep(RD, RD - 0.006, r);   // knackige Kante (bloom off)
+
+  vec3 deep  = vec3(0.55, 0.16, 0.02);          // dunkle Zellraender
+  vec3 gold  = vec3(1.00, 0.62, 0.16);
+  vec3 white = vec3(1.00, 0.93, 0.70);
+  vec3 col = mix(deep, gold, emiss);
+  col = mix(col, white, smoothstep(0.78, 1.0, emiss));
+  col *= limb * 1.55;                           // Helligkeit (Referenz: brightness hoch)
+  col *= disk;
+
+  // keine Korona — nur hauchduenner heisser Saum direkt an der Kante
+  float rim = smoothstep(RD + 0.012, RD, r) * (1.0 - disk);
+  col += gold * rim * 0.5;
+
+  col *= smoothstep(0.5, 0.42, r);              // runde Maske vor der Buffer-Kante
+  gl_FragColor = vec4(col, 1.0);                // opak auf Schwarz -> additiv geblittet
+}`;
+
+function ensureVizSunBuffer() {
+  if (waterReduceMotion || vizSunFailed || vizSunBuf) return;
+  try {
+    const buf = createGraphics(VIZSUN_BUF, VIZSUN_BUF, WEBGL);
+    buf.pixelDensity(1);
+    vizSunShader = buf.createShader(WATER_VERT, VIZSUN_FRAG);
+    vizSunBuf = buf;
+    vizSunProbed = false;
+  } catch (e) {
+    console.warn('Viz-Sonnen-Shader nicht verfuegbar -> 2D-Fallback', e);
+    vizSunFailed = true;
+    if (vizSunBuf) { vizSunBuf.remove(); vizSunBuf = null; }
+    vizSunShader = null;
+  }
+}
+
+// rendert die Shader-Sonne und blittet sie additiv auf (cx,cy) mit Scheibenradius r.
+// true = gezeichnet; false = Fallback auf die alte 2D-Sonne.
+function drawVizSunShader(cx, cy, r, t) {
+  if (waterReduceMotion || vizSunFailed || PERF_FLAT) return false;
+  ensureVizSunBuffer();
+  if (!vizSunBuf || !vizSunShader) return false;
+  try {
+    const g = vizSunBuf;
+    g.clear(); g.noStroke(); g.shader(vizSunShader);
+    vizSunShader.setUniform('uTime', t);
+    vizSunShader.setUniform('uResolution', [g.width, g.height]);
+    g.plane(g.width + 2, g.height + 2);
+    g.resetShader();
+    if (!vizSunProbed) {   // einmalig pruefen, ob der Shader wirklich Pixel liefert
+      vizSunProbed = true;
+      const px = g.get(g.width >> 1, g.height >> 1);
+      if (!px || (px[0] + px[1] + px[2]) < 8) throw new Error('leerer Render (Shader-Compile-Fehler)');
+    }
+  } catch (e) {
+    console.warn('Viz-Sonnen-Shader -> 2D-Fallback', e);
+    vizSunFailed = true;
+    if (vizSunBuf) { vizSunBuf.remove(); vizSunBuf = null; }
+    vizSunShader = null;
+    return false;
+  }
+  const D = r / 0.40;   // Scheibenradius RD=0.40 in UV -> Blit-Kantenlaenge = r/RD (Scheibe = 80% davon)
+  push();
+  blendMode(ADD);
+  imageMode(CENTER);
+  image(vizSunBuf, cx, cy, D, D);
+  blendMode(BLEND);
+  pop();
+  return true;
+}
+
+// Eruptions-System (Referenz-Parameter): Protuberanz-Schleifen am Rand. Spawn alle 0.5–6.7 s,
+// Bestand max. 35 (Start fuellt schneller auf ~9), Groesse 3..10 -> 0.09..0.29 Scheibenradien,
+// Deckkraft-Huellkurve bis 0.86. Additiv gezeichnet, leichtes Wehen ueber Sinus + seed.
+let vizSunEruptions = [];
+let vizSunNextSpawn = 0;
+function updateVizSunEruptions(cx, cy, R, t, ctx) {
+  if (t > vizSunNextSpawn && vizSunEruptions.length < 35) {
+    const n = vizSunEruptions.length < 9 ? 3 : 1;
+    for (let i = 0; i < n; i++) vizSunEruptions.push({
+      ang: Math.random() * TWO_PI,
+      size: (3 + Math.random() * 7) / 35,            // 3..10 -> 0.086..0.29 R
+      born: t,
+      life: 2.2 + Math.random() * 3.4,
+      span: 0.10 + Math.random() * 0.16,             // Fussbreite am Rand (rad)
+      seed: Math.random() * 10
+    });
+    vizSunNextSpawn = t + 0.5 + Math.random() * 6.2; // 502..6721 ms (Referenz)
+  }
+  vizSunEruptions = vizSunEruptions.filter(e => t - e.born < e.life);
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  for (const e of vizSunEruptions) {
+    const p = (t - e.born) / e.life;
+    const env = Math.sin(Math.PI * Math.min(1, p));            // auf- und abschwellen
+    const a = 0.86 * env;                                      // Referenz: opacity 0.86
+    const h = e.size * R * (0.5 + 0.5 * env);                  // Bogenhoehe atmet mit
+    const a0 = e.ang - e.span / 2, a1 = e.ang + e.span / 2;
+    const x0 = cx + Math.cos(a0) * R, y0 = cy + Math.sin(a0) * R;
+    const x1 = cx + Math.cos(a1) * R, y1 = cy + Math.sin(a1) * R;
+    const am = e.ang + Math.sin(t * 0.9 + e.seed) * 0.03;      // leichtes Wehen der Schleife
+    const xm = cx + Math.cos(am) * (R + h * 2.2), ym = cy + Math.sin(am) * (R + h * 2.2);
+    ctx.strokeStyle = 'rgba(255,170,70,' + a.toFixed(3) + ')';
+    ctx.lineWidth = Math.max(1, R * 0.012 * (0.6 + env));
+    ctx.beginPath(); ctx.moveTo(x0, y0); ctx.quadraticCurveTo(xm, ym, x1, y1); ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,225,150,' + (a * 0.55).toFixed(3) + ')';   // heller Kern
+    ctx.lineWidth = Math.max(0.6, R * 0.005);
+    ctx.beginPath(); ctx.moveTo(x0, y0); ctx.quadraticCurveTo(xm, ym, x1, y1); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+// ---- SUN: grosse Sonnenscheibe. Shader-Pfad (brodelnde FBM-Sonne + Eruptionen, s.o.);
+//      2D-Zeichnung (Kern/Granulation/Korona/CME) bleibt als Fallback. ----
 // hasImg = eigenes Szenen-Bild vorhanden -> nur Weltraum+Sterne+Caption, Sonne kommt als Bild-Entity.
 function drawVizSun(alpha, hasImg = false) {
   const W = width, H = height, ctx = drawingContext, t = millis() * 0.001, F = frameCount;
@@ -3050,7 +3196,10 @@ function drawVizSun(alpha, hasImg = false) {
 
   const flick = sunFlicker(t);
 
-  if (!hasImg) {   // eigenes Bild vorhanden -> prozedurale Sonne (Korona/Scheibe/CME) weglassen
+  if (!hasImg && drawVizSunShader(cx, cy, r, t)) {
+    // Shader-Sonne (brodelnde FBM-Oberflaeche) + Eruptions-Schleifen am Rand
+    updateVizSunEruptions(cx, cy, r, t, ctx);
+  } else if (!hasImg) {   // Shader nicht verfuegbar -> bisherige 2D-Sonne (Korona/Scheibe/CME)
   // 2) Korona-Glut (radial, additiv) + lange, langsam rotierende Strahlen
   push(); ctx.globalCompositeOperation = 'lighter';
   const glow = ctx.createRadialGradient(cx, cy, r * 0.7, cx, cy, r * 3.0);
@@ -3111,7 +3260,7 @@ function drawVizSun(alpha, hasImg = false) {
     endShape();
   }
   pop();
-  }   // Ende !hasImg (prozedurale Sonne)
+  }   // Ende 2D-Fallback
 
   drawVizCaption('THE SUN', 'the engine — and the threat');
   ctx.globalAlpha = 1; pop();
