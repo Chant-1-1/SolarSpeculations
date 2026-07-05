@@ -2296,8 +2296,52 @@ function draw() {
   updateSectionMarkers();   // Rand-Ein-/Ausstiegs-Marker positionieren + zeichnen (Kugel-Oberrand / Schnitt oben)
 
   updateUICursor();   // Glow-Cursor-Zustand (statt nativer cursor()-Styles, die cursor:none ueberschreiben wuerden)
+  updateSunTint();    // SW-Modus: Sonnenlicht-Layer auf die sichtbare Sonne legen (sonst aus)
 
   if (PERF_HUD) drawPerfHud();
+}
+
+// ===== SW-Modus-Ausnahme: das Sonnenlicht bleibt gold =====
+// Der Graustufen-Filter liegt auf den einzelnen Ebenen (siehe index.html); DARUEBER schwebt der
+// ungefilterte Layer #sun-tint (mix-blend-mode: color), der den Graustufen darunter Farbton +
+// Saettigung des Sonnengolds zurueckgibt — die Helligkeit (also die Zeichnung selbst) bleibt.
+// Pro sichtbarer Szene wird bestimmt, wo die Sonne steht:
+//   Szene 1  -> kreisende Sonne (sunOrbitAngle), Szene 'sun' -> grosse Scheibe (sunLayout),
+//   'water'  -> Himmels-Sonne des Schnitts, Szene 2 -> Lichtband von oben (#sun-tint-band).
+function sunTintSpec(id) {
+  const W = width, H = height, mm = Math.min(W, H);
+  const sc = scenes.find(s => s && s.id === id);
+  if (!sc) return null;
+  if (sc.space) {
+    const sa = sunOrbitAngle();
+    return { kind: 'radial', x: W / 2 + Math.cos(sa) * SUN_ORBIT_R * mm, y: H / 2 - Math.sin(sa) * SUN_ORBIT_R * mm, r: mm * 0.28 };
+  }
+  if (sc.viz === 'sun') { const s = sunLayout(); return { kind: 'radial', x: s.cx, y: s.cy, r: s.r * 2.6 }; }
+  if (sc.water) return { kind: 'radial', x: W * 0.70, y: H * 0.22, r: H * 0.55 };   // Himmels-Sonne aus drawWaterSky
+  if (sc.underwater) return { kind: 'band', h: H * 0.38 };                          // Sonnenlicht faellt von oben ein
+  return null;
+}
+function updateSunTint() {
+  const rad = document.getElementById('sun-tint');
+  const band = document.getElementById('sun-tint-band');
+  if (!rad || !band) return;
+  if (!bwMode) { rad.style.opacity = 0; band.style.opacity = 0; return; }
+  // dominante Szene waehrend eines Fades (Farbton-Blend auf Dunklem ist unauffaellig genug,
+  // dass EIN Tint-Satz reicht)
+  const t = sceneFadeT();
+  const idx = (nextScene >= 0 && t > 0.5) ? nextScene : currentScene;
+  const a = nextScene >= 0 ? (idx === nextScene ? t : 1 - t) : 1;
+  const spec = scenes[idx] ? sunTintSpec(scenes[idx].id) : null;
+  if (spec && spec.kind === 'radial') {
+    rad.style.left = (spec.x - spec.r) + 'px';
+    rad.style.top = (spec.y - spec.r) + 'px';
+    rad.style.width = rad.style.height = (spec.r * 2) + 'px';
+    rad.style.opacity = a;
+  } else rad.style.opacity = 0;
+  if (spec && spec.kind === 'band') {
+    band.style.height = spec.h + 'px';
+    band.style.opacity = a;
+  } else band.style.opacity = 0;
 }
 
 // Glow-Cursor (DESCENT): Zustaende auf dem DOM-Punkt spiegeln. 'grab' beim Greifen/Kugel,
@@ -3430,9 +3474,12 @@ function openPanel(ent) {
   const c = ent.def.content || {};
   document.getElementById('reader-title').textContent = c.title || ent.def.label || '';
   document.getElementById('reader-body').textContent = c.body || '';
-  const img = document.getElementById('reader-img');
-  if (c.secondaryImage) { img.src = c.secondaryImage; img.style.display = 'block'; }
-  else { img.style.display = 'none'; }
+  // Medienzone: explizites secondaryImage zuerst, dann die Hotspot-Grafiken aus
+  // assets/images/hotspots/<id>1.png|webp, <id>2..., (asynchron nachgeladen)
+  const media = document.getElementById('reader-media');
+  media.innerHTML = '';
+  if (c.secondaryImage) addReaderImage(media, c.secondaryImage);
+  loadHotspotMedia(ent, media);
   const link = document.getElementById('reader-link');
   if (c.link && c.link.url) { link.href = c.link.url; link.textContent = c.link.label || 'more'; link.style.display = 'inline-block'; }
   else { link.style.display = 'none'; }
@@ -3444,6 +3491,36 @@ function closePanel() {
   openEntity = null;
   document.getElementById('reader').classList.remove('open');
   setDuck(false);
+}
+
+// ===== Hotspot-Grafiken fuer den Reader =====
+// Konvention wie bei den Entity-Varianten, nur FLACH in einem Ordner: pro Hotspot
+// assets/images/hotspots/<hotspot-id>1.png (oder .webp), weitere <id>2, <id>3 ... —
+// die erste Luecke beendet die Reihe. Wird bei JEDEM Oeffnen frisch geprobt, d.h. eine neu
+// abgelegte Datei erscheint ohne Reload. DOM-<img> (kein p5-loadImage noetig).
+function addReaderImage(container, src) {
+  const im = document.createElement('img');
+  im.src = src; im.alt = '';
+  container.appendChild(im);
+}
+async function loadHotspotMedia(ent, container) {
+  const base = 'assets/images/hotspots/' + ent.def.id;
+  for (let i = 1; i <= 9; i++) {
+    let src = null;
+    if (await probeImage(base + i + '.webp')) src = base + i + '.webp';        // WebP bevorzugt
+    else if (await probeImage(base + i + '.png')) src = base + i + '.png';     // PNG-Fallback
+    else break;                                                                 // Luecke -> Ende
+    if (openEntity !== ent) return;   // Reader wurde inzwischen geschlossen/neu befuellt
+    addReaderImage(container, src);
+  }
+}
+function probeImage(url) {
+  return new Promise(res => {
+    const im = new Image();
+    im.onload = () => res(true);
+    im.onerror = () => res(false);
+    im.src = url;
+  });
 }
 
 // =========================================================================

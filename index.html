@@ -25,18 +25,35 @@
   /* Custom-Glow-Cursor nur auf Geraeten mit echtem Hover (Desktop) */
   @media (hover: hover) { html, body, canvas { cursor: none; } }
 
-  /* --- Schwarz-Weiss-Modus: GPU-komponierter Graustufen-Filter ueber die ganze Seite.
-         Kostenlos (kein per-Frame p5 filter(GRAY)/Pixel-Readback pro Frame). Am <body>, nicht
-         am Wurzel-<html>: ein filter auf dem Root wird von der Engine auf den Viewport
-         propagiert und NICHT sichtbar angewandt. body fuellt via height:100% exakt den Viewport,
-         daher decken sich die position:fixed-Overlays weiterhin deckungsgleich.
+  /* --- Schwarz-Weiss-Modus: GPU-komponierter Graustufen-Filter, aber NICHT mehr am <body>,
+         sondern auf den einzelnen Ebenen (Canvas + UI). Grund: das SONNENLICHT soll auch im
+         SW-Modus gold bleiben — dafuer liegt der UNgefilterte Layer #sun-tint (mix-blend-mode:
+         color) ueber dem grau gefilterten Canvas und gibt der Sonne ihren Farbton zurueck.
+         Laege der Filter am body, wuerde er auch den Tint-Layer grau rechnen.
          Bewusst OHNE transition: der Uebergang none->grayscale(1) interpoliert in Chromium nicht
-         (bleibt bei 0 haengen); ein weicher Fade braeuchte body{filter:grayscale(0)} dauerhaft,
-         also eine permanente Compositing-Ebene ueber dem Canvas -> Kosten pro Frame. Daher sofort.
-         Toggle: Taste 's' oder Start mit ?bw. */
-  body.bw { filter: grayscale(1); }
+         (bleibt bei 0 haengen). Toggle: Taste 's' oder Start mit ?bw. */
+  body.bw #canvas-holder, body.bw #scene-menu, body.bw #scene-name,
+  body.bw #reader, body.bw #gate, body.bw #status, body.bw #cursor { filter: grayscale(1); }
   #canvas-holder { position: fixed; inset: 0; }
   canvas { display: block; }
+
+  /* --- Sonnenlicht-Tint (nur im SW-Modus sichtbar): ungefilterter Layer, der die Graustufen
+         darunter per mix-blend-mode:color wieder gold faerbt. Position/Groesse setzt
+         updateSunTint() in app.js pro Frame auf die sichtbare Sonne; in Szene 2 ein Band
+         fuer das von oben einfallende Sonnenlicht. Helligkeit bleibt erhalten (color-Blend
+         uebernimmt nur Farbton+Saettigung) -> dunkle Flaechen bleiben dunkel. --- */
+  #sun-tint, #sun-tint-band {
+    position: fixed; pointer-events: none; z-index: 12;
+    mix-blend-mode: color; opacity: 0; transition: opacity 0.4s ease;
+  }
+  #sun-tint {
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(255,196,64,0.95) 0%, rgba(255,186,52,0.85) 40%, rgba(255,180,40,0) 70%);
+  }
+  #sun-tint-band {
+    left: 0; top: 0; width: 100%;
+    background: linear-gradient(180deg, rgba(255,196,64,0.9), rgba(255,196,64,0));
+  }
 
   /* --- Glow-Cursor (DESCENT): kleiner Leuchtpunkt, waechst + waermt bei Hover, grau beim Greifen --- */
   #cursor {
@@ -87,7 +104,14 @@
     opacity: 0; pointer-events: none; transition: opacity 0.7s ease; cursor: pointer;
   }
   #reader.open { opacity: 1; pointer-events: all; }
-  #reader img { max-width: min(76vw, 880px); max-height: 46vh; object-fit: contain; margin-bottom: 4.5vh; opacity: 0.92; display: none; }
+  /* Medienzone: Hotspot-Grafik + unterstuetzende Bilder (assets/images/hotspots/<id>1.png, ...).
+     Ein Bild -> gross; mehrere -> nebeneinander, umbrechend. Leer -> Zone verschwindet. */
+  #reader-media {
+    display: flex; flex-wrap: wrap; gap: 2vw; align-items: center; justify-content: center;
+    max-width: 90vw; margin-bottom: 4.5vh;
+  }
+  #reader-media:empty { display: none; }
+  #reader-media img { max-height: 38vh; max-width: min(80vw, 880px); object-fit: contain; opacity: 0.92; }
   #reader h3 { font-weight: 400; color: var(--accent); font-size: 12px; letter-spacing: 0.42em; text-transform: lowercase; margin-bottom: 3.4vh; }
   #reader .body { color: var(--text); font-size: 15px; letter-spacing: 0.05em; line-height: 2.15; text-align: center; max-width: 660px; white-space: pre-wrap; }
   #reader a.link {
@@ -129,10 +153,12 @@
   </div>
 
   <div id="vignette"></div>
+  <div id="sun-tint"></div>
+  <div id="sun-tint-band"></div>
   <div id="cursor"></div>
 
   <div id="reader" aria-hidden="true">
-    <img id="reader-img" alt="" />
+    <div id="reader-media"></div>
     <h3 id="reader-title"></h3>
     <div class="body" id="reader-body"></div>
     <a class="link" id="reader-link" href="#" target="_blank" rel="noopener"></a>

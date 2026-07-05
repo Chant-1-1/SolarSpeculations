@@ -68,6 +68,23 @@ leer, ändert sich nichts — kein Platzhalter. Mehrere Varianten (`sun2.png`, �
 sind möglich, die Engine wählt zufällig. Position/Größe über `path`/`scale` des
 jeweiligen `*_image`-Entities tunen; in jedem Ordner liegt eine `LIESMICH.txt`.
 
+## Grafiken pro Hotspot (Reader-Overlay)
+
+Jeder Hotspot kann eine erklärende Grafik + unterstützende Bilder bekommen, die
+im Reader (dunkler Text-Screen) **über dem Text** erscheinen. Dateien flach in
+`assets/images/hotspots/` ablegen: `<hotspot-id>1.png` (Haupt-Grafik),
+`<hotspot-id>2.png`, … für weitere Bilder — z. B. `sec_ozone1.png`. WebP geht
+auch und wird bevorzugt. Die Bilder werden bei jedem Öffnen frisch gesucht,
+neue Dateien erscheinen ohne Reload. Alle IDs stehen in der dortigen
+`LIESMICH.txt`.
+
+## Schwarz-Weiß-Modus (Taste `s` / `?bw`)
+
+Alles wird entsättigt, **nur das Sonnenlicht bleibt gold**: ein ungefilterter
+Tint-Layer (`#sun-tint`, `mix-blend-mode: color`) legt sich pro Frame auf die
+sichtbare Sonne (Szene 1, „the sun", „the water") bzw. als Lichtband von oben
+auf Szene 2 und gibt den Graustufen darunter den Farbton zurück.
+
 ## entity-Felder (`entities.json`)
 
 | Feld | Bedeutung |
