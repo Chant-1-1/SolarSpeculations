@@ -2836,7 +2836,6 @@ function vizHotspotNorm(id) {
   const W = width, H = height, P = p => ({ x: p.x / W, y: p.y / H });
   switch (id) {
     // Sun
-    case 'sun_core':    { const s = sunLayout(); return P({ x: s.cx,              y: s.cy }); }
     case 'sun_surface': { const s = sunLayout(); return P({ x: s.cx - 0.44 * s.r, y: s.cy - 0.26 * s.r }); }
     case 'sun_corona':  { const s = sunLayout(); return P({ x: s.cx + 0.40 * s.r, y: s.cy - 1.16 * s.r }); }
     case 'sun_storm':   { const s = sunLayout(); return P({ x: s.cx + 0.78 * s.r, y: s.cy + 0.86 * s.r }); }

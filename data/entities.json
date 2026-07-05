@@ -497,33 +497,17 @@
 
     {
       "_kommentar": "VIZ-HOTSPOTS. Wie die Section-Hotspots (hotspot:true -> pulsierender Gold-Ring, Klick -> Callout-Etikett). Die path-Koords sind PLATZHALTER: die Position wird zur Laufzeit von vizHotspotNorm() auf das gezeichnete Feature gesetzt (id-basiert). Texte englisch. SUN (scene 'sun', aus Szene 1).",
-      "id": "sun_core",
-      "scene": "sun",
-      "hotspot": true,
-      "interactive": true,
-      "layer": 0.9,
-      "label": "Core",
-      "path": [ { "x": 0.40, "y": 0.52 } ],
-      "loop": "loop", "speed": 0.0, "scale": 0.05, "bob": 0.0, "opacity": 1.0,
-      "content": {
-        "title": "Core — fusion",
-        "body": "In the core, hydrogen fuses into helium at about 15 million °C. That outward pressure of light is what holds the star up — and pours across the whole system.",
-        "secondaryImage": "",
-        "link": { "url": "", "label": "" }
-      }
-    },
-    {
       "id": "sun_surface",
       "scene": "sun",
       "hotspot": true,
       "interactive": true,
       "layer": 0.9,
-      "label": "Surface",
+      "label": "The lethal source",
       "path": [ { "x": 0.30, "y": 0.46 } ],
       "loop": "loop", "speed": 0.0, "scale": 0.05, "bob": 0.0, "opacity": 1.0,
       "content": {
-        "title": "Surface — granulation & spots",
-        "body": "The visible surface boils in convection cells. Cooler magnetic knots show as dark sunspots — the tangles that seed the storms.",
+        "title": "The lethal source",
+        "body": "No one sees her directly. Filtered to a faint gold, her raw light kills at the surface within hours — why is the sky's story.",
         "secondaryImage": "",
         "link": { "url": "", "label": "" }
       }
@@ -534,12 +518,12 @@
       "hotspot": true,
       "interactive": true,
       "layer": 0.9,
-      "label": "Corona",
+      "label": "The engine",
       "path": [ { "x": 0.50, "y": 0.24 } ],
       "loop": "loop", "speed": 0.0, "scale": 0.05, "bob": 0.0, "opacity": 1.0,
       "content": {
-        "title": "Corona & solar wind",
-        "body": "A faint, million-degree halo streams charged particles outward as the solar wind — a constant, thin rain of radiation on everything downwind.",
+        "title": "The engine",
+        "body": "Uneven heat sets the whole water column turning — the currents that never rest. The people call it the breathing of the world.",
         "secondaryImage": "",
         "link": { "url": "", "label": "" }
       }
