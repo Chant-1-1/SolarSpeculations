@@ -2213,10 +2213,11 @@ function draw() {
       if (zoomProgress >= 1) {
         currentScene = nextScene; nextScene = -1; sceneFade = 1;
         zoomTransition = false; zoomProgress = 0;
+        fireAutoAnno();
       }
     } else {
       sceneFade = Math.min(1, sceneFade + dt * SCENE_FADE_SPEED);
-      if (sceneFade >= 1) { currentScene = nextScene; nextScene = -1; sceneFade = 1; }
+      if (sceneFade >= 1) { currentScene = nextScene; nextScene = -1; sceneFade = 1; fireAutoAnno(); }
     }
   }
 
@@ -3609,6 +3610,9 @@ function closePanel() {
 // =========================================================================
 let annoEntity = null;
 let annoBuilt = null;   // Zustand der letzten SVG-Erzeugung {x,y,r,w,h} -> Rebuild bei Resize
+// Beim Rein-Zoomen in eine Unterszene mit Anno-Hotspot (the sun/water/atmosphere): dessen id,
+// damit das Diagramm nach Ende des Zooms automatisch aufgeht (ohne Extra-Klick). fireAutoAnno().
+let pendingAutoAnno = null;
 
 function annoStationEnt() { return allEntities.find(e => e.def.id === 'station' && e.def.scene === 'scene2'); }
 
@@ -3624,6 +3628,15 @@ function openAnno(ent) {
   buildAnnoSVG();
   document.getElementById('anno').classList.add('open');
   setDuck(true);
+}
+
+// nach dem Rein-Zoomen in eine Unterszene (the sun/water/atmosphere): den gemerkten Anno-Hotspot
+// automatisch oeffnen -> die Erklaerung ist sofort da, ohne noch einmal auf den Punkt zu klicken.
+function fireAutoAnno() {
+  if (!pendingAutoAnno) return;
+  const ent = allEntities.find(e => e.def.id === pendingAutoAnno);
+  pendingAutoAnno = null;
+  if (ent && ent.def.scene === scenes[currentScene].id && !openEntity) openAnno(ent);
 }
 
 // --- kleine SVG-String-Helfer (Farben: gold/dim/light wie im Rest des Looks) ---
@@ -3876,6 +3889,9 @@ function goToScene(index) {
     if (vizIn) {
       const p = vizMarkerPos(v);                       // Ziel = Position des angeklickten Markers
       if (p) { zoomTargetX = p.x / width; zoomTargetY = p.y / height; }
+      // Anno-Hotspot der Zielszene beim Ankommen automatisch oeffnen (kein Extra-Klick noetig).
+      const auto = allEntities.find(e => e.def.anno && e.def.scene === tgtId);
+      pendingAutoAnno = auto ? auto.def.id : null;
       if (v.id === WATER_ID) { sectionSeaRise = 0; sectionSeaRiseActive = false; }   // Wasser startet trocken
       if (v.id === ATMO_ID) {                          // Atmosphaere: Drehphase vom Globus uebernehmen ->
         const g = allEntities.find(e => e.isGlobe);    // kein Laengen-Sprung + gleiche Richtung -> echter Zoom
