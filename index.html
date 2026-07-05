@@ -19,6 +19,17 @@
     font-family: "Iowan Old Style", Georgia, "Times New Roman", serif;
     -webkit-font-smoothing: antialiased;
   }
+
+  /* --- Schwarz-Weiss-Modus: GPU-komponierter Graustufen-Filter ueber die ganze Seite.
+         Kostenlos (kein per-Frame p5 filter(GRAY)/Pixel-Readback pro Frame). Am <body>, nicht
+         am Wurzel-<html>: ein filter auf dem Root wird von der Engine auf den Viewport
+         propagiert und NICHT sichtbar angewandt. body fuellt via height:100% exakt den Viewport,
+         daher decken sich die position:fixed-Overlays weiterhin deckungsgleich.
+         Bewusst OHNE transition: der Uebergang none->grayscale(1) interpoliert in Chromium nicht
+         (bleibt bei 0 haengen); ein weicher Fade braeuchte body{filter:grayscale(0)} dauerhaft,
+         also eine permanente Compositing-Ebene ueber dem Canvas -> Kosten pro Frame. Daher sofort.
+         Toggle: Taste 's' oder Start mit ?bw. */
+  body.bw { filter: grayscale(1); }
   #canvas-holder { position: fixed; inset: 0; }
   canvas { display: block; }
 

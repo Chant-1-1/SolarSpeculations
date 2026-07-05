@@ -71,6 +71,15 @@ let sectionMarkers = [];    // Einstiegs-Marker auf der Kugel (Szene 1): {x,y,r,
 let sectionBackMarker = { x: 0, y: 0, r: 0, visible: false };
 let sectionHover = false;   // Maus ueber einem Randmarker -> Pointer-Cursor
 
+// "The station"-Marker in Szene 2 oeffnet KEINE eigene Szene mehr, sondern blendet Erklaer-Hotspots
+// direkt auf dem bereits sichtbaren Bimsstein ein (stationInfo-Entities). stationInfoT = weiche Ein-/Ausblende.
+let stationInfoOn = false;
+let stationInfoT = 0;
+// Analog fuer den "Wildlife"-Marker in Szene 2: blendet Erklaer-Hotspots zum Meeresleben direkt in
+// Szene 2 ein (wildlifeInfo-Entities), statt eine eigene Unterszene zu oeffnen. wildlifeInfoT = weiche Blende.
+let wildlifeInfoOn = false;
+let wildlifeInfoT = 0;
+
 let started = false;      // Audio-Geste erfolgt?
 let openEntity = null;    // aktuell geoeffnetes Inhalts-Panel
 let hoverEntity = null;
@@ -510,6 +519,15 @@ class Entity {
       const a = atmoHotspotNorm(this.def.id);
       if (a) return a;
     }
+    // Station-Info-Hotspots (Szene 2): an der LIVE-Position des Bimssteins ausgerichtet, mit
+    // radius-relativem Offset (stOff) -> sie sitzen fest auf dem Stein und folgen Bob/Resize.
+    if (this.def.stationInfo) {
+      const st = allEntities.find(e => e.def.id === 'station' && e.def.scene === 'scene2');
+      if (st && st.pos && st.radius > 0) {
+        const o = this.def.stOff || { x: 0, y: 0 };
+        return { x: (st.pos.x + o.x * st.radius) / width, y: (st.pos.y + o.y * st.radius) / height };
+      }
+    }
     // Viz-Hotspots (sun/station/living/wildlife): dynamisch auf ihrem gezeichneten Feature
     if (this.def.hotspot) {
       const v = vizHotspotNorm(this.def.id);
@@ -779,14 +797,18 @@ function sceneIsUnderwater(id) {
 function currentSceneAlphaFor(ent) {
   const curId = scenes[currentScene]?.id;
   const nxtId = nextScene >= 0 ? scenes[nextScene]?.id : null;
-  if (ent.def.scene === curId && ent.def.scene === nxtId) return 1;
   let alpha;
-  if (ent.def.scene === curId) alpha = 1 - sceneFadeT();
+  if (ent.def.scene === curId && ent.def.scene === nxtId) alpha = 1;
+  else if (ent.def.scene === curId) alpha = 1 - sceneFadeT();
   else if (ent.def.scene === nxtId) alpha = sceneFadeT();
   else return 0;
   if (zoomTransition && zoomPivotIndex >= 0 && ent.def.scene === scenes[zoomPivotIndex]?.id && !ent.def.zoomAnchor) {
     alpha *= 1 - Math.max(0, Math.min(1, (zoomProgress - 0.15) / 0.35));
   }
+  // Station-Info-Hotspots erscheinen nur, wenn der "The station"-Marker aktiviert wurde (weiche Blende).
+  if (ent.def.stationInfo) alpha *= stationInfoT;
+  // Wildlife-Info-Hotspots analog, gekoppelt an den "Wildlife"-Marker.
+  if (ent.def.wildlifeInfo) alpha *= wildlifeInfoT;
   return alpha;
 }
 function sceneFadeT() { return nextScene >= 0 ? sceneFade : 0; }
@@ -870,6 +892,9 @@ let SNOW_AMOUNT = 1;
 // Kaustik (kleine helle Lichtflecken knapp unter der Oberflaeche): wenige Punkte (nur 1 Worley-Lage,
 // siehe caustics()), dafuer normal hell. 0..1 regelt die HELLIGKEIT (nicht die Anzahl).
 let CAUSTICS_AMOUNT = 1.0;
+// Schwarz-Weiss-Modus: setzt Klasse 'bw' auf <body> -> CSS-Graustufenfilter (siehe index.html).
+// Toggle per Taste 's' oder Start mit ?bw. Rein visuell, kein Einfluss auf die Render-Pipeline.
+let bwMode = false;
 try {
   // FPS-HUD: lokal (localhost/127.0.0.1/file://) standardmaessig AN -> dauerhaft beim Bearbeiten
   // sichtbar; auf der Live-Seite (GitHub Pages) aus, ausser mit ?perf. ?noperf schaltet lokal aus.
@@ -878,6 +903,7 @@ try {
   PERF_FLAT = /[?&]flat\b/.test(location.search);
   PERF_NOFAUNA = /[?&]nofauna\b/.test(location.search);
   if (/[?&]nosnow\b/.test(location.search)) SNOW_AMOUNT = 0;       // Snow zum Vergleich aus
+  bwMode = /[?&]bw\b/.test(location.search);                        // ?bw -> in Schwarz-Weiss starten
 } catch (e) { /* kein location */ }
 let perfFpsEMA = 60;
 function chooseDensity() {
@@ -893,6 +919,7 @@ function setup() {
   pixelDensity(chooseDensity());
   imageMode(CENTER);
   textFont('Georgia');
+  applyBW();        // ?bw-Startzustand auf die Seite anwenden
   noLoop(); // erst nach Datenladen + Geste loopen
 
   // Barrierefreiheit: bei prefers-reduced-motion das ruhige drawUnderwater() statt des bewegten Shaders
@@ -2214,6 +2241,11 @@ function draw() {
   const duckTarget = openEntity ? 1 : 0;
   duck += (duckTarget - duck) * Math.min(1, dt * 4);
 
+  // Station-Info-Hotspots weich ein-/ausblenden (Ziel aus stationInfoOn)
+  stationInfoT += ((stationInfoOn ? 1 : 0) - stationInfoT) * Math.min(1, dt * 6);
+  // Wildlife-Info-Hotspots analog (Ziel aus wildlifeInfoOn)
+  wildlifeInfoT += ((wildlifeInfoOn ? 1 : 0) - wildlifeInfoT) * Math.min(1, dt * 6);
+
   // Meeresspiegel-Anstieg im Wasser-Schnitt (klick-getriggert): langsam von alt -> jetzt
   if (sectionSeaRiseActive && sectionSeaRise < 1) sectionSeaRise = Math.min(1, sectionSeaRise + dt / SEA_RISE_DURATION);
   // Erd-Limb (Atmosphaeren-Szene) dreht in DIESELBE Richtung wie der Globus weiter, nur langsamer.
@@ -2844,16 +2876,12 @@ function vizHotspotNorm(id) {
     case 'st_life':     { const s = stationLayout(); return P({ x: s.cx,               y: s.cy - s.hh * 0.42 }); }
     case 'st_ballast':  { const s = stationLayout(); return P({ x: s.cx - s.hw * 0.42, y: s.cy + s.hh * 0.68 }); }
     case 'st_airlock':  { const s = stationLayout(); return P({ x: s.cx + s.hw,        y: s.cy + s.hh * 0.28 }); }
-    // Living
-    case 'lv_quarters': { const s = livingLayout(); return P({ x: s.x0 + s.bw * 0.17, y: s.y0 + s.bh * 0.22 }); }
-    case 'lv_common':   { const s = livingLayout(); return P({ x: s.x0 + s.bw * 0.50, y: s.y0 + s.bh * 0.50 }); }
-    case 'lv_food':     { const s = livingLayout(); return P({ x: s.x0 + s.bw * 0.83, y: s.y0 + s.bh * 0.28 }); }
-    case 'lv_water':    { const s = livingLayout(); return P({ x: s.x0 + s.bw * 0.50, y: s.y0 + s.bh * 0.88 }); }
-    // Wildlife (volle-Breite-Baender -> feste Fraktionen genuegen)
-    case 'wl_surface':  return { x: 0.30, y: 0.13 };
-    case 'wl_band':     return { x: 0.40, y: 0.40 };
-    case 'wl_deep':     return { x: 0.28, y: 0.82 };
-    case 'wl_angler':   return { x: 0.66, y: 0.70 };
+    // Living: Wohnen (Hohlraum oben-links) · Sway (Ballast/Tiefenraeume unten) · Navigation (Passage rechts-mitte)
+    case 'dwelling':        { const s = livingLayout(); return P({ x: s.x0 + s.bw * 0.18, y: s.y0 + s.bh * 0.30 }); }
+    case 'the_sway':        { const s = livingLayout(); return P({ x: s.x0 + s.bw * 0.50, y: s.y0 + s.bh * 0.85 }); }
+    case 'finding_the_way': { const s = livingLayout(); return P({ x: s.x0 + s.bw * 0.82, y: s.y0 + s.bh * 0.52 }); }
+    // Wildlife: keine eigenen Faelle mehr — die Erklaerung laeuft jetzt als Info-Hotspots direkt in
+    // Szene 2 (wildlifeInfo, feste path-Position), analog zu den Station-Info-Hotspots.
   }
   return null;
 }
@@ -3204,11 +3232,20 @@ function updateSectionMarkers() {
   if (active) {
     for (const v of VIZ_MENU) {
       if (v.parent !== curId) continue;
+      // Waehrend die Station-Erklaerung an ist, nur den "The station"-Marker zeigen; die uebrigen
+      // Szene-2-Marker (Living/Wildlife) ausblenden -> sie haben nichts mit der Station zu tun.
+      if (stationInfoOn && v.id !== 'station_cut') continue;
+      // Ebenso: waehrend die Wildlife-Erklaerung an ist, nur den "Wildlife"-Marker zeigen.
+      if (wildlifeInfoOn && v.id !== 'wildlife') continue;
       const idx = sceneIndexById(v.id); if (idx < 0) continue;
       const p = vizMarkerPos(v); if (!p) continue;
       const r = vizMarkerR(v);
-      sectionMarkers.push({ x: p.x, y: p.y, r, idx });
-      drawRimMarker(p.x, p.y, r, v.label);
+      sectionMarkers.push({ x: p.x, y: p.y, r, idx, id: v.id });
+      // "The station"/"Wildlife" oeffnen keine Unterszene, sondern schalten ihre Erklaer-Hotspots um.
+      const label = v.id === 'station_cut' ? (stationInfoOn ? 'Hide the station' : v.label)
+                  : v.id === 'wildlife'    ? (wildlifeInfoOn ? 'Hide wildlife' : v.label)
+                  : v.label;
+      drawRimMarker(p.x, p.y, r, label);
     }
   }
   // In einer Viz-Unterszene: Zurueck-Marker zur Elternszene (oben mittig).
@@ -3231,6 +3268,20 @@ function exitSection() {
   else if (spaceIndex >= 0) goToScene(spaceIndex);
 }
 
+// "The station" (Szene 2): Erklaer-Hotspots am Bimsstein ein-/ausblenden — statt eine Unterszene zu oeffnen.
+function toggleStationInfo() {
+  stationInfoOn = !stationInfoOn;
+  if (stationInfoOn) wildlifeInfoOn = false;             // die beiden Szene-2-Erklaerungen schliessen sich aus
+  if (!stationInfoOn && calloutEntity) closeCallout();   // beim Ausblenden ein offenes Etikett mitnehmen
+}
+
+// "Wildlife" (Szene 2): Erklaer-Hotspots zum Meeresleben ein-/ausblenden — statt eine Unterszene zu oeffnen.
+function toggleWildlifeInfo() {
+  wildlifeInfoOn = !wildlifeInfoOn;
+  if (wildlifeInfoOn) stationInfoOn = false;             // nie beide gleichzeitig aktiv
+  if (!wildlifeInfoOn && calloutEntity) closeCallout();
+}
+
 // =========================================================================
 //  INTERAKTION
 // =========================================================================
@@ -3238,7 +3289,13 @@ function mousePressed() {
   if (!started || openEntity) return;
   // Rand-Marker (Ein-/Ausstieg) VOR den Entities pruefen -> Klick greift nicht die Kugel
   if (!zoomTransition && nextScene < 0) {
-    for (const m of sectionMarkers) { if (dist(mouseX, mouseY, m.x, m.y) < m.r) { goToScene(m.idx); return; } }
+    for (const m of sectionMarkers) {
+      if (dist(mouseX, mouseY, m.x, m.y) < m.r) {
+        if (m.id === 'station_cut') { toggleStationInfo(); return; }   // keine Unterszene: Hotspots am Stein umschalten
+        if (m.id === 'wildlife')    { toggleWildlifeInfo(); return; }  // keine Unterszene: Meeresleben-Hotspots umschalten
+        goToScene(m.idx); return;
+      }
+    }
     if (sectionBackMarker.visible && dist(mouseX, mouseY, sectionBackMarker.x, sectionBackMarker.y) < sectionBackMarker.r) { exitSection(); return; }
   }
   for (let i = allEntities.length - 1; i >= 0; i--) {
@@ -3349,6 +3406,8 @@ function goToScene(index) {
   if (index === currentScene || nextScene >= 0) return;
   if (index < 0 || index >= scenes.length) return;
   if (calloutEntity) closeCallout();   // offenes Etikett nicht in die naechste Szene mitnehmen
+  stationInfoOn = false;               // Station-Info-Hotspots nicht in eine andere Szene mitnehmen
+  wildlifeInfoOn = false;              // ebenso die Wildlife-Info-Hotspots
   // Station-Zoom 2<->3 (fixes Ziel = Stationskuppel)
   const isSeaInterior = (currentScene === zoomSeaIndex && index === zoomInteriorIndex) ||
                         (currentScene === zoomInteriorIndex && index === zoomSeaIndex);
@@ -3432,9 +3491,16 @@ function keyPressed() {
   if (keyCode === ESCAPE && calloutEntity) closeCallout();
   else if (keyCode === ESCAPE && openEntity) closePanel();
   else if (key === 'p' || key === 'P') PERF_HUD = !PERF_HUD;   // FPS-HUD ein/aus
+  else if (key === 's' || key === 'S') toggleBW();             // Schwarz-Weiss ein/aus
   else if (keyCode === LEFT_ARROW) goToScene(navStep(-1));
   else if (keyCode === RIGHT_ARROW) goToScene(navStep(1));
 }
+
+// Schwarz-Weiss-Modus: Klasse auf <body> spiegeln -> CSS-Graustufenfilter (index.html).
+function applyBW() {
+  if (document.body) document.body.classList.toggle('bw', bwMode);
+}
+function toggleBW() { bwMode = !bwMode; applyBW(); }
 
 function windowResized() {
   pixelDensity(chooseDensity());   // Budget bei Groessenwechsel neu bewerten (vor resizeCanvas)

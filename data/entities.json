@@ -71,6 +71,153 @@
       "bob": 0.006,
       "opacity": 1.0
     },
+
+    {
+      "_kommentar": "STATION-INFO-HOTSPOTS (Szene 2). Der 'The station'-Marker oeffnet KEINE Unterszene mehr, sondern blendet diese Hotspots direkt auf dem sichtbaren Bimsstein ein (stationInfo:true -> nur bei aktivem Marker; stOff = Offset in Stein-Radien, sitzt live am Stein). Klick -> Callout-Etikett wie bei den Section-Hotspots.",
+      "id": "st2_floating",
+      "scene": "scene2",
+      "stationInfo": true,
+      "hotspot": true,
+      "interactive": true,
+      "layer": 1.2,
+      "label": "Floating stone",
+      "stOff": { "x": -0.35, "y": -0.42 },
+      "path": [ { "x": 0.44, "y": 0.44 } ],
+      "loop": "loop", "speed": 0.0, "scale": 0.05, "bob": 0.0, "opacity": 1.0,
+      "content": {
+        "title": "Floating stone",
+        "body": "The station is not a ship and is anchored to nothing, but a drifting block of pumice — light, porous volcanic rock that floats. In this world, constant volcanic activity on the drowned seafloor erupts pumice in enormous quantities; these giant rafts of stone rise to the surface, and people hollow them out and live within the stone itself, in the bubbles and cavities it already holds.",
+        "secondaryImage": "",
+        "link": { "url": "", "label": "" }
+      }
+    },
+    {
+      "id": "st2_below",
+      "scene": "scene2",
+      "stationInfo": true,
+      "hotspot": true,
+      "interactive": true,
+      "layer": 1.2,
+      "label": "Below the surface",
+      "stOff": { "x": 0.0, "y": -0.72 },
+      "path": [ { "x": 0.50, "y": 0.34 } ],
+      "loop": "loop", "speed": 0.0, "scale": 0.05, "bob": 0.0, "opacity": 1.0,
+      "content": {
+        "title": "Below the surface",
+        "body": "Because the sun is now lethal, the water is shelter, so people live beneath the surface where the water shields them. Only the station's highest point breaks into the open air, the Solar Space, the single room that receives natural light, while everything else is layered downward into the shielded dark.",
+        "secondaryImage": "",
+        "link": { "url": "", "label": "" }
+      }
+    },
+    {
+      "id": "st2_light",
+      "scene": "scene2",
+      "stationInfo": true,
+      "hotspot": true,
+      "interactive": true,
+      "layer": 1.2,
+      "label": "Living light",
+      "stOff": { "x": 0.31, "y": -0.15 },
+      "path": [ { "x": 0.55, "y": 0.52 } ],
+      "loop": "loop", "speed": 0.0, "scale": 0.05, "bob": 0.0, "opacity": 1.0,
+      "content": {
+        "title": "Living light",
+        "body": "Apart from the Solar Space there is no daylight inside at all, so every passage and chamber is lit by living light: cultivated fluorescent bacteria, glowing fungi, and bioluminescent plants grown along the walls like a tended crop, joined by the light of the Sea Devils that gather around the station.",
+        "secondaryImage": "",
+        "link": { "url": "", "label": "" }
+      }
+    },
+    {
+      "id": "st2_keel",
+      "scene": "scene2",
+      "stationInfo": true,
+      "hotspot": true,
+      "interactive": true,
+      "layer": 1.2,
+      "label": "Weighted keel",
+      "stOff": { "x": 0.0, "y": 0.32 },
+      "path": [ { "x": 0.50, "y": 0.66 } ],
+      "loop": "loop", "speed": 0.0, "scale": 0.05, "bob": 0.0, "opacity": 1.0,
+      "content": {
+        "title": "Weighted keel",
+        "body": "Because raw floating stone would roll in the swell, the station is trimmed like a keel, with heavy ballast tanks in the lower modules pulling the centre of gravity deep below the waterline while the upper third is kept deliberately light. It floats like a buoy, pushed by the swell but always returning upright, holding its light-bearing crown to the surface.",
+        "secondaryImage": "",
+        "link": { "url": "", "label": "" }
+      }
+    },
+    {
+      "id": "st2_grown",
+      "scene": "scene2",
+      "stationInfo": true,
+      "hotspot": true,
+      "interactive": true,
+      "layer": 1.2,
+      "label": "Found and grown",
+      "stOff": { "x": -0.25, "y": 0.08 },
+      "path": [ { "x": 0.46, "y": 0.59 } ],
+      "loop": "loop", "speed": 0.0, "scale": 0.05, "bob": 0.0, "opacity": 1.0,
+      "content": {
+        "title": "Found and grown",
+        "body": "The people work the pumice like found rock, settling into its natural hollows and opening new ones only where it allows, and only where a surface must be sealed or a form shaped do they grow a hard mineral crust (Biorock). Even that obeys only in part, since the sea adds its own turns, so the architecture is co-authored by the ocean.",
+        "secondaryImage": "",
+        "link": { "url": "", "label": "" }
+      }
+    },
+    {
+      "id": "st2_breathing",
+      "scene": "scene2",
+      "stationInfo": true,
+      "hotspot": true,
+      "interactive": true,
+      "layer": 1.2,
+      "label": "Breathing drift",
+      "stOff": { "x": 0.2, "y": 0.18 },
+      "path": [ { "x": 0.53, "y": 0.62 } ],
+      "loop": "loop", "speed": 0.0, "scale": 0.05, "bob": 0.0, "opacity": 1.0,
+      "content": {
+        "title": "Breathing drift",
+        "body": "The station drifts slowly across the ocean, steered patiently by warming the water around it with focused sunlight, and as currents move through its mineral hull it groans without pause — a sound the inhabitants call the breathing of the world — while inside, people navigate the dark by the songs that belong to each place.",
+        "secondaryImage": "",
+        "link": { "url": "", "label": "" }
+      }
+    },
+
+    {
+      "_kommentar": "WILDLIFE-INFO-HOTSPOTS (Szene 2). Der 'Wildlife'-Marker oeffnet KEINE Unterszene mehr, sondern blendet diese Hotspots direkt in Szene 2 ein (wildlifeInfo:true -> nur bei aktivem Marker; feste Bildposition ueber path). Klick -> Callout-Etikett wie bei den Station-Info-Hotspots.",
+      "id": "wl_ecology",
+      "scene": "scene2",
+      "wildlifeInfo": true,
+      "hotspot": true,
+      "interactive": true,
+      "layer": 1.2,
+      "label": "The deep rose up",
+      "path": [ { "x": 0.20, "y": 0.72 } ],
+      "loop": "loop", "speed": 0.0, "scale": 0.05, "bob": 0.0, "opacity": 1.0,
+      "content": {
+        "title": "The deep rose up",
+        "body": "The collapse left only a few survivors, but for them the drowned world is near-perfect: populations have swelled and most animals now grow to at least twice the size of their ancestors. In the old world the sunlit shallows teemed and the deep lay near-empty — now the light kills from above, so the order has inverted, and deep-water and open-ocean creatures spread up into the shaded middle depths. Krill anchors the whole food web, and the whales now outweigh what is left of humanity, their songs carrying through every depth and every hull. Terrestrial life has all but vanished.",
+        "secondaryImage": "",
+        "link": { "url": "", "label": "" }
+      }
+    },
+    {
+      "id": "wl_station",
+      "scene": "scene2",
+      "wildlifeInfo": true,
+      "hotspot": true,
+      "interactive": true,
+      "layer": 1.2,
+      "label": "Bound to the station",
+      "path": [ { "x": 0.63, "y": 0.46 } ],
+      "loop": "loop", "speed": 0.0, "scale": 0.05, "bob": 0.0, "opacity": 1.0,
+      "content": {
+        "title": "Bound to the station",
+        "body": "Where once the sea kept its distance from people, life now gathers around them. Drawn by warmth and the small life the human presence feeds, fish, sponges, jellyfish and glowing hunters colonise the drifting stone like a reef — the Sea Devils among them, whose steady glow the people have made their light. Each station carries its own gathered ecosystem as it drifts, a knot of life in an empty sea.",
+        "secondaryImage": "",
+        "link": { "url": "", "label": "" }
+      }
+    },
+
     {
       "id": "sea_spider",
       "scene": "scene2",
@@ -612,132 +759,50 @@
     },
 
     {
-      "_kommentar": "LIVING (scene 'habitat', aus Szene 2). Wie die Menschen in der Station wohnen.",
-      "id": "lv_quarters",
+      "_kommentar": "LIVING (scene 'habitat', aus Szene 2). Leben im Stein: Wohnen · Bewegung/Immunitaet · Navigation/Licht. Erzaehlt als Ich-Zeugnis eines Stationsbewohners (Quote) + Kernfakten-Gloss.",
+      "id": "dwelling",
       "scene": "habitat",
       "hotspot": true,
       "interactive": true,
       "layer": 0.9,
-      "label": "Quarters",
-      "path": [ { "x": 0.30, "y": 0.40 } ],
+      "label": "Dwelling",
+      "path": [ { "x": 0.28, "y": 0.40 } ],
       "loop": "loop", "speed": 0.0, "scale": 0.05, "bob": 0.0, "opacity": 1.0,
       "content": {
-        "title": "Living quarters",
-        "body": "People sleep in stacked pods along the warm inner ring, close to the core where the light and heat pool.",
+        "title": "Dwelling in the stone",
+        "body": "“We do not build the rooms. We find them. The stone is full of hollows, and we widen what it lets us. My shelf, my bed, they grow out of the wall. Nothing here stands on the floor. Everything is tied down, or it belongs to the sea.” Rooms are found in the pumice's natural cavities and only widened where the stone allows; furniture is grown straight from the wall. Because the station is forever rocking, nothing rests loose — it is lashed down or lost. A quiet praise of shadows.",
         "secondaryImage": "",
         "link": { "url": "", "label": "" }
       }
     },
     {
-      "id": "lv_common",
+      "id": "the_sway",
       "scene": "habitat",
       "hotspot": true,
       "interactive": true,
       "layer": 0.9,
-      "label": "Common space",
-      "path": [ { "x": 0.42, "y": 0.52 } ],
+      "label": "The sway",
+      "path": [ { "x": 0.42, "y": 0.70 } ],
       "loop": "loop", "speed": 0.0, "scale": 0.05, "bob": 0.0, "opacity": 1.0,
       "content": {
-        "title": "Common space",
-        "body": "A shared hall at the center — the one room tall enough to stand and gather. Most of a life here happens in this light.",
+        "title": "The sway",
+        "body": "“The station never holds still. It breathes, it rolls, and we roll with it. We filled the deep rooms with the heaviest things we could spare, so it sways soft and low. The sea makes us sick no more. I feel a wrong motion before any gauge does.” The constant, gentle motion is what people call the breathing of the world. Ballast packed into the deep rooms drops the centre of gravity so the roll stays slow and shallow. Born to it, the inhabitants are immune to seasickness and read the tilt as a sense of their own — a body that feels a fault before any instrument shows it.",
         "secondaryImage": "",
         "link": { "url": "", "label": "" }
       }
     },
     {
-      "id": "lv_food",
+      "id": "finding_the_way",
       "scene": "habitat",
       "hotspot": true,
       "interactive": true,
       "layer": 0.9,
-      "label": "Hydroponics",
-      "path": [ { "x": 0.54, "y": 0.40 } ],
+      "label": "Finding the way",
+      "path": [ { "x": 0.56, "y": 0.52 } ],
       "loop": "loop", "speed": 0.0, "scale": 0.05, "bob": 0.0, "opacity": 1.0,
       "content": {
-        "title": "Food & hydroponics",
-        "body": "Green racks grow under lamps tuned to the lost sun. Algae and vegetables close the loop between air, water and the plate.",
-        "secondaryImage": "",
-        "link": { "url": "", "label": "" }
-      }
-    },
-    {
-      "id": "lv_water",
-      "scene": "habitat",
-      "hotspot": true,
-      "interactive": true,
-      "layer": 0.9,
-      "label": "Water access",
-      "path": [ { "x": 0.42, "y": 0.66 } ],
-      "loop": "loop", "speed": 0.0, "scale": 0.05, "bob": 0.0, "opacity": 1.0,
-      "content": {
-        "title": "Water access",
-        "body": "A moon-pool opens to the sea — the door to the wild band outside, for divers and for what they can catch.",
-        "secondaryImage": "",
-        "link": { "url": "", "label": "" }
-      }
-    },
-
-    {
-      "_kommentar": "WILDLIFE (scene 'wildlife', aus Szene 2). Das Leben im Meer, nach Tiefe geschichtet.",
-      "id": "wl_surface",
-      "scene": "wildlife",
-      "hotspot": true,
-      "interactive": true,
-      "layer": 0.9,
-      "label": "Surface",
-      "path": [ { "x": 0.30, "y": 0.13 } ],
-      "loop": "loop", "speed": 0.0, "scale": 0.05, "bob": 0.0, "opacity": 1.0,
-      "content": {
-        "title": "The surface — lifeless",
-        "body": "The top water takes the full radiation. Nothing that stays there lives long; it is bright, warm and empty.",
-        "secondaryImage": "",
-        "link": { "url": "", "label": "" }
-      }
-    },
-    {
-      "id": "wl_band",
-      "scene": "wildlife",
-      "hotspot": true,
-      "interactive": true,
-      "layer": 0.9,
-      "label": "The living band",
-      "path": [ { "x": 0.40, "y": 0.40 } ],
-      "loop": "loop", "speed": 0.0, "scale": 0.05, "bob": 0.0, "opacity": 1.0,
-      "content": {
-        "title": "The living band",
-        "body": "Just below, a narrow layer stays survivable. Schooling fish and drifting jellyfish crowd into it — the whole food web pressed thin.",
-        "secondaryImage": "",
-        "link": { "url": "", "label": "" }
-      }
-    },
-    {
-      "id": "wl_deep",
-      "scene": "wildlife",
-      "hotspot": true,
-      "interactive": true,
-      "layer": 0.9,
-      "label": "The deep",
-      "path": [ { "x": 0.28, "y": 0.82 } ],
-      "loop": "loop", "speed": 0.0, "scale": 0.05, "bob": 0.0, "opacity": 1.0,
-      "content": {
-        "title": "The bioluminescent deep",
-        "body": "Under the band the water turns cold and black. What lives here makes its own light — faint green sparks moving in the dark.",
-        "secondaryImage": "",
-        "link": { "url": "", "label": "" }
-      }
-    },
-    {
-      "id": "wl_angler",
-      "scene": "wildlife",
-      "hotspot": true,
-      "interactive": true,
-      "layer": 0.9,
-      "label": "Anglerfish",
-      "path": [ { "x": 0.66, "y": 0.70 } ],
-      "loop": "loop", "speed": 0.0, "scale": 0.05, "bob": 0.0, "opacity": 1.0,
-      "content": {
-        "title": "Anglerfish",
-        "body": "Predators of the deep lure prey with a glowing tip. In a darkened ocean, light itself becomes bait.",
+        "title": "Finding the way",
+        "body": "“In the dark I find my way by four things at once. The song that belongs to this place. The stone under my hand. The markers where the passage turns. And the lean of the floor, which tells me where the light is. The light itself we grow, on the walls.” Navigation runs on four senses together — the song that marks a place (never a rank), the touch of the stone, the markers at the turns, and the lean of the floor. There are no light-shafts in the dwellings; the light is grown, a crop of fluorescent biomass on the walls, joined by the glow of the Sea Devils.",
         "secondaryImage": "",
         "link": { "url": "", "label": "" }
       }
