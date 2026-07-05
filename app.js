@@ -437,8 +437,8 @@ class Entity {
     this.highlight = 0;               // 0..1 weiches Hervorheben beim Klick
     this.color = colorFromId(def.id); // Platzhalterfarbe
     // Zufaellige Groesse pro Instanz (Tiere): Multiplikator 0.6..0.9 fuer natuerliche Groessen-Varianz
-    // und mehr Tiefe. Globus + Station (placeholder) bleiben unveraendert (Multiplikator 1).
-    this.sizeMul = (this.isGlobe || def.placeholder) ? 1 : (0.6 + Math.random() * 0.3);
+    // und mehr Tiefe. Globus, Station (placeholder) und Szenen-Bilder bleiben unveraendert (Multiplikator 1).
+    this.sizeMul = (this.isGlobe || def.placeholder || def.sceneImage) ? 1 : (0.6 + Math.random() * 0.3);
     this.pos = { x: 0, y: 0 };        // letzte Bildschirmposition (px)
     this.radius = 40;
   }
@@ -659,6 +659,9 @@ class Entity {
     } else if (!handled && this.def.hotspot) {
       // Section-Hotspot: dezenter pulsierender Gold-Ring (kein Bild) -> ruhige Klickpunkte im Schnitt
       drawHotspotMarker(sz, alpha, glow, hoverEntity === this);
+    } else if (!handled && this.def.sceneImage) {
+      // Szenen-Bild-Slot ohne geladenes Bild -> NICHTS zeichnen (kein Platzhalter-Kleks);
+      // die Unterszene zeigt dann einfach weiter ihr prozedurales Motiv.
     } else if (!handled) {
       // Platzhalter-Form: weicher Leuchtkleks (treibende Kreaturen-Leuchtpunkte)
       // global ~10% gedimmt + Tiefen-Verdunkelung (Station/Stein + Scene 1 unberuehrt)
@@ -2607,7 +2610,9 @@ function drawAtmosphere(alpha) {
   const cx = W * 0.5;
   const rr = W / (2 * ATMO_CAP_HALFW);   // On-Screen-Kugelradius (px); folgt aus der Ortho-Box-Breite
   const cy = ATMO_LIMB * H + rr;         // Kugelmittelpunkt (weit unter dem Bildschirm) -> Limb bei ATMO_LIMB*H
-  if (globe && globe.tex && globeBuf) {
+  // Eigenes Szenen-Bild vorhanden -> Erd-Rand + Schichten (Smog/Ozon/Magnetfeld) weglassen; das Bild
+  // zeichnet der Entity-Loop. Die Hotspots sitzen weiter auf ihren (rein geometrischen) Bogen-Positionen.
+  if (globe && globe.tex && globeBuf && !sceneImageLoaded(ATMO_ID)) {
     const doRender = (zoomTransition || nextScene >= 0) || (atmoRenderTick % 3 === 0);
     atmoRenderTick++;
     if (doRender) {
@@ -2919,16 +2924,29 @@ function drawTinyFigure(ctx, x, y, s, col) {
   ctx.lineTo(x - s * 0.16, y + s * 0.5); ctx.closePath(); ctx.fill();
 }
 
-// Dispatcher: sc.viz -> passende Erklaer-Ansicht.
+// ---- Eigene Szenen-Bilder (sceneImage:true in entities.json): liegt fuer eine Unterszene ein
+// eigenes Bild im variants-Ordner, liefert das true -> die drawViz*/drawAtmosphere-Funktion laesst
+// ihr PROZEDURALES Motiv weg (Hintergrund, Caption und Hotspots bleiben). Das Bild selbst zeichnet
+// der normale Entity-Loop (Position/Groesse ueber path/scale des Entities tunen). Ordner leer -> alles wie bisher.
+function sceneImageLoaded(sceneId) {
+  return allEntities.some(e => e.def.sceneImage && e.def.scene === sceneId &&
+    ((e.variants && e.variants.length) || e.img));
+}
+
+// Dispatcher: sc.viz -> passende Erklaer-Ansicht. hasImg = eigenes Szenen-Bild vorhanden ->
+// prozedurales Motiv weglassen (die Szene wird ueber die viz-Art gefunden, nicht ueber die id).
 function drawViz(kind, alpha) {
-  if (kind === 'sun') drawVizSun(alpha);
-  else if (kind === 'station') drawVizStation(alpha);
-  else if (kind === 'living') drawVizLiving(alpha);
-  else if (kind === 'wildlife') drawVizWildlife(alpha);
+  const sc = scenes.find(s => s && s.viz === kind);
+  const hasImg = sc ? sceneImageLoaded(sc.id) : false;
+  if (kind === 'sun') drawVizSun(alpha, hasImg);
+  else if (kind === 'station') drawVizStation(alpha, hasImg);
+  else if (kind === 'living') drawVizLiving(alpha, hasImg);
+  else if (kind === 'wildlife') drawVizWildlife(alpha, hasImg);
 }
 
 // ---- SUN: grosse Sonnenscheibe (Kern/Granulation/Flecken) + Korona + Strahlen + CME-Bogen. ----
-function drawVizSun(alpha) {
+// hasImg = eigenes Szenen-Bild vorhanden -> nur Weltraum+Sterne+Caption, Sonne kommt als Bild-Entity.
+function drawVizSun(alpha, hasImg = false) {
   const W = width, H = height, ctx = drawingContext, t = millis() * 0.001, F = frameCount;
   const { cx, cy, r } = sunLayout();
   push(); ctx.globalAlpha = alpha;
@@ -2947,6 +2965,7 @@ function drawVizSun(alpha) {
 
   const flick = sunFlicker(t);
 
+  if (!hasImg) {   // eigenes Bild vorhanden -> prozedurale Sonne (Korona/Scheibe/CME) weglassen
   // 2) Korona-Glut (radial, additiv) + lange, langsam rotierende Strahlen
   push(); ctx.globalCompositeOperation = 'lighter';
   const glow = ctx.createRadialGradient(cx, cy, r * 0.7, cx, cy, r * 3.0);
@@ -3007,13 +3026,15 @@ function drawVizSun(alpha) {
     endShape();
   }
   pop();
+  }   // Ende !hasImg (prozedurale Sonne)
 
   drawVizCaption('THE SUN', 'the engine — and the threat');
   ctx.globalAlpha = 1; pop();
 }
 
 // ---- STATION: Wassersaeule + technischer Querschnitt (duenne weiss-graue Blueprint-Linien). ----
-function drawVizStation(alpha) {
+// hasImg = eigenes Szenen-Bild vorhanden -> nur Wassersaeule+Caption, Querschnitt kommt als Bild-Entity.
+function drawVizStation(alpha, hasImg = false) {
   const W = width, H = height, ctx = drawingContext, t = millis() * 0.001;
   const { cx, cy, hw, hh } = stationLayout();
   push(); ctx.globalAlpha = alpha;
@@ -3027,6 +3048,7 @@ function drawVizStation(alpha) {
   for (let i = 0; i < 5; i++) { const y = H * (0.03 + i * 0.026); stroke(255, 210, 90, 12 * (0.6 + 0.4 * Math.sin(t + i))); strokeWeight(1); line(0, y, W, y); }
   pop();
 
+  if (!hasImg) {   // eigenes Bild vorhanden -> prozeduralen Querschnitt (Tether/Kapsel/Innenleben) weglassen
   // 2) Verankerungs-Tether zum Meeresboden
   stroke(150, 175, 190, 55); strokeWeight(1.5); line(cx, cy + hh, cx, H * 0.985);
   noStroke(); fill(50, 70, 80, 130); ellipse(cx, H * 0.99, hw * 1.1, hh * 0.10);
@@ -3059,13 +3081,15 @@ function drawVizStation(alpha) {
   ctx.strokeStyle = 'rgba(226,232,238,0.8)'; ctx.lineWidth = 1.4; ctx.fillStyle = 'rgba(16,28,38,0.75)';
   ctx.beginPath(); ctx.ellipse(ax, ay, hw * 0.17, hh * 0.13, 0, 0, TWO_PI); ctx.fill(); ctx.stroke();
   ctx.beginPath(); ctx.ellipse(ax, ay, hw * 0.09, hh * 0.07, 0, 0, TWO_PI); ctx.stroke();
+  }   // Ende !hasImg (prozeduraler Querschnitt)
 
   drawVizCaption('THE STATION', 'a pressure hull in the living band');
   ctx.globalAlpha = 1; pop();
 }
 
 // ---- LIVING: warmer Habitat-Querschnitt, Wohn-Module + Figuren + Hydroponik + Moon-Pool. ----
-function drawVizLiving(alpha) {
+// hasImg = eigenes Szenen-Bild vorhanden -> nur Wasser-Hintergrund+Caption, Habitat kommt als Bild-Entity.
+function drawVizLiving(alpha, hasImg = false) {
   const W = width, H = height, ctx = drawingContext, t = millis() * 0.001;
   const { cx, cy, bw, bh, x0, y0 } = livingLayout();
   push(); ctx.globalAlpha = alpha;
@@ -3075,6 +3099,7 @@ function drawVizLiving(alpha) {
   bg.addColorStop(0, '#0c1a20'); bg.addColorStop(1, '#040b10');
   ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
 
+  if (!hasImg) {   // eigenes Bild vorhanden -> prozedurales Habitat (Huelle/Module) weglassen
   // 2) Huelle
   ctx.fillStyle = 'rgba(18,28,34,0.6)'; ctx.strokeStyle = 'rgba(226,232,238,0.7)'; ctx.lineWidth = 1.6;
   roundRectPath(ctx, x0 - 8, y0 - 8, bw + 16, bh + 16, 16); ctx.fill(); ctx.stroke();
@@ -3119,13 +3144,15 @@ function drawVizLiving(alpha) {
       ctx.restore();
     }
   }
+  }   // Ende !hasImg (prozedurales Habitat)
 
   drawVizCaption('LIVING', 'how the station keeps people');
   ctx.globalAlpha = 1; pop();
 }
 
 // ---- WILDLIFE: Tiefen-Querschnitt (Baender) mit Fauna: Schwarm + Qualle + Anglerfisch + Biolum. ----
-function drawVizWildlife(alpha) {
+// hasImg = eigenes Szenen-Bild vorhanden -> nur Tiefen-Verlauf+Caption, Fauna kommt als Bild-Entity.
+function drawVizWildlife(alpha, hasImg = false) {
   const W = width, H = height, ctx = drawingContext, t = millis() * 0.001, mm = Math.min(W, H);
   push(); ctx.globalAlpha = alpha;
 
@@ -3139,6 +3166,7 @@ function drawVizWildlife(alpha) {
   for (let i = 0; i < 5; i++) { const y = H * (0.02 + i * 0.02); stroke(255, 220, 120, 15); strokeWeight(1); line(0, y, W, y); }
   pop();
 
+  if (!hasImg) {   // eigenes Bild vorhanden -> prozedurale Fauna (Schwarm/Qualle/Angler/Biolum) weglassen
   // 2) Bandzone: Fischschwarm (Silhouetten-Punkte, sanft schwankend) um (0.40, 0.40)
   if (!drawVizWildlife._fish) {
     const f = [];
@@ -3164,6 +3192,7 @@ function drawVizWildlife(alpha) {
   }
   for (const b of drawVizWildlife._biolum) { fill(90, 225, 150, 70 * Math.max(0, 0.4 + 0.6 * Math.sin(t * 0.9 + b.ph))); ellipse(b.x * W, b.y * H, b.s * 3.4); }
   pop();
+  }   // Ende !hasImg (prozedurale Fauna)
 
   drawVizCaption('WILDLIFE', 'life pressed into a narrow band');
   ctx.globalAlpha = 1; pop();

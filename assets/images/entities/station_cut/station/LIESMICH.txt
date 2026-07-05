@@ -1,0 +1,15 @@
+Eigenes Bild fuer die Unterszene "the station" (Querschnitt, scene id: station_cut).
+
+HINWEIS: Diese Unterszene ist aktuell nicht verlinkt — der Marker "The station"
+in Szene 2 blendet stattdessen Info-Hotspots direkt am Bimsstein ein. Der Slot
+liegt bereit, falls die Unterszene wieder aktiviert wird.
+
+Hier ablegen:  station1.png  oder  station1.webp
+Weitere Varianten: station2.png, ... (die Engine waehlt zufaellig eine).
+Alternativ gehen auch 1.png, 2.png, ...
+
+Sobald ein Bild hier liegt, wird der prozedurale Blueprint-Querschnitt ausgeblendet;
+Wassersaeule, Caption und die Klick-Hotspots bleiben.
+Ordner leer -> alles wie bisher.
+
+Position/Groesse anpassen: data/entities.json -> Entity "station_cut_image" (path / scale).

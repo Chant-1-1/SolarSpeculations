@@ -1,0 +1,11 @@
+Eigenes Bild fuer die Unterszene "living" (Marker "Living" in Szene 2, scene id: habitat).
+
+Hier ablegen:  habitat1.png  oder  habitat1.webp
+Weitere Varianten: habitat2.png, ... (die Engine waehlt zufaellig eine).
+Alternativ gehen auch 1.png, 2.png, ...
+
+Sobald ein Bild hier liegt, wird der prozedurale Habitat-Querschnitt (Huelle +
+Wohn-Module) ausgeblendet; Wasser-Hintergrund, Caption und die Klick-Hotspots bleiben.
+Ordner leer -> alles wie bisher.
+
+Position/Groesse anpassen: data/entities.json -> Entity "habitat_image" (path / scale).

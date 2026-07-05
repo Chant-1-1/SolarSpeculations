@@ -1,0 +1,15 @@
+Eigenes Bild fuer die Unterszene "wildlife" (scene id: wildlife).
+
+HINWEIS: Diese Unterszene ist aktuell nicht verlinkt — der Marker "Wildlife"
+in Szene 2 blendet stattdessen Info-Hotspots direkt in der Szene ein. Der Slot
+liegt bereit, falls die Unterszene wieder aktiviert wird.
+
+Hier ablegen:  wildlife1.png  oder  wildlife1.webp
+Weitere Varianten: wildlife2.png, ... (die Engine waehlt zufaellig eine).
+Alternativ gehen auch 1.png, 2.png, ...
+
+Sobald ein Bild hier liegt, wird die prozedurale Fauna (Schwarm/Qualle/Anglerfisch)
+ausgeblendet; Tiefen-Verlauf, Caption und die Klick-Hotspots bleiben.
+Ordner leer -> alles wie bisher.
+
+Position/Groesse anpassen: data/entities.json -> Entity "wildlife_image" (path / scale).

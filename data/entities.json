@@ -1,5 +1,6 @@
 {
   "_kommentar": "TEST: weißer Hintergrund, eine Weltkugel als Rasterbild mittig. Weitere Entities als Objekte mit eigenem image-Pfad ergaenzen. Pfade mit pathdesigner.html anpassen.",
+  "_textstil": "EINHEITLICHER STIL fuer alle content-Texte (Hotspots): Englisch, Praesens, dritte Person ('the people', 'the station'). title = kurze Nominalphrase ohne Zusatz/Gedankenstrich. body = 2-4 kurze Saetze, hoechstens ein Gedankenstrich pro Text, keine Ich-Zitate, ruhiger dokumentarischer Ton.",
   "entities": [
     {
       "id": "weltkugel",
@@ -86,7 +87,7 @@
       "loop": "loop", "speed": 0.0, "scale": 0.05, "bob": 0.0, "opacity": 1.0,
       "content": {
         "title": "Floating stone",
-        "body": "The station is not a ship and is anchored to nothing, but a drifting block of pumice — light, porous volcanic rock that floats. In this world, constant volcanic activity on the drowned seafloor erupts pumice in enormous quantities; these giant rafts of stone rise to the surface, and people hollow them out and live within the stone itself, in the bubbles and cavities it already holds.",
+        "body": "The station is not a ship, and it is anchored to nothing. It is a drifting block of pumice — porous volcanic rock light enough to float. Constant eruptions on the drowned seafloor push these giant rafts of stone to the surface, and the people hollow them out, living in the bubbles and cavities the rock already holds.",
         "secondaryImage": "",
         "link": { "url": "", "label": "" }
       }
@@ -104,7 +105,7 @@
       "loop": "loop", "speed": 0.0, "scale": 0.05, "bob": 0.0, "opacity": 1.0,
       "content": {
         "title": "Below the surface",
-        "body": "Because the sun is now lethal, the water is shelter, so people live beneath the surface where the water shields them. Only the station's highest point breaks into the open air, the Solar Space, the single room that receives natural light, while everything else is layered downward into the shielded dark.",
+        "body": "The sun is lethal now, so the water itself is the shelter. The people live beneath the surface, where the sea shields them, and everything is layered downward into the shielded dark. Only the station's highest point breaks into open air: the Solar Space, the single room that receives natural light.",
         "secondaryImage": "",
         "link": { "url": "", "label": "" }
       }
@@ -122,7 +123,7 @@
       "loop": "loop", "speed": 0.0, "scale": 0.05, "bob": 0.0, "opacity": 1.0,
       "content": {
         "title": "Living light",
-        "body": "Apart from the Solar Space there is no daylight inside at all, so every passage and chamber is lit by living light: cultivated fluorescent bacteria, glowing fungi, and bioluminescent plants grown along the walls like a tended crop, joined by the light of the Sea Devils that gather around the station.",
+        "body": "Apart from the Solar Space, no daylight reaches the inside. Every passage and chamber is lit by living light: fluorescent bacteria, glowing fungi and bioluminescent plants, grown along the walls like a tended crop. The Sea Devils that gather around the station add their slow glow from outside.",
         "secondaryImage": "",
         "link": { "url": "", "label": "" }
       }
@@ -140,7 +141,7 @@
       "loop": "loop", "speed": 0.0, "scale": 0.05, "bob": 0.0, "opacity": 1.0,
       "content": {
         "title": "Weighted keel",
-        "body": "Because raw floating stone would roll in the swell, the station is trimmed like a keel, with heavy ballast tanks in the lower modules pulling the centre of gravity deep below the waterline while the upper third is kept deliberately light. It floats like a buoy, pushed by the swell but always returning upright, holding its light-bearing crown to the surface.",
+        "body": "Raw floating stone would roll in the swell, so the station is trimmed like a keel. Heavy ballast in the lower modules pulls the centre of gravity deep below the waterline, while the upper third is kept deliberately light. Pushed by the waves, the station always returns upright — holding its light-bearing crown to the surface.",
         "secondaryImage": "",
         "link": { "url": "", "label": "" }
       }
@@ -158,7 +159,7 @@
       "loop": "loop", "speed": 0.0, "scale": 0.05, "bob": 0.0, "opacity": 1.0,
       "content": {
         "title": "Found and grown",
-        "body": "The people work the pumice like found rock, settling into its natural hollows and opening new ones only where it allows, and only where a surface must be sealed or a form shaped do they grow a hard mineral crust (Biorock). Even that obeys only in part, since the sea adds its own turns, so the architecture is co-authored by the ocean.",
+        "body": "The people work the pumice like found rock. They settle into its natural hollows and open new ones only where the stone allows. Where a surface must be sealed or a form shaped, they grow a hard mineral crust (Biorock) — and even that the sea reworks in its own way, so the architecture is co-authored by the ocean.",
         "secondaryImage": "",
         "link": { "url": "", "label": "" }
       }
@@ -176,7 +177,7 @@
       "loop": "loop", "speed": 0.0, "scale": 0.05, "bob": 0.0, "opacity": 1.0,
       "content": {
         "title": "Breathing drift",
-        "body": "The station drifts slowly across the ocean, steered patiently by warming the water around it with focused sunlight, and as currents move through its mineral hull it groans without pause — a sound the inhabitants call the breathing of the world — while inside, people navigate the dark by the songs that belong to each place.",
+        "body": "The station drifts slowly across the ocean, steered by warming the water around it with focused sunlight. As currents move through the mineral hull, it groans without pause — a sound the people call the breathing of the world. Inside, they navigate the dark by the songs that belong to each place.",
         "secondaryImage": "",
         "link": { "url": "", "label": "" }
       }
@@ -195,7 +196,7 @@
       "loop": "loop", "speed": 0.0, "scale": 0.05, "bob": 0.0, "opacity": 1.0,
       "content": {
         "title": "The deep rose up",
-        "body": "The collapse left only a few survivors, but for them the drowned world is near-perfect: populations have swelled and most animals now grow to at least twice the size of their ancestors. In the old world the sunlit shallows teemed and the deep lay near-empty — now the light kills from above, so the order has inverted, and deep-water and open-ocean creatures spread up into the shaded middle depths. Krill anchors the whole food web, and the whales now outweigh what is left of humanity, their songs carrying through every depth and every hull. Terrestrial life has all but vanished.",
+        "body": "The collapse left only a few survivors, but for them the drowned world is near-perfect: populations have swelled, and most animals grow to at least twice the size of their ancestors. Because the light now kills from above, the old order has inverted — creatures of the deep and the open ocean spread up into the shaded middle depths. Krill anchors the whole food web, and the whales together now outweigh what is left of humanity. On land, almost nothing survives.",
         "secondaryImage": "",
         "link": { "url": "", "label": "" }
       }
@@ -212,7 +213,7 @@
       "loop": "loop", "speed": 0.0, "scale": 0.05, "bob": 0.0, "opacity": 1.0,
       "content": {
         "title": "Bound to the station",
-        "body": "Where once the sea kept its distance from people, life now gathers around them. Drawn by warmth and the small life the human presence feeds, fish, sponges, jellyfish and glowing hunters colonise the drifting stone like a reef — the Sea Devils among them, whose steady glow the people have made their light. Each station carries its own gathered ecosystem as it drifts, a knot of life in an empty sea.",
+        "body": "Where the sea once kept its distance from people, life now gathers around them. Drawn by warmth and by the small life the human presence feeds, fish, sponges, jellyfish and glowing hunters colonise the drifting stone like a reef — the Sea Devils among them, whose steady glow the people have made their light. Each station carries its own gathered ecosystem as it drifts, a knot of life in an empty sea.",
         "secondaryImage": "",
         "link": { "url": "", "label": "" }
       }
@@ -534,8 +535,8 @@
       "bob": 0.0,
       "opacity": 1.0,
       "content": {
-        "title": "Magnetic field — weakened",
-        "body": "The planet no longer deflects the sun's outbursts. Solar storms bring sudden, lethal radiation spikes — without warning.",
+        "title": "Magnetic field",
+        "body": "The planet's magnetic field has weakened, and it no longer deflects the sun's outbursts. Solar storms reach the surface as sudden, lethal spikes of radiation — without warning.",
         "secondaryImage": "",
         "link": { "url": "", "label": "" }
       }
@@ -554,8 +555,8 @@
       "bob": 0.0,
       "opacity": 1.0,
       "content": {
-        "title": "Ozone layer — torn",
-        "body": "CO₂, methane and fossil fires tore the ozone layer open. UV and cosmic radiation reach the surface almost unfiltered.",
+        "title": "Ozone layer",
+        "body": "CO₂, methane and the fossil fires tore the ozone layer open. UV and cosmic radiation now reach the surface almost unfiltered.",
         "secondaryImage": "",
         "link": { "url": "", "label": "" }
       }
@@ -574,8 +575,8 @@
       "bob": 0.0,
       "opacity": 1.0,
       "content": {
-        "title": "Photochemical smog — never lifted",
-        "body": "A permanent photochemical haze hangs over the water — toxic, self-renewing. It tints the light a warm, filtered gold.",
+        "title": "Photochemical smog",
+        "body": "A permanent photochemical haze hangs over the water, toxic and self-renewing. It never lifts — and it tints the light a warm, filtered gold.",
         "secondaryImage": "",
         "link": { "url": "", "label": "" }
       }
@@ -595,7 +596,7 @@
       "bob": 0.0,
       "opacity": 1.0,
       "content": {
-        "title": "Sea level — risen",
+        "title": "Sea level",
         "body": "The old coast lies far below. As the ice went and the water warmed, the sea climbed to today's level — swallowing the land where life once held on.",
         "secondaryImage": "",
         "link": { "url": "", "label": "" }
@@ -615,8 +616,8 @@
       "bob": 0.0,
       "opacity": 1.0,
       "content": {
-        "title": "The surface is lethal",
-        "body": "Unprotected, a lethal dose in hours. The most stable water lies in a band just below the surface — warm from above, deep enough against the radiation.",
+        "title": "The living band",
+        "body": "At the surface, an unprotected body takes a lethal dose within hours. The most stable water lies in a band just below — warmed from above, deep enough to blunt the radiation.",
         "secondaryImage": "",
         "link": { "url": "", "label": "" }
       }
@@ -636,7 +637,7 @@
       "opacity": 1.0,
       "content": {
         "title": "The cold deep",
-        "body": "Below the warm band the water turns cold and dark. Only a faint bioluminescent green still moves down there.",
+        "body": "Below the warm band, the water turns cold and dark. Only a faint bioluminescent green still moves down there.",
         "secondaryImage": "",
         "link": { "url": "", "label": "" }
       }
@@ -654,7 +655,7 @@
       "loop": "loop", "speed": 0.0, "scale": 0.05, "bob": 0.0, "opacity": 1.0,
       "content": {
         "title": "The lethal source",
-        "body": "No one sees her directly. Filtered to a faint gold, her raw light kills at the surface within hours — why is the sky's story.",
+        "body": "No one sees the sun directly; her light arrives filtered to a faint gold. Raw, it kills at the surface within hours — the reason is written in the sky.",
         "secondaryImage": "",
         "link": { "url": "", "label": "" }
       }
@@ -670,7 +671,7 @@
       "loop": "loop", "speed": 0.0, "scale": 0.05, "bob": 0.0, "opacity": 1.0,
       "content": {
         "title": "The engine",
-        "body": "Uneven heat sets the whole water column turning — the currents that never rest. The people call it the breathing of the world.",
+        "body": "The sun's uneven heat sets the whole water column turning — the currents that never rest. The people call this motion the breathing of the world.",
         "secondaryImage": "",
         "link": { "url": "", "label": "" }
       }
@@ -686,7 +687,7 @@
       "loop": "loop", "speed": 0.0, "scale": 0.05, "bob": 0.0, "opacity": 1.0,
       "content": {
         "title": "Solar storms",
-        "body": "Now and then the field snaps and hurls a burst of plasma outward. With no magnetic shield left below, these arrive at the surface as sudden, lethal spikes.",
+        "body": "Now and then the sun's field snaps and hurls a burst of plasma outward. With no magnetic shield left below, each burst arrives at the surface as a sudden, lethal spike.",
         "secondaryImage": "",
         "link": { "url": "", "label": "" }
       }
@@ -703,8 +704,8 @@
       "path": [ { "x": 0.28, "y": 0.50 } ],
       "loop": "loop", "speed": 0.0, "scale": 0.05, "bob": 0.0, "opacity": 1.0,
       "content": {
-        "title": "Pressure hull — material",
-        "body": "A double steel-and-composite shell holds back the weight of the water above. Rounded and seamless, it is built to be pressed on from every side and hold.",
+        "title": "Pressure hull",
+        "body": "A double shell of steel and composite holds back the weight of the water above. Rounded and seamless, it is built to be pressed on from every side — and to hold.",
         "secondaryImage": "",
         "link": { "url": "", "label": "" }
       }
@@ -720,7 +721,7 @@
       "loop": "loop", "speed": 0.0, "scale": 0.05, "bob": 0.0, "opacity": 1.0,
       "content": {
         "title": "Life support",
-        "body": "Sealed loops scrub the air and recycle every drop of water. Nothing is vented that can be kept — the station breathes on itself.",
+        "body": "Sealed loops scrub the air and recycle every drop of water. Nothing that can be kept is vented — the station breathes on itself.",
         "secondaryImage": "",
         "link": { "url": "", "label": "" }
       }
@@ -735,8 +736,8 @@
       "path": [ { "x": 0.34, "y": 0.72 } ],
       "loop": "loop", "speed": 0.0, "scale": 0.05, "bob": 0.0, "opacity": 1.0,
       "content": {
-        "title": "Ballast & buoyancy",
-        "body": "Flooded and blown tanks trim the station's depth, holding it in the safe band — never surfacing into the radiation, never sinking to the cold.",
+        "title": "Ballast and buoyancy",
+        "body": "Flooded and blown tanks trim the station's depth. They hold it in the safe band — never surfacing into the radiation, never sinking into the cold.",
         "secondaryImage": "",
         "link": { "url": "", "label": "" }
       }
@@ -752,14 +753,14 @@
       "loop": "loop", "speed": 0.0, "scale": 0.05, "bob": 0.0, "opacity": 1.0,
       "content": {
         "title": "Airlock",
-        "body": "The only way in or out. Divers cycle through slowly, matching pressure, before the short, shielded swim in the water outside.",
+        "body": "The airlock is the only way in or out. Divers cycle through slowly, matching pressure, before the short, shielded swim in the open water.",
         "secondaryImage": "",
         "link": { "url": "", "label": "" }
       }
     },
 
     {
-      "_kommentar": "LIVING (scene 'habitat', aus Szene 2). Leben im Stein: Wohnen · Bewegung/Immunitaet · Navigation/Licht. Erzaehlt als Ich-Zeugnis eines Stationsbewohners (Quote) + Kernfakten-Gloss.",
+      "_kommentar": "LIVING (scene 'habitat', aus Szene 2). Leben im Stein: Wohnen · Bewegung/Immunitaet · Navigation/Licht. Texte im einheitlichen Stil (siehe _textstil oben) — die frueheren Ich-Zitate sind in die dritte Person ueberfuehrt.",
       "id": "dwelling",
       "scene": "habitat",
       "hotspot": true,
@@ -770,7 +771,7 @@
       "loop": "loop", "speed": 0.0, "scale": 0.05, "bob": 0.0, "opacity": 1.0,
       "content": {
         "title": "Dwelling in the stone",
-        "body": "“We do not build the rooms. We find them. The stone is full of hollows, and we widen what it lets us. My shelf, my bed, they grow out of the wall. Nothing here stands on the floor. Everything is tied down, or it belongs to the sea.” Rooms are found in the pumice's natural cavities and only widened where the stone allows; furniture is grown straight from the wall. Because the station is forever rocking, nothing rests loose — it is lashed down or lost. A quiet praise of shadows.",
+        "body": "Rooms are not built but found in the pumice's natural cavities, and widened only where the stone allows. Shelves and beds are grown straight from the wall. Because the station never stops rocking, nothing rests loose — everything is tied down, or it belongs to the sea.",
         "secondaryImage": "",
         "link": { "url": "", "label": "" }
       }
@@ -786,7 +787,7 @@
       "loop": "loop", "speed": 0.0, "scale": 0.05, "bob": 0.0, "opacity": 1.0,
       "content": {
         "title": "The sway",
-        "body": "“The station never holds still. It breathes, it rolls, and we roll with it. We filled the deep rooms with the heaviest things we could spare, so it sways soft and low. The sea makes us sick no more. I feel a wrong motion before any gauge does.” The constant, gentle motion is what people call the breathing of the world. Ballast packed into the deep rooms drops the centre of gravity so the roll stays slow and shallow. Born to it, the inhabitants are immune to seasickness and read the tilt as a sense of their own — a body that feels a fault before any instrument shows it.",
+        "body": "The station never holds still; it rolls, and the people roll with it. Ballast packed into the deepest rooms keeps the sway slow and shallow. Born to the motion, the inhabitants know no seasickness and read the tilt as a sense of their own — a body feels a wrong movement before any instrument shows it.",
         "secondaryImage": "",
         "link": { "url": "", "label": "" }
       }
@@ -802,10 +803,68 @@
       "loop": "loop", "speed": 0.0, "scale": 0.05, "bob": 0.0, "opacity": 1.0,
       "content": {
         "title": "Finding the way",
-        "body": "“In the dark I find my way by four things at once. The song that belongs to this place. The stone under my hand. The markers where the passage turns. And the lean of the floor, which tells me where the light is. The light itself we grow, on the walls.” Navigation runs on four senses together — the song that marks a place (never a rank), the touch of the stone, the markers at the turns, and the lean of the floor. There are no light-shafts in the dwellings; the light is grown, a crop of fluorescent biomass on the walls, joined by the glow of the Sea Devils.",
+        "body": "In the dark, the people navigate by four senses at once: the song that belongs to a place, the stone under the hand, the markers at the turns, and the lean of the floor. No light-shafts reach the dwellings. The light itself is grown — a crop of fluorescent biomass on the walls, joined by the glow of the Sea Devils.",
         "secondaryImage": "",
         "link": { "url": "", "label": "" }
       }
+    },
+
+    {
+      "_kommentar": "SZENEN-BILDER (sceneImage:true): eigener Bild-Slot fuer jede Unterszene, die ein Hotspot/Marker oeffnet — funktioniert genau wie bei den Tieren und der Station: Bild(er) in den variants-Ordner legen (z.B. sun1.png oder sun1.webp; weitere Varianten sun2, sun3 ... moeglich, die Engine waehlt zufaellig eine). LIEGT EIN BILD DA, wird das prozedural gezeichnete Motiv der Szene ausgeblendet (Hintergrund, Caption und Klick-Hotspots bleiben). ORDNER LEER -> alles wie bisher, kein Platzhalter. Position = path (0..1 der Bildschirmflaeche), Groesse = scale (Bild-BREITE = scale * 2 * kurze Bildschirmseite). Die 'water'-Szene hat ihren Bild-Slot schon: 'land' in scenes.json (der Berg).",
+      "id": "sun_image",
+      "scene": "sun",
+      "sceneImage": true,
+      "variants": "assets/images/entities/sun/sun/",
+      "interactive": false,
+      "layer": 0.5,
+      "label": "",
+      "path": [ { "x": 0.40, "y": 0.52 } ],
+      "loop": "loop", "speed": 0.0, "scale": 0.24, "bob": 0.0, "opacity": 1.0
+    },
+    {
+      "id": "atmosphere_image",
+      "scene": "atmosphere",
+      "sceneImage": true,
+      "variants": "assets/images/entities/atmosphere/atmosphere/",
+      "interactive": false,
+      "layer": 0.5,
+      "label": "",
+      "path": [ { "x": 0.50, "y": 0.55 } ],
+      "loop": "loop", "speed": 0.0, "scale": 0.45, "bob": 0.0, "opacity": 1.0
+    },
+    {
+      "_kommentar": "station_cut + wildlife sind aktuell nicht verlinkt (die Marker 'The station'/'Wildlife' blenden stattdessen Info-Hotspots in Szene 2 ein) — die Slots liegen trotzdem bereit, falls die Unterszenen wieder aktiviert werden.",
+      "id": "station_cut_image",
+      "scene": "station_cut",
+      "sceneImage": true,
+      "variants": "assets/images/entities/station_cut/station/",
+      "interactive": false,
+      "layer": 0.5,
+      "label": "",
+      "path": [ { "x": 0.40, "y": 0.52 } ],
+      "loop": "loop", "speed": 0.0, "scale": 0.22, "bob": 0.0, "opacity": 1.0
+    },
+    {
+      "id": "habitat_image",
+      "scene": "habitat",
+      "sceneImage": true,
+      "variants": "assets/images/entities/habitat/habitat/",
+      "interactive": false,
+      "layer": 0.5,
+      "label": "",
+      "path": [ { "x": 0.42, "y": 0.52 } ],
+      "loop": "loop", "speed": 0.0, "scale": 0.24, "bob": 0.0, "opacity": 1.0
+    },
+    {
+      "id": "wildlife_image",
+      "scene": "wildlife",
+      "sceneImage": true,
+      "variants": "assets/images/entities/wildlife/wildlife/",
+      "interactive": false,
+      "layer": 0.5,
+      "label": "",
+      "path": [ { "x": 0.50, "y": 0.50 } ],
+      "loop": "loop", "speed": 0.0, "scale": 0.35, "bob": 0.0, "opacity": 1.0
     }
   ]
 }

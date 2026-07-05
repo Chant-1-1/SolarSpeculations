@@ -1,0 +1,13 @@
+Eigenes Bild fuer die Unterszene "the atmosphere" (Marker "Atmosphere" in Szene 1).
+
+Hier ablegen:  atmosphere1.png  oder  atmosphere1.webp
+Weitere Varianten: atmosphere2.png, ... (die Engine waehlt zufaellig eine).
+Alternativ gehen auch 1.png, 2.png, ...
+
+Sobald ein Bild hier liegt, werden Erd-Rand + Schichten (Smog/Ozon/Magnetfeld)
+ausgeblendet; Hintergrund (Weltraum + Sterne) und die Klick-Hotspots bleiben.
+Die Hotspots sitzen weiter auf ihren Bogen-Positionen -> das Bild am besten so
+malen, dass die Schichten ungefaehr dort liegen.
+Ordner leer -> alles wie bisher.
+
+Position/Groesse anpassen: data/entities.json -> Entity "atmosphere_image" (path / scale).

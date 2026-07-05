@@ -1,0 +1,11 @@
+Eigenes Bild fuer die Unterszene "the sun" (Marker "The sun" in Szene 1).
+
+Hier ablegen:  sun1.png  oder  sun1.webp
+Weitere Varianten: sun2.png, sun3.png, ... (die Engine waehlt zufaellig eine).
+Alternativ gehen auch 1.png, 2.png, ...
+
+Sobald ein Bild hier liegt, wird die prozedural gezeichnete Sonne ausgeblendet;
+Hintergrund (Weltraum + Sterne), Caption und die Klick-Hotspots bleiben.
+Ordner leer -> alles wie bisher.
+
+Position/Groesse anpassen: data/entities.json -> Entity "sun_image" (path / scale).
