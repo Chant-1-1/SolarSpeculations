@@ -13,7 +13,7 @@
     },
     {
       "id": "scene2",
-      "name": "the station",
+      "name": "the organism",
       "background": "",
       "backgroundTint": "#081826",
       "underwater": true
@@ -56,7 +56,7 @@
     },
     {
       "id": "station_cut",
-      "name": "the station",
+      "name": "the organism",
       "background": "",
       "backgroundTint": "#07141f",
       "viz": "station",

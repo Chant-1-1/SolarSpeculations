@@ -60,7 +60,8 @@ let sectionSeaRise = 0;
 let sectionSeaRiseActive = false;
 const SEA_RISE_DURATION = 6.0;    // Sekunden fuer den langsamen Anstieg
 const SECTION_OLD_SEA_Y = 1.06;   // Start-Meeresspiegel: UNTER dem Bildrand -> am Anfang kein Wasser sichtbar
-const SECTION_NEW_SEA_Y = 0.40;   // jetziger Meeresspiegel (steigt ins Bild hoch; etwas ueber den Berggipfel)
+const SECTION_NEW_SEA_Y = 0.40;   // FALLBACK-Endstand ohne Berg-Bild; sonst dynamisch knapp unter der Bergspitze (sectionNewSeaY)
+const SECTION_PEAK_BELOW = 0.03;  // wie weit UNTER der Bergspitze das Wasser endet (Anteil Hoehe) -> Gipfel bleibt sichtbar
 // Berg-/Land-Bild (assets/images/entities/section/land.png, transparentes PNG). Position/Groesse tunebar.
 let SECTION_LAND_CX = 0.50;       // horizontale Mitte des Bergs (Anteil Breite)
 let SECTION_LAND_BASE_Y = 1.00;   // Unterkante des Bergs (Anteil Hoehe; >1 = Fuss unter dem Bildrand)
@@ -68,6 +69,8 @@ let SECTION_LAND_BASE_Y = 1.00;   // Unterkante des Bergs (Anteil Hoehe; >1 = Fu
 // Seitenverhaeltnis. D.h. Hoehe & Breite des Bergs steuerst du ueber die BILDDATEI selbst (Masse +
 // transparente Raender). On-Screen-Hoehe = SCALE * Bildschirmbreite * (Bildhoehe/Bildbreite).
 let SECTION_LAND_SCALE = 1.0;     // 1.0 = volle Bildschirmbreite (kleiner = schmaler)
+let SECTION_LAND_PEAK_FRAC = 0.05; // vertikale Lage der Bergspitze IM Bild (0=oben, 1=unten) — aus mountain.png
+                                   // abgelesen. Steuert, wo das Wasser endet (knapp darunter). Bei neuem Bergbild anpassen.
 const SECTION_WATER_OPACITY = 0.58; // Deckkraft des Wassers ueber dem Berg (halbtransparent -> Berg bleibt sichtbar)
 // Randmarker: Einstieg (auf der Kugel) + Ausstieg (oben im Schnitt). Live-Position pro Frame aus draw().
 let sectionMarkers = [];    // Einstiegs-Marker auf der Kugel (Szene 1): {x,y,r,idx,label}
@@ -2455,10 +2458,36 @@ function buildCoast() {
   ];
 }
 
+// Bildschirm-y-Anteil der Bergspitze. Das Berg-Bild wird bei x=0 (CORNER) mit Breite dw=SCALE*W und
+// Hoehe dh=dw*(imgH/imgW) gezeichnet, Oberkante bei H-dh. Die Spitze liegt bei SECTION_LAND_PEAK_FRAC
+// der Bildhoehe -> Bildschirm-Anteil = 1 - (dh/H)*(1 - peakFrac). Skaliert korrekt mit dem Seiten-
+// verhaeltnis (auf breiten Screens ist der Berg hoeher). null, wenn kein Bergbild geladen ist.
+// (Im WEBGL-Renderer sind geladene Bildpixel nicht auslesbar, daher der abgelesene Konstanten-Wert
+//  statt einer Laufzeit-Messung der obersten undurchsichtigen Zeile.)
+function sectionPeakYFrac() {
+  const land = scenes[waterIndex] && scenes[waterIndex].landImg;
+  if (!land || !land.width || !land.height) return null;
+  const dhOverH = SECTION_LAND_SCALE * (width / height) * (land.height / land.width);   // dh/H
+  return 1 - dhOverH * (1 - SECTION_LAND_PEAK_FRAC);
+}
+
+// Ziel-Meeresspiegel (voll gestiegen): knapp UNTER der Bergspitze, damit der Gipfel sichtbar bleibt.
+// Ohne Bergbild Fallback auf die Konstante SECTION_NEW_SEA_Y.
+function sectionNewSeaY() {
+  const pk = sectionPeakYFrac();
+  return pk != null ? pk + SECTION_PEAK_BELOW : SECTION_NEW_SEA_Y;
+}
+
+// aktuelle Wasserlinie (Bildschirm-y-Anteil): interpoliert vom Startstand unter dem Rand zum Endstand
+// knapp unter der Bergspitze, gesteuert vom Anstieg sectionSeaRise (0..1). Eine Quelle fuer Zeichnung + Anno.
+function sectionWaterlineNow() {
+  return SECTION_OLD_SEA_Y + (sectionNewSeaY() - SECTION_OLD_SEA_Y) * sectionSeaRise;
+}
+
 // ---- WATER-Ansicht: Berg + halbtransparentes Szene-2-Wasser (Querschnitt). OHNE Atmosphaeren-Schichten. ----
 function drawWaterSection(alpha) {
   const W = width, H = height, ctx = drawingContext, t = millis() * 0.001;
-  const wl = SECTION_OLD_SEA_Y + (SECTION_NEW_SEA_Y - SECTION_OLD_SEA_Y) * sectionSeaRise;  // aktuelle Wasserlinie
+  const wl = sectionWaterlineNow();  // aktuelle Wasserlinie (Endstand: knapp unter der Bergspitze)
 
   push();
   ctx.globalAlpha = alpha;
@@ -2975,7 +3004,8 @@ function drawSolarChannelWater(img, mask, alpha) {
 // Dezenter, pulsierender Gold-Ring als Section-Hotspot (im lokalen Entity-Frame gezeichnet).
 function drawHotspotMarker(ent, sz, alpha, hover) {
   // DESCENT-Orb: pulsierender, additiv gestufter Glow + heller Kern + kreisende Satelliten-
-  // Partikel. Besuchte Hotspots (ent.visited, gesetzt beim Oeffnen des Readers) sind gedimmt.
+  // Partikel. Hotspots werden IMMER voll gezeichnet — auch nach dem Anklicken (kein Dimmen des
+  // besuchten Zustands mehr; ein geklickter Hotspot sieht aus wie ein ungeklickter).
   if (!ent.sats) {   // Satelliten einmalig pro Hotspot wuerfeln (Radius relativ zum Orb)
     ent.sats = [];
     for (let i = 0; i < 10; i++) ent.sats.push({
@@ -2985,24 +3015,23 @@ function drawHotspotMarker(ent, sz, alpha, hover) {
       sz: 0.8 + Math.random() * 1.6        // Punktgroesse (px)
     });
   }
-  const visited = !!ent.visited;
-  const col = visited ? [120, 110, 88] : [216, 178, 90];       // Gold; besucht = stumpfes Warmgrau
+  const col = [216, 178, 90];       // Gold (unabhaengig davon, ob der Hotspot schon geoeffnet wurde)
   const p = 0.7 + 0.3 * Math.sin(millis() * 0.0025 + ent.bobPhase);
   const R = sz * 0.30;
   push();
   noStroke();
   // gestufter Glow (mehrere weiche Scheiben addieren sich zum Leuchten)
   for (let i = 6; i > 0; i--) {
-    fill(col[0], col[1], col[2], alpha * (visited ? 2.5 : 9) * p * (hover ? 1.4 : 1));
+    fill(col[0], col[1], col[2], alpha * 9 * p * (hover ? 1.4 : 1));
     ellipse(0, 0, R * 0.55 * i);
   }
   // heller Kern
-  fill(Math.min(255, col[0] + 30), Math.min(255, col[1] + 40), col[2] + 30, alpha * (visited ? 90 : 235) * p);
+  fill(Math.min(255, col[0] + 30), Math.min(255, col[1] + 40), col[2] + 30, alpha * 235 * p);
   ellipse(0, 0, R * 0.34 * (hover ? 1.25 : 1));
   // Satelliten
   for (const s of ent.sats) {
     s.a += s.s * 0.016;
-    fill(col[0], col[1], col[2], alpha * (visited ? 25 : 110) * p);
+    fill(col[0], col[1], col[2], alpha * 110 * p);
     ellipse(Math.cos(s.a) * s.r * R, Math.sin(s.a) * s.r * R, s.sz);
   }
   // Hover: heller Hof (wie DESCENT)
@@ -3497,7 +3526,7 @@ function drawVizLiving(alpha, hasImg = false) {
   }
   }   // Ende !hasImg (prozedurales Habitat)
 
-  drawVizCaption('LIVING', 'how the station keeps people');
+  drawVizCaption('LIVING', 'how the organism keeps people');
   ctx.globalAlpha = 1; pop();
 }
 
@@ -3628,7 +3657,7 @@ function updateSectionMarkers() {
     sectionBackMarker.y = height * 0.06;
     sectionBackMarker.r = Math.max(16, Math.min(width, height) * 0.02);
     sectionBackMarker.parentIdx = sceneIndexById(cur.parent);
-    const backLabel = cur.parent === SPACE_ID ? 'Back to Earth' : 'Back to the station';
+    const backLabel = cur.parent === SPACE_ID ? 'Back to Earth' : 'Back to the organism';
     drawRimMarker(sectionBackMarker.x, sectionBackMarker.y, sectionBackMarker.r, backLabel);
   }
 }
@@ -3726,6 +3755,11 @@ function closePanel() {
 // =========================================================================
 let annoEntity = null;
 let annoBuilt = null;   // Zustand der letzten SVG-Erzeugung {x,y,r,w,h} -> Rebuild bei Resize
+// Gestufte Enthuellung — nur fuer das Atmosphaeren-Diagramm (Szene 1). Klick fuer Klick erscheint
+// zuerst der Kurztext unten, dann die drei Stichpunkte von LINKS nach rechts: smog -> ozon -> magnetfeld.
+// 0 = nichts, 1 = Kurztext, 2 = +smog, 3 = +ozon, 4 = +magnetfeld. Erst danach schliesst der Klick.
+let annoStep = 0;
+const ATMO_ANNO_STEPS = 4;
 
 function annoStationEnt() { return allEntities.find(e => e.def.id === 'station' && e.def.scene === 'scene2'); }
 
@@ -3738,15 +3772,60 @@ function annoHotspotForScene(sceneId) {
 function openAnno(ent) {
   openEntity = ent;
   annoEntity = ent;
+  annoStep = 0;                          // gestufte Enthuellung von vorn beginnen
   ent.visited = true;
   if (ent.def.action === 'seaLevelRise') sectionSeaRiseActive = true;   // hs_water: Anstieg starten
-  document.getElementById('anno-caption').textContent = (ent.def.content && ent.def.content.body) || '';
+  // Atmosphaere: der Kurztext unten erscheint erst mit dem ersten Klick (Schritt 1), nicht schon beim Oeffnen.
+  const stepped = ent.def.anno === 'atmosphere';
+  const cap = document.getElementById('anno-caption');
+  cap.style.fontSize = stepped ? '20px' : '';   // Atmosphaere: der grosse erste Text deutlich groesser (~3 Stufen)
+  cap.style.opacity = '';                        // evtl. Rest-Opacity vom Einblenden zuruecksetzen
+  cap.textContent = stepped ? '' : ((ent.def.content && ent.def.content.body) || '');
   const media = document.getElementById('anno-media');
   media.innerHTML = '';
   loadHotspotMedia(ent, media);   // eigene Bilder (hs_station1.png, ...) erscheinen ueber dem Kurztext
+  updateAnnoHint();               // Hinweis unten: "click to continue" (solange es noch etwas zu enthuellen gibt) / "click to return"
   buildAnnoSVG();
   document.getElementById('anno').classList.add('open');
   setDuck(true);
+}
+
+// Hinweiszeile im Atmosphaeren-Diagramm: solange noch Schritte offen sind "click to continue",
+// sonst (und in allen anderen Diagrammen) "click to return".
+function updateAnnoHint() {
+  const hint = document.querySelector('#anno .hint');
+  if (!hint) return;
+  const more = annoEntity && annoEntity.def.anno === 'atmosphere' && annoStep < ATMO_ANNO_STEPS;
+  hint.textContent = more ? 'click to continue' : 'click to return';
+}
+
+// blendet ein frisch eingefuegtes Element (DOM oder SVG) langsam ueber 0.75s ein.
+// Trick: Transition kurz aus, opacity 0 setzen, per Reflow festschreiben, dann mit Transition auf 1.
+function fadeInAnno(el, dur = 0.75) {
+  if (!el) return;
+  el.style.transition = 'none';
+  el.style.opacity = '0';
+  void el.getBoundingClientRect();                 // Reflow -> opacity:0 wird uebernommen
+  el.style.transition = 'opacity ' + dur + 's ease';
+  el.style.opacity = '1';
+}
+
+// Klick im Atmosphaeren-Diagramm: enthuellt den naechsten Text (langsam eingeblendet, 0.75s); erst
+// nach dem letzten Schritt schliesst der Klick. Alle anderen Diagramm-Arten schliessen sofort (unveraendert).
+function onAnnoClick() {
+  if (annoEntity && annoEntity.def.anno === 'atmosphere' && annoStep < ATMO_ANNO_STEPS) {
+    annoStep++;
+    if (annoStep === 1) {   // grosser Kurztext unten erscheint (einmalig) -> sanft einblenden
+      const cap = document.getElementById('anno-caption');
+      cap.textContent = (annoEntity.def.content && annoEntity.def.content.body) || '';
+      fadeInAnno(cap);
+    }
+    updateAnnoHint();
+    buildAnnoSVG();
+    if (annoStep >= 2) fadeInAnno(document.getElementById('anno-newnode'));   // neuer Stichpunkt blendet langsam ein
+    return;
+  }
+  closePanel();
 }
 
 // --- kleine SVG-String-Helfer (Farben: gold/dim/light wie im Rest des Looks) ---
@@ -3760,6 +3839,13 @@ function aLine(x1, y1, x2, y2, opts = {}) {
   return `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${opts.stroke || 'rgba(154,147,127,0.6)'}" stroke-width="${opts.w || 1}"${opts.dash ? ` stroke-dasharray="${opts.dash}"` : ''}/>`;
 }
 function aDot(x, y, r, fill) { return `<circle cx="${x}" cy="${y}" r="${r}" fill="${fill}"/>`; }
+// horizontaler Pfeil von xFrom nach xTo (Pfeilkopf am Ziel xTo, orientiert sich selbst nach links/rechts).
+function annoArrow(xFrom, xTo, y, opts = {}) {
+  const col = opts.stroke || ANNO_GOLD, w = opts.w || 1.4, h = opts.head || 8;
+  const dir = xTo >= xFrom ? 1 : -1;   // +1 zeigt nach rechts, -1 nach links
+  return aLine(xFrom, y, xTo, y, { stroke: col, w }) +
+    `<path d="M ${xTo} ${y} l ${(-dir * h).toFixed(2)} ${-h * 0.62} v ${(h * 1.24).toFixed(2)} Z" fill="${col}"/>`;
+}
 function aCircle(x, y, r, opts = {}) {
   return `<circle cx="${x}" cy="${y}" r="${r}" fill="none" stroke="${opts.stroke || ANNO_GOLD}" stroke-width="${opts.w || 1.2}"${opts.dash ? ` stroke-dasharray="${opts.dash}"` : ''}/>`;
 }
@@ -3849,7 +3935,7 @@ function buildAnnoSVG() {
     // Reef-Effekt: Ring um den Stein
     stn.push(`<ellipse cx="${X(0)}" cy="${Y(0)}" rx="${r * 1.30}" ry="${r * 1.22}" fill="none" stroke="rgba(216,178,90,0.55)" stroke-width="1.2" stroke-dasharray="9 8"/>`);
     stn.push(aLine(RX(1.55), Y(-0.62), X(1.12), Y(-0.52)));
-    stn.push(aTxt(RX(1.55), Y(-0.68), ['life gathers at the station —', 'a drifting reef'], { anchor: 'start', fill: ANNO_LIGHT }));
+    stn.push(aTxt(RX(1.55), Y(-0.68), ['life gathers at the organism —', 'a drifting reef'], { anchor: 'start', fill: ANNO_LIGHT }));
     // Sea Devils
     stn.push(aLine(RX(1.45), Y(0.42), X(1.05), Y(0.35)));
     stn.push(aTxt(RX(1.45), Y(0.36), ['sea devils — their glow', 'becomes the people’s light'], { anchor: 'start' }));
@@ -3884,28 +3970,44 @@ function buildAnnoSVG() {
   //       Kugelmittelpunkt weit unter dem Bild; Punkt auf Bogen rf bei horizontalem Offset ox) =====
   if (kind === 'atmosphere') {
     const rr = W / (2 * ATMO_CAP_HALFW), cx = W * 0.5, cyG = ATMO_LIMB * H + rr;
+    // Punkt auf dem Schicht-Bogen rf beim horizontalen Offset ox (Bruchteil von W) — dieselbe Geometrie
+    // wie drawAtmosphere. Weil Label-x = cx + ox*W ist, liegt der Bogenpunkt exakt UNTER dem Label ->
+    // die Leiter-Linie faellt senkrecht auf die echte Schicht (smog/ozon/magnetfeld).
     const P = (rf, ox) => ({ x: cx + ox * W, y: cyG - Math.sqrt(Math.max(0, (rr * rf) * (rr * rf) - (ox * W) * (ox * W))) });
-    // Magnetfeld (fliessende Linien, links oben)
-    const pm = P(1.20, -0.22);
-    scr.push(aDot(pm.x, pm.y, 3.5, ANNO_LIGHT));
-    scr.push(aLine(Math.max(W * 0.06, 24) + 140, H * 0.10 + 40, pm.x, pm.y - 8));
-    scr.push(aTxt(Math.max(W * 0.06, 24), H * 0.10, ['magnetic field — weakened,', 'solar storms break through'], { fill: ANNO_LIGHT }));
-    // Ozon (gestrichelter Bogen, oben Mitte)
-    const po = P(1.075, 0.06);
-    scr.push(aDot(po.x, po.y, 3.5, ANNO_GOLD));
-    scr.push(aLine(Math.min(W * 0.62, W - 320) + 40, H * 0.22 + 28, po.x + 4, po.y - 8));
-    scr.push(aTxt(Math.min(W * 0.62, W - 320), H * 0.22, ['ozone layer —', 'torn open'], { fill: ANNO_GOLD }));
-    // Smog (warmer Saum direkt am Erd-Rand, rechts)
-    const ps = P(1.02, 0.30);
-    scr.push(aDot(ps.x, ps.y, 3.5, ANNO_GOLD));
-    scr.push(aLine(W - 240, H * 0.48 + 26, ps.x, ps.y - 8));
-    scr.push(aTxt(W - 36, H * 0.48, ['photochemical smog — never lifts,', 'it makes the gold light'], { anchor: 'end', fill: ANNO_GOLD }));
+    const yRow = H * 0.24;                 // Knoten-/Pfeil-Reihe: horizontale Abfolge oben im Bild
+    // Reihenfolge LINKS -> RECHTS: smog · ozon · magnetfeld. Enthuellt wird klickweise in DIESER Folge;
+    // die Pfeile verbinden sie von LINKS nach RECHTS (in Enthuellungsrichtung) und zeigen so die Abfolge.
+    const nodes = [
+      { rf: 1.02,  ox: -0.30, txt: ['photochemical smog —', 'never lifts; it makes', 'the light a filtered gold'], fill: ANNO_GOLD },
+      { rf: 1.075, ox:  0.00, txt: ['ozone layer —', 'torn open'], fill: ANNO_GOLD },
+      { rf: 1.20,  ox:  0.30, txt: ['magnetic field — weakened,', 'solar storms break through'], fill: ANNO_LIGHT }
+    ];
+    const shown = Math.max(0, annoStep - 1);   // Schritt 1 = nur Kurztext; ab Schritt 2 die Stichpunkte
+    for (let i = 0; i < nodes.length && i < shown; i++) {
+      const nd = nodes[i], nx = cx + nd.ox * W, ap = P(nd.rf, nd.ox);
+      const parts = [];
+      // Text ueber dem Knoten (unten buendig ausgerichtet, damit alle auf gleicher Hoehe abschliessen)
+      const y0 = yRow - 16 - (nd.txt.length - 1) * 22;
+      parts.push(aTxt(nx, y0, nd.txt, { anchor: 'middle', fill: nd.fill }));
+      // Knotenpunkt + senkrechte, KRAEFTIGE Leiter hinab auf die echte Schicht (dick + praesent),
+      // mit deutlichem Zielpunkt am Bogen.
+      parts.push(aDot(nx, yRow, 3.5, nd.fill));
+      parts.push(aLine(nx, yRow + 7, ap.x, ap.y - 4, { stroke: 'rgba(216,178,90,0.9)', w: 2.6, dash: '8 5' }));
+      parts.push(aDot(ap.x, ap.y, 4.5, nd.fill));
+      // Pfeil vom vorherigen (linken) Knoten nach RECHTS zum neu erschienenen — zeigt die Abfolge.
+      if (i > 0) {
+        const px = cx + nodes[i - 1].ox * W;   // Zentrum des vorherigen (linken) Knotens
+        parts.push(annoArrow(px + W * 0.085, nx - W * 0.085, yRow));
+      }
+      // Der ZULETZT enthuellte Knoten bekommt eine id -> onAnnoClick blendet nur ihn sanft ein (0.75s).
+      scr.push(i === shown - 1 ? `<g id="anno-newnode">${parts.join('')}</g>` : parts.join(''));
+    }
   }
 
   // ===== WATER: Labels an der (steigenden) Wasserlinie — die getrackte Gruppe wandert mit dem
   //       Meeresspiegel nach oben ins Bild (updateAnno); Berg/Tiefe bild-relativ =====
   if (kind === 'water') {
-    const wl = SECTION_OLD_SEA_Y + (SECTION_NEW_SEA_Y - SECTION_OLD_SEA_Y) * sectionSeaRise;
+    const wl = sectionWaterlineNow();
     annoBuilt.wl = wl;
     const wy = wl * H;
     stn.push(aLine(24, wy, W - 24, wy, { dash: '10 8', stroke: 'rgba(216,178,90,0.45)' }));
@@ -3945,7 +4047,7 @@ function updateAnno() {
     if (Math.abs(st.radius - annoBuilt.r) > 1) { buildAnnoSVG(); return; }
     g.setAttribute('transform', `translate(${(st.pos.x - annoBuilt.x).toFixed(1)},${(st.pos.y - annoBuilt.y).toFixed(1)})`);
   } else if (kind === 'water') {
-    const wl = SECTION_OLD_SEA_Y + (SECTION_NEW_SEA_Y - SECTION_OLD_SEA_Y) * sectionSeaRise;
+    const wl = sectionWaterlineNow();
     g.setAttribute('transform', `translate(0,${((wl - annoBuilt.wl) * height).toFixed(1)})`);
   }
 }
@@ -4061,7 +4163,7 @@ function buildNav() {
     menu.appendChild(b);
   });
   document.getElementById('reader').addEventListener('click', closePanel);   // Klick irgendwo schliesst
-  document.getElementById('anno').addEventListener('click', closePanel);     // ebenso das In-Szene-Diagramm
+  document.getElementById('anno').addEventListener('click', onAnnoClick);    // Atmosphaere: Klick enthuellt schrittweise, sonst schliessen
   updateSceneName();
 }
 
