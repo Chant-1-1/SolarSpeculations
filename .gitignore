@@ -35,3 +35,30 @@ _source/
 ANALYSE.md
 ASSETS.md
 /integration
+
+# ============================================================
+#  Nur LAUFZEIT-Dateien gehoeren ins Repo (index.html laedt app.js + lib/;
+#  app.js laedt data/*.json + assets/-Bilder). Alles hierunter sind lokale
+#  Arbeits-/Dev-Dateien: bleiben auf der Platte, werden nicht gepusht.
+# ============================================================
+
+# Dev-Werkzeuge (HTML-Tools) & Build-/Trace-Skripte — nicht von index.html geladen
+/dev/
+/tools/
+start-server.bat
+
+# Editor-/Backup-Muster
+*.bak
+*~
+
+# Masken-QUELLEN fuer die Offline-Trace-Tools (NICHT im Browser geladen; nur Vorlage fuers Tracen)
+/assets/images/entities/scene2/station/solarspace-mask.png
+/assets/images/entities/scene2/station/maskilving.png
+/assets/images/entities/scene2/station/masklivinglight.png
+/assets/images/entities/scene2/station/maskweight.png
+
+# Backups / Export-Varianten / Alternativ-Bilder (nicht referenziert)
+/assets/images/entities/scene2/station/station1backup.png
+/assets/images/entities/scene2/station/station1sw.png
+/assets/images/entities/scene2/station/alt/
+/assets/images/backgrounds/scene3_interior.png
