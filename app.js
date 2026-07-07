@@ -3763,10 +3763,14 @@ const ATMO_ANNO_STEPS = 4;
 // Water-Diagramm gestuft wie die Atmosphaere: Klick 1 = Kurztext unten + Wasser steigt,
 // dann je Klick ein Label (living band -> old mountains -> cold deep). 1 + 3 = 4 Schritte.
 const WATER_ANNO_STEPS = 4;
+// Sun-Diagramm gestuft: Klick 1 = Kurztext unten, dann je Klick ein Callout
+// (lethal source -> the sound -> solar storms). 1 + 3 = 4 Schritte.
+const SUN_ANNO_STEPS = 4;
 // Gesamt-Schritte eines gestuften Diagramms (0 = nicht gestuft -> Klick schliesst sofort).
 function annoStepsFor(kind) {
   if (kind === 'atmosphere') return ATMO_ANNO_STEPS;
   if (kind === 'water') return WATER_ANNO_STEPS;
+  if (kind === 'sun') return SUN_ANNO_STEPS;
   return 0;
 }
 
@@ -4048,15 +4052,23 @@ function buildAnnoSVG() {
   // ===== SUN: beschriftet die grosse Sonnenscheibe (gleiche Geometrie wie drawVizSun: sunLayout) =====
   if (kind === 'sun') {
     const s = sunLayout(), cx = s.cx, cy = s.cy, r = s.r;
-    // die toedliche Quelle (Scheibe, oben links)
-    scr.push(aLine(Math.max(cx - r * 1.5, 40) + 130, cy - r * 1.42 + 30, cx - r * 0.60, cy - r * 0.74));
-    scr.push(aTxt(Math.max(cx - r * 1.5, 40), cy - r * 1.46, ['the lethal source —', 'once live giving now poisonous and deadly'], { fill: ANNO_LIGHT }));
-    // der Motor (Korona/Hitze, rechts oben)
-    scr.push(aLine(Math.min(cx + r * 1.35, W - 340), cy - r * 0.66, cx + r * 0.98, cy - r * 0.50));
-    scr.push(aTxt(Math.min(cx + r * 1.35, W - 340), cy - r * 0.76, ['the sound — without the oznon-shild', 'now the sun speaks to us'], { fill: ANNO_GOLD }));
-    // Sonnenstuerme (CME-Bogen, rechts unter dem Motor-Label — NICHT tiefer, sonst Kurztext-Kollision)
-    scr.push(aLine(Math.min(cx + r * 1.35, W - 340), cy + r * 0.70, cx + r * 0.72, cy + r * 0.95));
-    scr.push(aTxt(Math.min(cx + r * 1.35, W - 340), cy + r * 0.60, ['solar storms — each burst', 'reaches the surface unshielded'], { fill: ANNO_LIGHT }));
+    // Gestuft wie atmosphere/water: Schritt 1 = Kurztext unten; ab Schritt 2 je Klick ein Callout
+    // (lethal source -> the sound -> solar storms); das neueste blendet sanft ein.
+    const shown = Math.max(0, annoStep - 1);   // Anzahl sichtbarer Callouts (0..3)
+    const labels = [
+      // die toedliche Quelle (Scheibe, oben links)
+      aLine(Math.max(cx - r * 1.5, 40) + 130, cy - r * 1.42 + 30, cx - r * 0.60, cy - r * 0.74)
+        + aTxt(Math.max(cx - r * 1.5, 40), cy - r * 1.46, ['the lethal source —', 'once live giving now poisonous and deadly'], { fill: ANNO_LIGHT }),
+      // der Motor / "the sound" (Korona/Hitze, rechts oben)
+      aLine(Math.min(cx + r * 1.35, W - 340), cy - r * 0.66, cx + r * 0.98, cy - r * 0.50)
+        + aTxt(Math.min(cx + r * 1.35, W - 340), cy - r * 0.76, ['the sound — without the oznon-shild', 'now the sun speaks to us'], { fill: ANNO_GOLD }),
+      // Sonnenstuerme (CME-Bogen, rechts unter dem Motor-Label — NICHT tiefer, sonst Kurztext-Kollision)
+      aLine(Math.min(cx + r * 1.35, W - 340), cy + r * 0.70, cx + r * 0.72, cy + r * 0.95)
+        + aTxt(Math.min(cx + r * 1.35, W - 340), cy + r * 0.60, ['solar storms — each burst', 'reaches the surface unshielded'], { fill: ANNO_LIGHT })
+    ];
+    for (let i = 0; i < labels.length && i < shown; i++) {
+      scr.push(i === shown - 1 ? `<g id="anno-newnode">${labels[i]}</g>` : labels[i]);   // neuestes Callout -> sanftes Einblenden
+    }
   }
 
   svg.innerHTML = `<g>${scr.join('')}</g><g id="anno-stone">${stn.join('')}</g>`;
