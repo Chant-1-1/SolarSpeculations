@@ -3778,7 +3778,7 @@ function openAnno(ent) {
   // Atmosphaere: der Kurztext unten erscheint erst mit dem ersten Klick (Schritt 1), nicht schon beim Oeffnen.
   const stepped = ent.def.anno === 'atmosphere';
   const cap = document.getElementById('anno-caption');
-  cap.style.fontSize = stepped ? '20px' : '';   // Atmosphaere: der grosse erste Text deutlich groesser (~3 Stufen)
+  cap.style.fontSize = '20px';   // Kurztext unten in ALLEN Szenen gleich gross wie in der Atmosphaere (~3 Stufen groesser als CSS-Default)
   cap.style.opacity = '';                        // evtl. Rest-Opacity vom Einblenden zuruecksetzen
   cap.textContent = stepped ? '' : ((ent.def.content && ent.def.content.body) || '');
   const media = document.getElementById('anno-media');
