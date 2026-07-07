@@ -85,11 +85,11 @@
       "interactive": true,
       "anno": "station",
       "layer": 1.2,
-      "label": "The station",
+      "label": "The organism",
       "path": [ { "x": 0.50, "y": 0.26 } ],
       "loop": "loop", "speed": 0.0, "scale": 0.05, "bob": 0.0, "opacity": 1.0,
       "content": {
-        "title": "The station",
+        "title": "The organism",
         "body": "A drifting block of pumice, hollowed into found rooms — daylight only in the Solar Space, living light below, ballast deep down. Steered by focused sunlight, it drifts across the ocean, groaning with the currents: the breathing of the world.",
         "secondaryImage": "",
         "link": { "url": "", "label": "" }
@@ -107,7 +107,7 @@
       "loop": "loop", "speed": 0.0, "scale": 0.05, "bob": 0.0, "opacity": 1.0,
       "content": {
         "title": "Wildlife",
-        "body": "The light kills from above, so all life presses into the shaded band — grown to twice its old size, fed by krill, gathered around the drifting stations like reefs. The whales together now outweigh what is left of humanity.",
+        "body": "The light kills from above, so all life presses into the shaded band — grown to twice its old size, fed by krill, gathered around the drifting organisms like reefs. The whales together now outweigh what is left of humanity.",
         "secondaryImage": "",
         "link": { "url": "", "label": "" }
       }
@@ -515,7 +515,7 @@
       "loop": "loop", "speed": 0.0, "scale": 0.05, "bob": 0.0, "opacity": 1.0,
       "content": {
         "title": "Life support",
-        "body": "Sealed loops scrub the air and recycle every drop of water. Nothing that can be kept is vented — the station breathes on itself.",
+        "body": "Sealed loops scrub the air and recycle every drop of water. Nothing that can be kept is vented — the organism breathes on itself.",
         "secondaryImage": "",
         "link": { "url": "", "label": "" }
       }
@@ -531,7 +531,7 @@
       "loop": "loop", "speed": 0.0, "scale": 0.05, "bob": 0.0, "opacity": 1.0,
       "content": {
         "title": "Ballast and buoyancy",
-        "body": "Flooded and blown tanks trim the station's depth. They hold it in the safe band — never surfacing into the radiation, never sinking into the cold.",
+        "body": "Flooded and blown tanks trim the organism's depth. They hold it in the safe band — never surfacing into the radiation, never sinking into the cold.",
         "secondaryImage": "",
         "link": { "url": "", "label": "" }
       }
@@ -565,7 +565,7 @@
       "loop": "loop", "speed": 0.0, "scale": 0.05, "bob": 0.0, "opacity": 1.0,
       "content": {
         "title": "Dwelling in the stone",
-        "body": "Rooms are not built but found in the pumice's natural cavities, and widened only where the stone allows. Shelves and beds are grown straight from the wall. Because the station never stops rocking, nothing rests loose — everything is tied down, or it belongs to the sea.",
+        "body": "Rooms are not built but found in the pumice's natural cavities, and widened only where the stone allows. Shelves and beds are grown straight from the wall. Because the organism never stops rocking, nothing rests loose — everything is tied down, or it belongs to the sea.",
         "secondaryImage": "",
         "link": { "url": "", "label": "" }
       }
@@ -581,7 +581,7 @@
       "loop": "loop", "speed": 0.0, "scale": 0.05, "bob": 0.0, "opacity": 1.0,
       "content": {
         "title": "The sway",
-        "body": "The station never holds still; it rolls, and the people roll with it. Ballast packed into the deepest rooms keeps the sway slow and shallow. Born to the motion, the inhabitants know no seasickness and read the tilt as a sense of their own — a body feels a wrong movement before any instrument shows it.",
+        "body": "The organism never holds still; it rolls, and the people roll with it. Ballast packed into the deepest rooms keeps the sway slow and shallow. Born to the motion, the inhabitants know no seasickness and read the tilt as a sense of their own — a body feels a wrong movement before any instrument shows it.",
         "secondaryImage": "",
         "link": { "url": "", "label": "" }
       }
