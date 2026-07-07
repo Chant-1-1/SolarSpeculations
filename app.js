@@ -3909,11 +3909,10 @@ function buildAnnoSVG() {
     annoBuilt.wl = wl;
     const wy = wl * H;
     stn.push(aLine(24, wy, W - 24, wy, { dash: '10 8', stroke: 'rgba(216,178,90,0.45)' }));
-    stn.push(aTxt(W - 36, wy - 46, ['the sea climbed —', 'the old coast lies far below'], { anchor: 'end', fill: ANNO_LIGHT }));
     stn.push(aTxt(W - 36, wy + 66, ['the living band —', 'warmed above, shielded from the light'], { anchor: 'end', fill: ANNO_GOLD }));
-    scr.push(aTxt(Math.max(W * 0.10, 340), H * 0.36, ['the drowned land —', 'where life once held on'], { anchor: 'end', fill: ANNO_LIGHT }));
+    scr.push(aTxt(Math.max(W * 0.10, 340), H * 0.36, ['the old mountains —', 'bearly reaches the surface'], { anchor: 'end', fill: ANNO_LIGHT }));
     scr.push(aLine(Math.max(W * 0.10, 340) - 60, H * 0.36 + 34, W * 0.31, H * 0.66));   // -> Berggipfel
-    scr.push(aTxt(W - 36, H * 0.80, 'the cold deep — dark and near-empty', { anchor: 'end', fill: ANNO_DIM }));
+    scr.push(aTxt(W - 36, H * 0.80, 'the cold deep — dark and dangerous', { anchor: 'end', fill: ANNO_DIM }));
   }
 
   // ===== SUN: beschriftet die grosse Sonnenscheibe (gleiche Geometrie wie drawVizSun: sunLayout) =====
@@ -3921,10 +3920,10 @@ function buildAnnoSVG() {
     const s = sunLayout(), cx = s.cx, cy = s.cy, r = s.r;
     // die toedliche Quelle (Scheibe, oben links)
     scr.push(aLine(Math.max(cx - r * 1.5, 40) + 130, cy - r * 1.42 + 30, cx - r * 0.60, cy - r * 0.74));
-    scr.push(aTxt(Math.max(cx - r * 1.5, 40), cy - r * 1.46, ['the lethal source —', 'filtered to a faint gold'], { fill: ANNO_LIGHT }));
+    scr.push(aTxt(Math.max(cx - r * 1.5, 40), cy - r * 1.46, ['the lethal source —', 'once live giving now poisonous and deadly'], { fill: ANNO_LIGHT }));
     // der Motor (Korona/Hitze, rechts oben)
     scr.push(aLine(Math.min(cx + r * 1.35, W - 340), cy - r * 0.66, cx + r * 0.98, cy - r * 0.50));
-    scr.push(aTxt(Math.min(cx + r * 1.35, W - 340), cy - r * 0.76, ['the engine — her heat turns', 'the whole water column'], { fill: ANNO_GOLD }));
+    scr.push(aTxt(Math.min(cx + r * 1.35, W - 340), cy - r * 0.76, ['the sound — without the oznon-shild', 'now the sun speaks to us'], { fill: ANNO_GOLD }));
     // Sonnenstuerme (CME-Bogen, rechts unter dem Motor-Label — NICHT tiefer, sonst Kurztext-Kollision)
     scr.push(aLine(Math.min(cx + r * 1.35, W - 340), cy + r * 0.70, cx + r * 0.72, cy + r * 0.95));
     scr.push(aTxt(Math.min(cx + r * 1.35, W - 340), cy + r * 0.60, ['solar storms — each burst', 'reaches the surface unshielded'], { fill: ANNO_LIGHT }));
