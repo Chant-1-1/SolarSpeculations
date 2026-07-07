@@ -21,8 +21,9 @@
     {
       "id": "scene3",
       "name": "the eye",
-      "background": "assets/images/backgrounds/scene3_interior.png",
-      "backgroundTint": "#eee9df",
+      "background": "assets/images/entities/scene3/solarspace.png",
+      "channelMask": "assets/images/entities/scene3/solarspacewatermask.png",
+      "backgroundTint": "#08070a",
       "interior": true
     },
     {

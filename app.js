@@ -316,7 +316,8 @@ async function buildWorld() {
   for (const sc of scenesData.scenes) {
     const bg = await tryLoadImage(sc.background);
     const landImg = sc.land ? await tryLoadImage(sc.land) : null;   // optionales Bild (z.B. Berg im Schnitt)
-    scenes.push({ ...sc, bg, landImg });
+    const channelMask = sc.channelMask ? await tryLoadImage(sc.channelMask) : null;   // Alpha-Maske: Wasserkanal (Scene 3)
+    scenes.push({ ...sc, bg, landImg, channelMask });
   }
   // Zoom-Transition: Indizes aus den IDs aufloesen (Reihenfolge-unabhaengig)
   zoomSeaIndex = scenes.findIndex(s => s.id === ZOOM_SEA_ID);
@@ -338,6 +339,7 @@ async function buildWorld() {
       }
       ent.pickVariant();
     }
+    if (def.waterMask) ent.waterMask = await tryLoadImage(def.waterMask);   // Alpha-Maske: Innen-Wasserflaechen (Becken/Kanaele)
     if (def.globe) {
       ent.tex = await tryLoadImage(def.globe.texture);
       if (def.globe.normal) ent.normTex = await tryLoadImage(def.globe.normal);
@@ -549,6 +551,19 @@ class Entity {
 
     push();
     translate(x, y);
+    // 'rock': ganz leichtes Wiegen (Links/rechts-Schwenk), zusaetzlich zum vertikalen bob. Rotiert
+    // Sprite UND Innen-Wasser gemeinsam (beide werden nach diesem rotate um den Ursprung gezeichnet).
+    // Drehpunkt liegt im UNTEREN DRITTEL des Sprites (rockPivot = Anteil der Sprite-Hoehe unter der
+    // Mitte) -> Oberteil schwenkt, Basis bleibt ruhig (Bojen-Wiegen mit tiefem Schwerpunkt). Eigene,
+    // langsamere Frequenz als der bob -> organisch.
+    if (this.def.rock) {
+      // (1 - duck): bei offenem Panel/Diagramm haelt die Station still -> der Solar-Space-Umriss
+      // im Anno-Overlay (folgt nur der Position, nicht der Rotation) sitzt dann exakt auf der Oeffnung.
+      const rockAng = this.def.rock * Math.sin(millis() / 1000 * (this.def.rockSpeed || 0.5) + (this.swimPhase || 0)) * (1 - duck);
+      const rr = this.img ? this.img.height / this.img.width : 1;
+      const pv = (this.def.rockPivot != null ? this.def.rockPivot : 0.3) * sz * rr;
+      translate(0, pv); rotate(rockAng); translate(0, -pv);
+    }
     const glow = 0.15 + this.highlight * 0.5 + (hoverEntity === this ? 0.2 : 0);
 
     // 3D-Kugel: WebGL-Layer rendern, Atmosphaeren-Halo dahinter, Kugel-Bild, Tag/Nacht-Schatten
@@ -655,6 +670,11 @@ class Entity {
       fill(255, a * 60);
       ellipse(-sz * 0.08, -sz * 0.08, sz * 0.14);
     }
+
+    // Innen-Wasser der Station: Live-Wasser (Szenen-Shader), per Alpha-Maske auf die Becken/Kanaele
+    // beschnitten und mit dem Sprite (Position/Zoom/Bob) mitbewegt. Nur mit geladener Maske + Bild.
+    if (this.waterMask && drawImg) drawStationInteriorWater(this, sz, alpha);
+
     pop();
 
     // Hover-Label (DESCENT: lowercase Mono, hell auf dunklem Schleier)
@@ -1203,10 +1223,10 @@ function blitBufferFull(buf, alpha) {
 }
 
 // kompletter Unterwasser-Backdrop bei gegebenem Alpha (0..1) -> deckend bei 1, ausblendbar fuer Crossfade
-function drawUnderwater(alpha = 1) {
+function drawUnderwater(alpha = 1, waterlineFrac = WATERLINE_FRAC) {
   if (!underwaterBuf) buildUnderwater();
   if (!marineSnow.length) buildMarineSnow();
-  const w = width, h = height, wl = h * WATERLINE_FRAC;
+  const w = width, h = height, wl = h * waterlineFrac;
   const t = millis() / 1000, dt = Math.min(0.05, deltaTime / 1000);
 
   // statischer Verlauf (deckend bei alpha=1) als Basis
@@ -1463,10 +1483,14 @@ function ensureWaterBuffer() {
 
 // Shader-Wasser als Vollbild-Backdrop (Crossfade-Alpha wie space/underwater). Faellt auf
 // drawUnderwater() zurueck bei reduced-motion, createShader-Fehler oder leerem ersten Render.
-function drawWater(alpha = 1) {
-  if (waterReduceMotion || waterShaderFailed || PERF_FLAT) { drawUnderwater(alpha); return; }
+// Rendert den Wasser-Shader in waterBuf (OHNE Blit) und gibt true zurueck, wenn Live-Wasser
+// vorliegt. So kann derselbe Buffer mehrfach pro Frame mit verschiedener Wasserlinie erzeugt und
+// unterschiedlich weiterverwendet werden (Vollbild-Himmel/Wasser vs. Sampling fuer den Kanal in
+// Scene 3). Bei reduced-motion/Shader-Fehler -> false (Aufrufer nimmt seinen 2D-Fallback).
+function renderWaterBuffer(waterlineFrac = WATERLINE_FRAC) {
+  if (waterReduceMotion || waterShaderFailed || PERF_FLAT) return false;
   ensureWaterBuffer();
-  if (!waterBuf || !waterShader) { drawUnderwater(alpha); return; }
+  if (!waterBuf || !waterShader) return false;
   try {
     const g = waterBuf;
     g.clear();
@@ -1474,7 +1498,7 @@ function drawWater(alpha = 1) {
     g.shader(waterShader);
     waterShader.setUniform('uTime', millis() / 1000);
     waterShader.setUniform('uResolution', [g.width, g.height]);
-    waterShader.setUniform('uWaterlineY', WATERLINE_FRAC);
+    waterShader.setUniform('uWaterlineY', waterlineFrac);
     waterShader.setUniform('uLightDir', WATER_LIGHTDIR);
     waterShader.setUniform('uLightColor', WATER_LIGHTCOL);
     waterShader.setUniform('uSnow', SNOW_AMOUNT);
@@ -1487,14 +1511,17 @@ function drawWater(alpha = 1) {
       const px = g.get(g.width >> 1, g.height >> 1);
       if (!px || px[3] < 5) throw new Error('leerer Render (vermutlich Shader-Compile-Fehler)');
     }
+    return true;
   } catch (e) {
-    console.warn('Wasser-Shader Render fehlgeschlagen -> Fallback drawUnderwater()', e);
+    console.warn('Wasser-Shader Render fehlgeschlagen -> Fallback', e);
     waterShaderFailed = true;
     if (waterBuf) { waterBuf.remove(); waterBuf = null; }
     waterShader = null;
-    drawUnderwater(alpha);
-    return;
+    return false;
   }
+}
+function drawWater(alpha = 1, waterlineFrac = WATERLINE_FRAC) {
+  if (!renderWaterBuffer(waterlineFrac)) { drawUnderwater(alpha, waterlineFrac); return; }
   blitBufferFull(waterBuf, alpha);                       // reduzierte Aufloesung hochskaliert
 }
 
@@ -2356,10 +2383,19 @@ function drawSceneBackdrop(index, alpha) {
     return;
   }
   if (sc.interior) {
-    // Scene 3 „das eye": entweder gemaltes Kuppel-Bild (falls vorhanden) ODER prozeduraler Innenraum.
-    // sc.bg deckt den Vollbild-Hintergrund ab; der Shader liefert sonst Kuppel + Oculus + Reflexion.
-    if (sc.bg) drawCoverImage(sc.bg, alpha);
-    else drawSolarSpace(alpha);   // prozedurale Licht-Architektur; faellt intern auf 2D-Fallback zurueck
+    // Scene 3 „das eye": gemaltes Bild (falls vorhanden) ODER prozeduraler Innenraum.
+    // Das Bild (solarspace.png) hat TRANSPARENTE Raender. Als Hintergrund DERSELBE Himmel wie
+    // Szene 2, aber OHNE sichtbares Wasser: drawWater(alpha, 1.0) -> Wasserlinie ganz unten, also
+    // fuellt der Shader den ganzen Hintergrund mit Himmel (das Hintergrund-Wasser laege eh unter
+    // dem Fels/der blauen Linie und waere nie sichtbar). Das einzige sichtbare Wasser ist der
+    // schmale Kanal (channelMask): live, links->rechts fliessend, ueber das Bild beschnitten.
+    if (sc.bg) {
+      drawWater(alpha, 1.0);
+      drawCoverImage(sc.bg, alpha);
+      if (sc.channelMask) drawSolarChannelWater(sc.bg, sc.channelMask, alpha);
+    } else {
+      drawSolarSpace(alpha);   // prozedurale Licht-Architektur; faellt intern auf 2D-Fallback zurueck
+    }
     return;
   }
   if (sc.atmosphere) {
@@ -2753,6 +2789,177 @@ function drawSectionWaterFallback(wl, alpha) {
   for (let x = 0; x <= W; x += 24) vertex(x, wl * H + Math.sin(x * 0.03 + millis() * 0.0015) * 1.6);
   endShape();
   pop();
+}
+
+// ===== STATIONS-INNENWASSER (Scene 2) =====================================
+// Die Wasserflaechen INNERHALB der Station (Becken + obere Kanaele) mit demselben
+// Live-Wasser wie die Szene fuellen (Strategie 2: eigenes, mit der Station mitwippendes
+// Wasser). Ablauf pro Frame:
+//   1) ein NAHE-OBERFLAECHE-Band des Szenen-Shaders (waterBuf) in einen Offscreen-Buffer
+//      in Sprite-Groesse ziehen -> glaesernes Volumen mit Kaustik/Schimmer, ohne Himmel/
+//      Oberflaechenlinie und ohne die tintenschwarze Tiefe.
+//   2) per Alpha-Maske (station1maskewasser.png) auf die Becken/Kanaele beschneiden
+//      (destination-in). Die Maske wird auf die Sprite-Groesse skaliert (bewusst im Code,
+//      ~1% Toleranz zur leicht groesseren Masken-Leinwand).
+//   3) im lokalen (zentrierten) Entity-Frame ueber das Sprite legen -> Zoom + Bob wirken
+//      automatisch mit, das Wasser bleibt an der Station verankert.
+// Faellt bei reduced-motion / Shader-Fehler auf einen statischen Wasserverlauf zurueck und
+// deaktiviert sich bei einem harten Fehler dauerhaft (schuetzt den Hauptrender).
+let stationWaterBuf = null;      // Offscreen-2D-Buffer in Sprite-Groesse (nur bei Groessenwechsel neu)
+let stationWaterFailed = false;  // harter Fehler -> dauerhaft aus
+let STATION_WATER_OPACITY = 0.55; // Deckkraft des Innen-Wassers (kleiner = transparenter -> Stein/Becken scheint durch)
+function drawStationInteriorWater(ent, sz, alpha) {
+  if (stationWaterFailed || !ent.img || !ent.waterMask) return;
+  try {
+    const ratio = ent.img.height / ent.img.width;
+    const dw = Math.max(2, Math.round(sz));
+    const dh = Math.max(2, Math.round(sz * ratio));
+    if (!stationWaterBuf || stationWaterBuf.width !== dw || stationWaterBuf.height !== dh) {
+      if (stationWaterBuf) stationWaterBuf.remove();
+      stationWaterBuf = createGraphics(dw, dh);
+      stationWaterBuf.pixelDensity(1);
+    }
+    const g = stationWaterBuf, bctx = g.drawingContext;
+    g.clear();
+
+    // 1) Wasser-Inhalt
+    const live = !(waterReduceMotion || waterShaderFailed || PERF_FLAT) && waterBuf && waterShader;
+    if (live) {
+      const bw = waterBuf.width, bh = waterBuf.height;
+      const sy0 = Math.floor(bh * 0.34);            // knapp unter der Wasserlinie (0.30) -> hell, kaustikreich
+      const sy1 = Math.floor(bh * 0.62);            // bis Mittelwasser -> noch farbig, nicht tintenschwarz
+      g.push(); g.imageMode(CORNER);
+      g.image(waterBuf, 0, 0, dw, dh, 0, sy0, bw, sy1 - sy0);
+      g.pop();
+    } else {
+      const grad = bctx.createLinearGradient(0, 0, 0, dh);
+      grad.addColorStop(0.00, '#28605f'); grad.addColorStop(0.5, '#143e54'); grad.addColorStop(1.0, '#0a2234');
+      bctx.fillStyle = grad; bctx.fillRect(0, 0, dw, dh);
+    }
+
+    // 2) auf die Becken/Kanaele beschneiden (Alpha der Maske als Schnittform)
+    bctx.globalCompositeOperation = 'destination-in';
+    bctx.drawImage(ent.waterMask.canvas, 0, 0, dw, dh);
+    bctx.globalCompositeOperation = 'source-over';
+
+    // 3) ueber das Sprite legen (bereits auf die Stationsmitte translatiert; Zoom/Bob wirken mit)
+    push();
+    imageMode(CENTER);
+    tint(255, 255 * alpha * STATION_WATER_OPACITY);
+    image(g, 0, 0, sz, sz * ratio);
+    noTint();
+    pop();
+  } catch (e) {
+    console.warn('Stations-Innenwasser -> deaktiviert', e);
+    stationWaterFailed = true;
+    if (stationWaterBuf) { try { stationWaterBuf.remove(); } catch (_) { /* egal */ } stationWaterBuf = null; }
+  }
+}
+
+// Live-Wasser im schmalen Kanal von Scene 3 („das eye") — wie das Stations-Innenwasser, aber auf
+// SZENEN-Ebene (das Bild ist der Hintergrund, kein Entity). Ablauf pro Frame:
+//   1) waterBuf mit der NORMALEN Wasserlinie rendern (der Himmel-Hintergrund hat ihn zuvor auf
+//      reinen Himmel gesetzt) -> ein helles Nahe-Oberflaeche-Band ist wieder echtes Wasser.
+//   2) das Band bildschirmfuellend in einen 2D-Buffer ziehen und horizontal scrollen (zwei
+//      Kacheln) -> Stroemung von links nach rechts.
+//   3) per Alpha-Maske (solarspacewatermask.png, exakt auf das Bild registriert, am Cover-Rect
+//      positioniert) auf den Kanal beschneiden (destination-in) und ueber das Bild legen.
+let solarChannelBuf = null;        // Offscreen-2D-Buffer in Bildschirmgroesse
+let solarMaskBuf = null;           // Offscreen fuer die spaltenweise verwellte Maske (schwappende Kante)
+let solarChannelFailed = false;    // harter Fehler -> dauerhaft aus
+let SOLAR_CHANNEL_OPACITY = 0.9;   // Deckkraft des Kanal-Wassers (kleiner = mehr vom gemalten Kanal sichtbar)
+let SOLAR_CHANNEL_FLOW = 0.06;     // Fliessgeschwindigkeit (Anteil Breite/s); >0 = links->rechts, <0 = umgekehrt
+let SOLAR_CHANNEL_WAVE = 0.006;    // Schwapp-Amplitude der Oberflaeche (Anteil der Hoehe); 0 = statische Kante
+function drawSolarChannelWater(img, mask, alpha) {
+  if (solarChannelFailed || !img || !mask) return;
+  try {
+    const dw = Math.max(2, Math.round(width));
+    const dh = Math.max(2, Math.round(height));
+    if (!solarChannelBuf || solarChannelBuf.width !== dw || solarChannelBuf.height !== dh) {
+      if (solarChannelBuf) solarChannelBuf.remove();
+      solarChannelBuf = createGraphics(dw, dh);
+      solarChannelBuf.pixelDensity(1);
+    }
+    const g = solarChannelBuf, bctx = g.drawingContext;
+    g.clear();
+
+    // 1)+2) Wasser-Inhalt, horizontal scrollend
+    const live = renderWaterBuffer(WATERLINE_FRAC);   // waterBuf zurueck auf echtes Wasser (Himmel-BG hatte ihn ueberschrieben)
+    if (live) {
+      const bw = waterBuf.width, bh = waterBuf.height;
+      const sy0 = Math.floor(bh * 0.34);              // knapp unter der Wasserlinie -> hell, kaustikreich
+      const sy1 = Math.floor(bh * 0.62);              // bis Mittelwasser -> noch farbig, nicht tintenschwarz
+      const sh = sy1 - sy0;
+      const dx = ((((millis() / 1000) * SOLAR_CHANNEL_FLOW) % 1) + 1) % 1 * dw;   // 0..dw, wrappt (auch fuer negatives FLOW)
+      g.push(); g.imageMode(CORNER);
+      g.image(waterBuf, dx - dw, 0, dw, dh, 0, sy0, bw, sh);          // linke Kachel
+      g.image(waterBuf, dx,      0, dw, dh, 0, sy0, bw, sh);          // rechte Kachel (fuellt den Wrap)
+      g.pop();
+    } else {
+      const grad = bctx.createLinearGradient(0, 0, 0, dh);
+      grad.addColorStop(0.0, '#28605f'); grad.addColorStop(0.5, '#143e54'); grad.addColorStop(1.0, '#0a2234');
+      bctx.fillStyle = grad; bctx.fillRect(0, 0, dw, dh);
+    }
+
+    // 3) auf den Kanal beschneiden — Maske am Cover-Rect wie in drawCoverImage positioniert.
+    // Die Maske wird spaltenweise mit einer wandernden Sinus-Welle vertikal versetzt in einen eigenen
+    // Buffer gebaut -> die Wasserkante SCHWAPPT leicht (sonst waere die Oberflaeche statisch). Danach
+    // EIN destination-in mit der fertigen, verwellten Maske (mehrere destination-in wuerden loeschen).
+    const ir = img.width / img.height, cr = dw / dh;
+    let cw, ch; if (ir > cr) { ch = dh; cw = dh * ir; } else { cw = dw; ch = dw / ir; }
+    const cx = (dw - cw) / 2, cy = (dh - ch) / 2;
+    if (!solarMaskBuf || solarMaskBuf.width !== dw || solarMaskBuf.height !== dh) {
+      if (solarMaskBuf) solarMaskBuf.remove();
+      solarMaskBuf = createGraphics(dw, dh);
+      solarMaskBuf.pixelDensity(1);
+    }
+    const mg = solarMaskBuf, mctx = mg.drawingContext;
+    mg.clear();
+    const mw = mask.width, mh = mask.height, tw = millis() / 1000;
+    // einmalig: Ober-/Unterkante des Kanals aus dem Masken-Alpha messen (normiert 0..1).
+    // Die Welle wird an der UNTERKANTE verankert: nur die Oberflaeche schwappt, der Kanalboden
+    // steht still (Nutzerwunsch — unten sieht man die Bewegung nicht).
+    if (mask._chBot == null) {
+      mask.loadPixels();
+      let top = mh, bot = 0;
+      for (let y = 0; y < mh; y++) for (let x = 0; x < mw; x += 2) {
+        if (mask.pixels[(y * mw + x) * 4 + 3] > 128) { if (y < top) top = y; if (y > bot) bot = y; break; }
+      }
+      mask._chTop = Math.min(top, bot) / mh;
+      mask._chBot = Math.min(1, (bot + 1) / mh);
+    }
+    const vb = mask._chBot || 1;                          // Anker (Kanal-Unterkante, Anteil der Maskenhoehe)
+    const gain = vb > mask._chTop ? 1 / (1 - mask._chTop / vb) : 1;   // volle Amplitude an der OBERkante
+    const amp = Math.max(0.5, dh * SOLAR_CHANNEL_WAVE);
+    const STRIPS = 48;                                   // vertikale Spalten -> spaltenweise Welle
+    for (let i = 0; i < STRIPS; i++) {
+      const sxs = Math.floor(mw * i / STRIPS);
+      const sw = Math.floor(mw * (i + 1) / STRIPS) - sxs;
+      if (sw <= 0) continue;
+      const u = (sxs + sw / 2) / mw;                     // 0..1 ueber die Breite
+      const wave = Math.sin(u * TWO_PI * 1.5 + tw * 1.1) + 0.4 * Math.sin(u * TWO_PI * 3.3 - tw * 0.8);
+      // Spalte gestreckt statt verschoben: Punkt v wandert um dyTop*(1 - v/vb) -> Oberkante volle
+      // Welle, Unterkante (v=vb) exakt 0. dyTop = gain-verstaerkter Versatz des Bild-Tops.
+      const dyTop = wave * amp * gain;
+      mctx.drawImage(mask.canvas, sxs, 0, sw, mh, cx + (sxs / mw) * cw, cy + dyTop, (sw / mw) * cw + 1, ch - dyTop / vb);
+    }
+    bctx.globalCompositeOperation = 'destination-in';
+    bctx.drawImage(mg.canvas, 0, 0, dw, dh);
+    bctx.globalCompositeOperation = 'source-over';
+
+    // ueber das Bild legen (Bildschirm-Koordinaten, 1:1)
+    push();
+    imageMode(CORNER);
+    tint(255, 255 * alpha * SOLAR_CHANNEL_OPACITY);
+    image(g, 0, 0, dw, dh);
+    noTint();
+    pop();
+  } catch (e) {
+    console.warn('Solar-Kanal-Wasser -> deaktiviert', e);
+    solarChannelFailed = true;
+    if (solarChannelBuf) { try { solarChannelBuf.remove(); } catch (_) { /* egal */ } solarChannelBuf = null; }
+    if (solarMaskBuf) { try { solarMaskBuf.remove(); } catch (_) { /* egal */ } solarMaskBuf = null; }
+  }
 }
 
 // Dezenter, pulsierender Gold-Ring als Section-Hotspot (im lokalen Entity-Frame gezeichnet).
@@ -3541,6 +3748,17 @@ function aCircle(x, y, r, opts = {}) {
   return `<circle cx="${x}" cy="${y}" r="${r}" fill="none" stroke="${opts.stroke || ANNO_GOLD}" stroke-width="${opts.w || 1.2}"${opts.dash ? ` stroke-dasharray="${opts.dash}"` : ''}/>`;
 }
 
+// Umriss der Solar-Space-Oeffnung: offline aus solarspace-mask.png getract (tools/trace_solarmask.js),
+// normiert auf das Stationsbild (0..1). Wird in buildAnnoSVG auf Stein-Position/-Radius abgebildet und
+// ersetzt den frueheren symbolischen Kreis. Bei geaenderter Maske neu tracen und hier ersetzen.
+const SOLAR_OUTLINE = [[0.4188,0.0437],[0.5875,0.05],[0.625,0.0688],[0.6563,0.0688],[0.6875,0.1],[0.65,0.1375],[0.5563,0.15],[0.3937,0.1313],[0.3688,0.1187],[0.2875,0.125],[0.2562,0.1125],[0.2562,0.0938],[0.2938,0.075],[0.35,0.1],[0.375,0.0625],[0.4125,0.05]];
+
+// Ziel-PUNKTE fuer Leader-Striche (aus Masken getract: tools/trace_maskblobs.js). Normiert 0..1
+// aufs Stationsbild. KEINE Umrandung -> der Strich zeigt nur auf EINE Region (+ kleiner Zielpunkt).
+const LIVINGLIGHT_PT = [0.7950, 0.4686];  // masklivinglight.png — eine der Licht-Stellen (rechts)
+const WEIGHT_PT      = [0.8060, 0.7517];  // maskweight.png — groesste Region RECHTS (Ballast)
+const LIVING_PT      = [0.3144, 0.3794];  // maskilving.png  — eine der Wohn-Poren (links)
+
 // baut das Beschriftungs-SVG fuer das offene anno-Diagramm. Koordinaten werden relativ zum
 // Anker-Feature der Szene in Pixel gebacken (Szene 2: Bimsstein · water: Wasserlinie ·
 // atmosphere: Erd-Rand-Geometrie · sun: sunLayout); updateAnno() fuehrt die getrackte Gruppe
@@ -3569,26 +3787,28 @@ function buildAnnoSVG() {
     // Wasserlinie als Diagramm-Hilfslinie
     scr.push(aLine(24, WATERLINE_FRAC * H, W - 24, WATERLINE_FRAC * H, { dash: '10 8', stroke: 'rgba(154,147,127,0.35)' }));
     scr.push(aTxt(W - 26, WATERLINE_FRAC * H - 10, 'waterline', { anchor: 'end', fill: ANNO_DIM, size: 13 }));
-    // Solar Space (Oeffnung oben am Stein)
-    stn.push(aCircle(X(-0.08), Y(-0.82), r * 0.16));
+    // Solar Space: exakter Umriss aus der Maske (SOLAR_OUTLINE), auf Stein-Position/-Radius abgebildet.
+    // Ersetzt den frueheren symbolischen Kreis -> die Beschriftung sitzt jetzt an der echten Oeffnung.
+    const sr = st.img ? st.img.height / st.img.width : 1;
+    const solarPath = SOLAR_OUTLINE.map(([mu, mv], i) =>
+      `${i ? 'L' : 'M'} ${X((mu - 0.5) * 2)} ${Y((mv - 0.5) * 2 * sr)}`).join(' ') + ' Z';
+    stn.push(`<path d="${solarPath}" fill="none" stroke="${ANNO_GOLD}" stroke-width="1.6" stroke-linejoin="round"/>`);
     stn.push(aLine(X(0), Y(-1.22), X(-0.06), Y(-1.0)));
     stn.push(aTxt(X(0), Y(-1.34), ['solar space —', 'the only daylight room'], { anchor: 'middle', size: 16 }));
-    // gefundene Raeume (Poren)
-    stn.push(aCircle(X(-0.42), Y(-0.12), r * 0.10, { stroke: 'rgba(224,218,200,0.75)', w: 1 }));
-    stn.push(aCircle(X(-0.22), Y(0.10), r * 0.07, { stroke: 'rgba(224,218,200,0.75)', w: 1 }));
-    stn.push(aLine(LX(-1.32), Y(-0.18), X(-0.55), Y(-0.14)));
+    // Masken-Norm (0..1) -> Stein-relativ (u,v): u=(mu-0.5)*2, v=(mv-0.5)*2*sr
+    const M2 = P => [(P[0] - 0.5) * 2, (P[1] - 0.5) * 2 * sr];
+    const [livU, livV] = M2(LIVING_PT), [lgtU, lgtV] = M2(LIVINGLIGHT_PT), [wgtU, wgtV] = M2(WEIGHT_PT);
+    // gefundene Raeume -> Strich zeigt auf eine Wohn-Pore aus maskilving.png (keine Umrandung)
+    stn.push(aLine(LX(-1.32), Y(-0.18), X(livU), Y(livV)));
+    stn.push(aDot(X(livU), Y(livV), 2.6, ANNO_LIGHT));
     stn.push(aTxt(LX(-1.32), Y(-0.24), ['rooms are found', 'in the stone’s cavities'], { anchor: 'end', fill: ANNO_LIGHT }));
-    // lebendes Licht
-    stn.push(aDot(X(0.34), Y(-0.30), 3, ANNO_GOLD));
-    stn.push(aDot(X(0.45), Y(-0.22), 2.4, 'rgba(216,178,90,0.75)'));
-    stn.push(aDot(X(0.55), Y(-0.32), 2.8, ANNO_GOLD));
-    stn.push(aLine(RX(1.32), Y(-0.34), X(0.62), Y(-0.28)));
+    // lebendes Licht -> Strich zeigt auf eine Licht-Stelle aus masklivinglight.png (keine Umrandung)
+    stn.push(aLine(RX(1.32), Y(-0.34), X(lgtU), Y(lgtV)));
+    stn.push(aDot(X(lgtU), Y(lgtV), 3, ANNO_GOLD));
     stn.push(aTxt(RX(1.32), Y(-0.40), ['living light —', 'grown in the passages'], { anchor: 'start' }));
-    // Ballast / Schwerpunkt tief
-    stn.push(aCircle(X(0.12), Y(0.68), 7, { stroke: ANNO_LIGHT, w: 1.2 }));
-    stn.push(aLine(X(0.12) - 7, Y(0.68), X(0.12) + 7, Y(0.68), { stroke: ANNO_LIGHT, w: 1.2 }));
-    stn.push(aLine(X(0.12), Y(0.68) - 7, X(0.12), Y(0.68) + 7, { stroke: ANNO_LIGHT, w: 1.2 }));
-    stn.push(aLine(RX(1.32), Y(0.52), X(0.42), Y(0.62)));
+    // Ballast / Schwerpunkt tief -> Strich zeigt auf die groesste Region RECHTS aus maskweight.png (keine Umrandung)
+    stn.push(aLine(RX(1.32), Y(0.52), X(wgtU), Y(wgtV)));
+    stn.push(aDot(X(wgtU), Y(wgtV), 2.6, ANNO_LIGHT));
     stn.push(aTxt(RX(1.32), Y(0.46), ['ballast — the weight', 'sits deep'], { anchor: 'start', fill: ANNO_LIGHT }));
     // Atmen der Welt (Wellenlinie unten links)
     stn.push(`<path d="M ${LX(-1.32) - 220} ${Y(0.82)} q 14 -10 28 0 t 28 0 t 28 0" fill="none" stroke="rgba(154,147,127,0.7)" stroke-width="1.1"/>`);
@@ -3620,25 +3840,25 @@ function buildAnnoSVG() {
   }
 
   if (kind === 'living') {
-    // Raeume + Verzurrung (links)
-    stn.push(aCircle(X(-0.40), Y(-0.22), r * 0.10, { stroke: 'rgba(224,218,200,0.75)', w: 1 }));
-    stn.push(aLine(LX(-1.30), Y(-0.28), X(-0.52), Y(-0.24)));
+    const sr = st.img ? st.img.height / st.img.width : 1;
+    const M2 = P => [(P[0] - 0.5) * 2, (P[1] - 0.5) * 2 * sr];   // Masken-Norm (0..1) -> Stein-relativ (u,v)
+    const [livU, livV] = M2(LIVING_PT), [lgtU, lgtV] = M2(LIVINGLIGHT_PT), [wgtU, wgtV] = M2(WEIGHT_PT);
+    // Raeume (links) -> Strich zeigt auf eine Wohn-Pore aus maskilving.png (keine Umrandung)
+    stn.push(aLine(LX(-1.30), Y(-0.28), X(livU), Y(livV)));
+    stn.push(aDot(X(livU), Y(livV), 2.6, ANNO_LIGHT));
     stn.push(aTxt(LX(-1.30), Y(-0.34), 'rooms are found, not built', { anchor: 'end', fill: ANNO_LIGHT }));
     stn.push(aLine(LX(-1.30), Y(0.28), X(-0.55), Y(0.32)));
     stn.push(aTxt(LX(-1.30), Y(0.22), ['everything is tied down —', 'or it belongs to the sea'], { anchor: 'end', fill: ANNO_DIM }));
-    // gewachsenes Licht (rechts)
-    stn.push(aDot(X(0.36), Y(-0.12), 3, ANNO_GOLD));
-    stn.push(aDot(X(0.48), Y(-0.05), 2.4, 'rgba(216,178,90,0.75)'));
-    stn.push(aDot(X(0.58), Y(-0.15), 2.8, ANNO_GOLD));
-    stn.push(aLine(RX(1.30), Y(-0.16), X(0.65), Y(-0.10)));
+    // gewachsenes Licht (rechts) -> Strich zeigt auf eine Licht-Stelle aus masklivinglight.png (keine Umrandung)
+    stn.push(aLine(RX(1.30), Y(-0.16), X(lgtU), Y(lgtV)));
+    stn.push(aDot(X(lgtU), Y(lgtV), 3, ANNO_GOLD));
     stn.push(aTxt(RX(1.30), Y(-0.22), ['the light is grown', 'on the walls'], { anchor: 'start' }));
-    // Sway: Roll-Boegen ueber dem Stein + Schwerpunkt
+    // Sway: Roll-Boegen ueber dem Stein
     stn.push(`<path d="M ${X(-0.95)} ${Y(-1.05)} A ${r} ${r} 0 0 1 ${X(-0.55)} ${Y(-1.28)}" fill="none" stroke="rgba(154,147,127,0.7)" stroke-width="1.1"/>`);
     stn.push(`<path d="M ${X(0.55)} ${Y(-1.28)} A ${r} ${r} 0 0 1 ${X(0.95)} ${Y(-1.05)}" fill="none" stroke="rgba(154,147,127,0.7)" stroke-width="1.1"/>`);
-    stn.push(aCircle(X(0.05), Y(0.70), 7, { stroke: ANNO_LIGHT, w: 1.2 }));
-    stn.push(aLine(X(0.05) - 7, Y(0.70), X(0.05) + 7, Y(0.70), { stroke: ANNO_LIGHT, w: 1.2 }));
-    stn.push(aLine(X(0.05), Y(0.70) - 7, X(0.05), Y(0.70) + 7, { stroke: ANNO_LIGHT, w: 1.2 }));
-    stn.push(aLine(RX(1.30), Y(0.56), X(0.35), Y(0.66)));
+    // Ballast -> Strich zeigt auf die groesste Region RECHTS aus maskweight.png (keine Umrandung)
+    stn.push(aLine(RX(1.30), Y(0.56), X(wgtU), Y(wgtV)));
+    stn.push(aDot(X(wgtU), Y(wgtV), 2.6, ANNO_LIGHT));
     stn.push(aTxt(RX(1.30), Y(0.50), ['ballast low — the roll', 'stays slow and shallow'], { anchor: 'start', fill: ANNO_LIGHT }));
     // (die vier Sinne stehen im Kurztext unten — kein eigenes Label, sonst kollidiert es dort)
   }

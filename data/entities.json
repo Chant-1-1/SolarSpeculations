@@ -58,18 +58,22 @@
       "id": "station",
       "scene": "scene2",
       "variants": "assets/images/entities/scene2/station/",
+      "waterMask": "assets/images/entities/scene2/station/station1maskewasser.png",
       "interactive": false,
       "placeholder": "island",
       "zoomAnchor": true,
       "layer": 1,
       "label": "",
       "path": [
-        { "x": 0.5, "y": 0.56 }
+        { "x": 0.5, "y": 0.48 }
       ],
       "loop": "loop",
       "speed": 0.0,
-      "scale": 0.31,
+      "scale": 0.23,
       "bob": 0.006,
+      "rock": 0.03,
+      "rockSpeed": 0.5,
+      "rockPivot": 0.3,
       "opacity": 1.0
     },
 
