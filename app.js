@@ -3760,6 +3760,15 @@ let annoBuilt = null;   // Zustand der letzten SVG-Erzeugung {x,y,r,w,h} -> Rebu
 // 0 = nichts, 1 = Kurztext, 2 = +smog, 3 = +ozon, 4 = +magnetfeld. Erst danach schliesst der Klick.
 let annoStep = 0;
 const ATMO_ANNO_STEPS = 4;
+// Water-Diagramm gestuft wie die Atmosphaere: Klick 1 = Kurztext unten + Wasser steigt,
+// dann je Klick ein Label (living band -> old mountains -> cold deep). 1 + 3 = 4 Schritte.
+const WATER_ANNO_STEPS = 4;
+// Gesamt-Schritte eines gestuften Diagramms (0 = nicht gestuft -> Klick schliesst sofort).
+function annoStepsFor(kind) {
+  if (kind === 'atmosphere') return ATMO_ANNO_STEPS;
+  if (kind === 'water') return WATER_ANNO_STEPS;
+  return 0;
+}
 
 function annoStationEnt() { return allEntities.find(e => e.def.id === 'station' && e.def.scene === 'scene2'); }
 
@@ -3774,9 +3783,11 @@ function openAnno(ent) {
   annoEntity = ent;
   annoStep = 0;                          // gestufte Enthuellung von vorn beginnen
   ent.visited = true;
-  if (ent.def.action === 'seaLevelRise') sectionSeaRiseActive = true;   // hs_water: Anstieg starten
-  // Atmosphaere: der Kurztext unten erscheint erst mit dem ersten Klick (Schritt 1), nicht schon beim Oeffnen.
-  const stepped = ent.def.anno === 'atmosphere';
+  // Atmosphaere & Water sind gestuft: der Kurztext unten erscheint erst mit dem ersten Klick (Schritt 1).
+  const stepped = annoStepsFor(ent.def.anno) > 0;
+  // Water: beim Oeffnen trocken zeigen; der Anstieg startet erst mit Klick 1 (in onAnnoClick), nicht schon hier.
+  if (ent.def.anno === 'water') { sectionSeaRise = 0; sectionSeaRiseActive = false; }
+  else if (ent.def.action === 'seaLevelRise') sectionSeaRiseActive = true;   // (nicht-gestufter Fall: sofort)
   const cap = document.getElementById('anno-caption');
   cap.style.fontSize = '20px';   // Kurztext unten in ALLEN Szenen gleich gross wie in der Atmosphaere (~3 Stufen groesser als CSS-Default)
   cap.style.opacity = '';                        // evtl. Rest-Opacity vom Einblenden zuruecksetzen
@@ -3795,7 +3806,8 @@ function openAnno(ent) {
 function updateAnnoHint() {
   const hint = document.querySelector('#anno .hint');
   if (!hint) return;
-  const more = annoEntity && annoEntity.def.anno === 'atmosphere' && annoStep < ATMO_ANNO_STEPS;
+  const steps = annoStepsFor(annoEntity && annoEntity.def.anno);
+  const more = steps > 0 && annoStep < steps;
   hint.textContent = more ? 'click to continue' : 'click to return';
 }
 
@@ -3813,16 +3825,20 @@ function fadeInAnno(el, dur = 1.50) {
 // Klick im Atmosphaeren-Diagramm: enthuellt den naechsten Text (langsam eingeblendet, 0.75s); erst
 // nach dem letzten Schritt schliesst der Klick. Alle anderen Diagramm-Arten schliessen sofort (unveraendert).
 function onAnnoClick() {
-  if (annoEntity && annoEntity.def.anno === 'atmosphere' && annoStep < ATMO_ANNO_STEPS) {
+  const kind = annoEntity && annoEntity.def.anno;
+  const steps = annoStepsFor(kind);
+  if (annoEntity && steps > 0 && annoStep < steps) {
     annoStep++;
-    if (annoStep === 1) {   // grosser Kurztext unten erscheint (einmalig) -> sanft einblenden
+    if (annoStep === 1) {   // Schritt 1: grosser Kurztext unten erscheint (einmalig) -> sanft einblenden
       const cap = document.getElementById('anno-caption');
       cap.textContent = (annoEntity.def.content && annoEntity.def.content.body) || '';
       fadeInAnno(cap);
+      // Water: mit dem ersten Klick beginnt der Meeresspiegel zu steigen.
+      if (kind === 'water' && annoEntity.def.action === 'seaLevelRise') sectionSeaRiseActive = true;
     }
     updateAnnoHint();
     buildAnnoSVG();
-    if (annoStep >= 2) fadeInAnno(document.getElementById('anno-newnode'));   // neuer Stichpunkt blendet langsam ein
+    if (annoStep >= 2) fadeInAnno(document.getElementById('anno-newnode'));   // neuer Stichpunkt/Label blendet langsam ein
     return;
   }
   closePanel();
@@ -4012,11 +4028,21 @@ function buildAnnoSVG() {
     const wl = sectionWaterlineNow();
     annoBuilt.wl = wl;
     const wy = wl * H;
-    stn.push(aLine(24, wy, W - 24, wy, { dash: '10 8', stroke: 'rgba(216,178,90,0.45)' }));
-    stn.push(aTxt(W - 36, wy + 66, ['the living band —', 'warmed above, shielded from the light'], { anchor: 'end', fill: ANNO_GOLD }));
-    scr.push(aTxt(Math.max(W * 0.10, 340), H * 0.36, ['the old mountains —', 'bearly reaches the surface'], { anchor: 'end', fill: ANNO_LIGHT }));
-    scr.push(aLine(Math.max(W * 0.10, 340) - 60, H * 0.36 + 34, W * 0.31, H * 0.66));   // -> Berggipfel
-    scr.push(aTxt(W - 36, H * 0.80, 'the cold deep — dark and dangerous', { anchor: 'end', fill: ANNO_DIM }));
+    // Gestuft wie die Atmosphaere: Schritt 1 = Kurztext unten + Wasser steigt (gestrichelte Wasserlinie erscheint);
+    // ab Schritt 2 erscheinen die Label nacheinander (Oberflaeche -> Tiefe); das neueste blendet sanft ein (0.75s+).
+    const shown = Math.max(0, annoStep - 1);   // Anzahl sichtbarer Label (0..3)
+    if (annoStep >= 1) stn.push(aLine(24, wy, W - 24, wy, { dash: '10 8', stroke: 'rgba(216,178,90,0.45)' }));
+    // Label in Enthuellungs-Reihenfolge; 'stn' folgt der steigenden Wasserlinie, 'scr' ist bildfest.
+    const labels = [
+      { group: 'stn', svg: aTxt(W - 36, wy + 66, ['the living band —', 'warmed above, shielded from the light'], { anchor: 'end', fill: ANNO_GOLD }) },
+      { group: 'scr', svg: aTxt(Math.max(W * 0.10, 340), H * 0.36, ['the old mountains —', 'bearly reaches the surface'], { anchor: 'end', fill: ANNO_LIGHT })
+                          + aLine(Math.max(W * 0.10, 340) - 60, H * 0.36 + 34, W * 0.31, H * 0.66) },   // -> Berggipfel
+      { group: 'scr', svg: aTxt(W - 36, H * 0.80, 'the cold deep — dark and dangerous', { anchor: 'end', fill: ANNO_DIM }) }
+    ];
+    for (let i = 0; i < labels.length && i < shown; i++) {
+      const html = (i === shown - 1) ? `<g id="anno-newnode">${labels[i].svg}</g>` : labels[i].svg;   // neuestes Label -> sanftes Einblenden
+      (labels[i].group === 'stn' ? stn : scr).push(html);
+    }
   }
 
   // ===== SUN: beschriftet die grosse Sonnenscheibe (gleiche Geometrie wie drawVizSun: sunLayout) =====
