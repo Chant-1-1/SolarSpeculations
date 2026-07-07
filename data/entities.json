@@ -97,13 +97,13 @@
     },
     {
       "id": "hs_wildlife",
-      "scene": "scene2",
+      "scene": "wildlife",
       "hotspot": true,
       "interactive": true,
       "anno": "wildlife",
       "layer": 1.2,
       "label": "Wildlife",
-      "path": [ { "x": 0.82, "y": 0.42 } ],
+      "path": [ { "x": 0.5, "y": 0.5 } ],
       "loop": "loop", "speed": 0.0, "scale": 0.05, "bob": 0.0, "opacity": 1.0,
       "content": {
         "title": "Wildlife",

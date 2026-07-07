@@ -1334,6 +1334,7 @@ uniform vec2  uLightDir;     // Richtung ZUM Licht (uv-Raum, y nach oben)
 uniform vec3  uLightColor;   // warm-weiss/gold (gefilterte Sonne)
 uniform float uSnow;         // Marine-Snow-Staerke (0 = aus)
 uniform float uCaustics;     // Kaustik-Staerke (0 = aus)
+uniform float uSurface;      // 1 = mit Himmel+Oberflaechenband (Standard), 0 = reines Unterwasser (keine sichtbare Wasserlinie)
 ` + GLSL_NOISE + `
 // ---------- Oberflaeche: exp(sin)-Wellen (Technik: "Seascape", TDM / Ms2SD1) ----------
 // Edge-on (1D): Summe weniger exp(sin)-Terme schaerft die Kaemme; leicht rauschmoduliert
@@ -1420,7 +1421,8 @@ void main(){
   // Kante trotz halber Buffer-Aufloesung; ersetzt den harten if(d>0)-Sprung (war "pixelig").
   float aa = 2.5 / uResolution.y;
   float below = smoothstep(-aa, aa, -d);                 // 0 = Himmel, 1 = Wasser
-  vec3 col = mix(skyCol, waterCol, below);
+  // uSurface=0 -> reines Unterwasser: ueberall Wasser (kein Himmel, keine sichtbare Wasserlinie)
+  vec3 col = mix(skyCol, waterCol, mix(1.0, below, uSurface));
 
   // ===== Unterwasser-Lichteffekte: nur unter Wasser, weich ueber 'below' eingeblendet =====
   if(d < aa){
@@ -1451,13 +1453,13 @@ void main(){
   // gedaempfte Smog-Reflexion knapp unter der Oberflaeche; 'below' (weich) statt hartem step
   float band = exp(-pow(max(0.0, -d) / 0.040, 2.0)) * below;
   vec3 reflCol = vec3(0.74, 0.70, 0.58);                // gedaempfte Smog-Reflexion (dunkler)
-  col = mix(col, reflCol, band * 0.10);
+  col = mix(col, reflCol, band * 0.10 * uSurface);
   // vereinzelte, wandernde Glanzreflexe: nur die Rauschspitzen (hohe Schwelle) -> selten, verstreut
   float gz = vnoise(vec2(xw*15.0 - t*0.5, t*0.55));
   float spark = smoothstep(0.86, 0.99, gz);
   spark *= spark;                                       // schaerfer -> wirklich vereinzelt
   float sparkMask = exp(-pow(d / 0.014, 2.0));          // schmales Band um die Oberflaeche
-  col += uLightColor * (line * 0.07 + spark * sparkMask * 0.75);
+  col += uLightColor * (line * 0.07 + spark * sparkMask * 0.75) * uSurface;   // Oberflaechen-Linie/Glanz nur mit Oberflaeche
 
   // sanfte Tiefen-/Rand-Vignette (zieht den Blick in die Tiefe)
   float vig = smoothstep(1.15, 0.25, length((uv - vec2(0.5, surfaceY)) * vec2(aspect*0.7, 1.0)));
@@ -1493,7 +1495,7 @@ function ensureWaterBuffer() {
 // vorliegt. So kann derselbe Buffer mehrfach pro Frame mit verschiedener Wasserlinie erzeugt und
 // unterschiedlich weiterverwendet werden (Vollbild-Himmel/Wasser vs. Sampling fuer den Kanal in
 // Scene 3). Bei reduced-motion/Shader-Fehler -> false (Aufrufer nimmt seinen 2D-Fallback).
-function renderWaterBuffer(waterlineFrac = WATERLINE_FRAC) {
+function renderWaterBuffer(waterlineFrac = WATERLINE_FRAC, surface = 1) {
   if (waterReduceMotion || waterShaderFailed || PERF_FLAT) return false;
   ensureWaterBuffer();
   if (!waterBuf || !waterShader) return false;
@@ -1509,6 +1511,7 @@ function renderWaterBuffer(waterlineFrac = WATERLINE_FRAC) {
     waterShader.setUniform('uLightColor', WATER_LIGHTCOL);
     waterShader.setUniform('uSnow', SNOW_AMOUNT);
     waterShader.setUniform('uCaustics', CAUSTICS_AMOUNT);
+    waterShader.setUniform('uSurface', surface);   // 0 = reines Unterwasser (keine sichtbare Wasserlinie/Kante)
     g.plane(g.width + 2, g.height + 2);                  // Vollbild-Quad (kleiner Overscan gegen Randnaht)
     g.resetShader();
     // einmalige Sicht-Pruefung: rendert der Shader gar nichts (stiller Compile-Fehler) -> Fallback
@@ -1526,8 +1529,8 @@ function renderWaterBuffer(waterlineFrac = WATERLINE_FRAC) {
     return false;
   }
 }
-function drawWater(alpha = 1, waterlineFrac = WATERLINE_FRAC) {
-  if (!renderWaterBuffer(waterlineFrac)) { drawUnderwater(alpha, waterlineFrac); return; }
+function drawWater(alpha = 1, waterlineFrac = WATERLINE_FRAC, surface = 1) {
+  if (!renderWaterBuffer(waterlineFrac, surface)) { drawUnderwater(alpha, waterlineFrac); return; }
   blitBufferFull(waterBuf, alpha);                       // reduzierte Aufloesung hochskaliert
 }
 
@@ -3048,17 +3051,22 @@ function drawHotspotMarker(ent, sz, alpha, hover) {
 let VIZ_SUN_CORONA = 1.0;    // Staerke von Korona/Strahlenkranz der Sonne
 let VIZ_SUN_GRAN = 1.0;      // Staerke der Granulation (Oberflaechen-Koernung)
 let VIZ_CAPTION = 1.0;       // Deckkraft der kleinen Bild-Ueberschrift je Viz (0 = aus)
+let WILD_STONE_FRAC = 0.38;  // Wildlife-Nahaufnahme (Fallback ohne Bild): Unterkante des Algen-Steins (= Wasserlinie), Bruchteil der Hoehe
+let WILD_IMG_WATERLINE = 0.31;  // mit eigenem Stein-PNG (oben verankert, volle Breite): Wasserlinie als Bruchteil der BILDhoehe -> knapp unter der Stein-Unterkante (nur fuer Tier-/Stein-Positionierung, NICHT fuer die Wasser-Oberflaeche)
+let WILD_WATER_WL = 0.12;       // Shader-Wasserlinie der Nahaufnahme: knapp UNTER dem oberen Rand -> Oberflaeche liegt hinter dem Stein (keine sichtbare Kante), Wasser darunter bleibt heller/tealer (kleiner = tiefer/dunkler, groesser = heller/riskiert die Kante)
 
 // Menue der Viz-Marker je Elternszene. anchor bestimmt die Marker-Position:
 //   'globe' rel. zur Weltkugel (ox/oy in Radien) · 'sun' auf der Sonnenposition ·
-//   'screen' feste Bildkoords (sx/sy in 0..1). label = Marker-Text. id = Ziel-Szene.
-// Szene 2 hat KEINE Marker mehr: Station/Wildlife/Living sind dort jetzt normale Hotspot-
-// Entities (hs_station/hs_wildlife/hs_living in entities.json), die den Reader oeffnen.
-// Die Viz-Unterszenen station_cut/habitat/wildlife bleiben definiert, sind aber unverlinkt.
+//   'station' rel. zur Station in Szene 2 (ox/oy in Stein-Radien) · 'screen' feste Bildkoords (sx/sy in 0..1).
+//   label = Marker-Text. id = Ziel-Szene.
+// Szene 2: Station/Living sind normale Hotspot-Entities (Reader). Wildlife dagegen ist eine eigene
+// Nahaufnahme-Unterszene (wie water/sun aus Szene 1) -> eigener Marker an der Stations-Unterkante,
+// Klick zoomt hinein und oeffnet das Wildlife-Diagramm automatisch.
 const VIZ_MENU = [
   { id: 'atmosphere',  parent: 'scene1', label: 'Atmosphere',  anchor: 'globe',  ox: 0.0,  oy: -RIM_MARK_K },
   { id: 'water',       parent: 'scene1', label: 'Water',       anchor: 'globe',  ox: 0.42, oy: 0.40 },
-  { id: 'sun',         parent: 'scene1', label: 'The sun',     anchor: 'sun' }
+  { id: 'sun',         parent: 'scene1', label: 'The sun',     anchor: 'sun' },
+  { id: 'wildlife',    parent: 'scene2', label: 'Wildlife',    anchor: 'station', ox: 0.0, oy: 0.88 }
 ];
 
 function sceneIndexById(id) { return scenes.findIndex(s => s && s.id === id); }
@@ -3074,6 +3082,11 @@ function vizMarkerPos(v) {
   if (v.anchor === 'sun') {
     const mm = Math.min(W, H), sa = sunOrbitAngle();
     return { x: W / 2 + Math.cos(sa) * SUN_ORBIT_R * mm, y: H / 2 - Math.sin(sa) * SUN_ORBIT_R * mm };
+  }
+  if (v.anchor === 'station') {   // an der echten Station (Szene 2) verankert -> Marker sitzt an ihrer Unterkante
+    const st = annoStationEnt();
+    if (!st || !(st.radius > 0)) return null;
+    return { x: st.pos.x + (v.ox || 0) * st.radius, y: st.pos.y + (v.oy || 0) * st.radius };
   }
   return { x: (v.sx != null ? v.sx : 0.5) * W, y: (v.sy != null ? v.sy : 0.5) * H };
 }
@@ -3530,52 +3543,171 @@ function drawVizLiving(alpha, hasImg = false) {
   ctx.globalAlpha = 1; pop();
 }
 
-// ---- WILDLIFE: Tiefen-Querschnitt (Baender) mit Fauna: Schwarm + Qualle + Anglerfisch + Biolum. ----
-// hasImg = eigenes Szenen-Bild vorhanden -> nur Tiefen-Verlauf+Caption, Fauna kommt als Bild-Entity.
+// ---- WILDLIFE (Nahaufnahme): Zoom auf die Stations-Unterkante — oben ein Stueck algenbewachsener
+// Stein (echter unterer Stations-Ausschnitt), darunter Wasser; ein Seeteufel schwebt auf der Stelle,
+// ein Wal driftet blass durch die Tiefe, ein Fischschwarm steht in der Bandzone. Der grosse Kurztext
+// unten kommt (wie ueberall) aus dem anno-Diagramm (#anno-caption). hasImg ungenutzt.
 function drawVizWildlife(alpha, hasImg = false) {
   const W = width, H = height, ctx = drawingContext, t = millis() * 0.001, mm = Math.min(W, H);
+  // Wasserlinie (rimY): mit eigenem Stein-PNG aus dessen Algen-Kante abgeleitet (Bild oben verankert,
+  // volle Breite -> Hoehe imgDh); sonst fester Bruchteil der Bildhoehe.
+  const stoneImg = wildStoneImg();
+  let rimY, imgDh = 0;
+  if (stoneImg && stoneImg.width) { imgDh = W * (stoneImg.height / stoneImg.width); rimY = Math.round(imgDh * WILD_IMG_WATERLINE); }
+  else { rimY = Math.round(H * WILD_STONE_FRAC); }
   push(); ctx.globalAlpha = alpha;
 
-  // 1) Tiefen-Verlauf: gold (Oberflaeche) -> teal (Bandzone) -> dunkel (Tiefe)
-  const g = ctx.createLinearGradient(0, 0, 0, H);
-  g.addColorStop(0.00, '#b98a2e'); g.addColorStop(0.11, '#556a3e');
-  g.addColorStop(0.26, '#136b6b'); g.addColorStop(0.55, '#0c3a4a'); g.addColorStop(0.78, '#08202e'); g.addColorStop(1.00, '#020a12');
-  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
-  // toedliches Oberflaechen-Schimmern
-  push(); ctx.globalCompositeOperation = 'lighter';
-  for (let i = 0; i < 5; i++) { const y = H * (0.02 + i * 0.02); stroke(255, 220, 120, 15); strokeWeight(1); line(0, y, W, y); }
-  pop();
+  // 1) Wasser wie in Szene 2 (organism), aber als REINES UNTERWASSER (surface=0): derselbe Shader
+  //    (Tiefen-Verlauf, God-Rays, Kaustik, Marine-Snow) OHNE sichtbare Oberflaechen-/Horizontlinie —
+  //    wir schauen ja unter Wasser auf den Stein. Der Shader fuellt den ganzen Frame mit Wasser.
+  //    globalAlpha kurz auf 1, weil drawWater seinen eigenen Crossfade-Alpha mitbringt.
+  ctx.globalAlpha = 1;
+  drawWater(alpha, WILD_WATER_WL, 0);
+  ctx.globalAlpha = alpha;
 
-  if (!hasImg) {   // eigenes Bild vorhanden -> prozedurale Fauna (Schwarm/Qualle/Angler/Biolum) weglassen
-  // 2) Bandzone: Fischschwarm (Silhouetten-Punkte, sanft schwankend) um (0.40, 0.40)
-  if (!drawVizWildlife._fish) {
-    const f = [];
-    for (let i = 0; i < 44; i++) { const gx = Math.random() + Math.random() - 1, gy = Math.random() + Math.random() - 1; f.push({ ox: gx * 0.11, oy: gy * 0.06, ph: Math.random() * TWO_PI, s: 0.6 + Math.random() * 0.7 }); }
-    drawVizWildlife._fish = f;
-  }
-  noStroke();
-  const fcx = 0.40 * W + Math.sin(t * 0.3) * W * 0.02, fcy = 0.40 * H;
-  for (const f of drawVizWildlife._fish) {
-    const x = fcx + f.ox * W + Math.sin(t * 0.8 + f.ph) * mm * 0.01, y = fcy + f.oy * H + Math.cos(t * 0.7 + f.ph) * mm * 0.008;
-    fill(12, 22, 26, 200); ellipse(x, y, f.s * mm * 0.011, f.s * mm * 0.005);
-  }
-  // Qualle (Glocke + Tentakel) um (0.60, 0.42)
-  drawJelly(ctx, W * 0.60, H * 0.42, mm * 0.05, t);
-
-  // 3) Tiefe: Anglerfisch mit Leuchtkoeder (0.66, 0.70) + biolumineszente Punkte
-  drawAngler(ctx, W * 0.66, H * 0.70, mm * 0.06, t);
-  push(); ctx.globalCompositeOperation = 'lighter'; noStroke();
-  if (!drawVizWildlife._biolum) {
-    const b = [];
-    for (let i = 0; i < 22; i++) b.push({ x: Math.random(), y: 0.6 + Math.random() * 0.38, ph: Math.random() * 6.28, s: 1 + Math.random() * 2 });
-    drawVizWildlife._biolum = b;
-  }
-  for (const b of drawVizWildlife._biolum) { fill(90, 225, 150, 70 * Math.max(0, 0.4 + 0.6 * Math.sin(t * 0.9 + b.ph))); ellipse(b.x * W, b.y * H, b.s * 3.4); }
-  pop();
-  }   // Ende !hasImg (prozedurale Fauna)
+  drawWildWhale(ctx, W, H, mm, t, alpha, rimY);   // Wal (blass, tief, driftet) — hinter dem Schwarm
+  drawWildSchool(ctx, W, H, mm, t, alpha, rimY);  // Fischschwarm in der Bandzone
+  drawWildDevil(ctx, W, H, mm, t, alpha, rimY);   // Seeteufel auf der Stelle, Leuchtkoeder
+  drawWildStoneRim(ctx, W, H, t, alpha, rimY, mm, stoneImg, imgDh); // Algen-Stein als oberer Rand (Bild oben verankert / Fallback-Ausschnitt)
 
   drawVizCaption('WILDLIFE', 'life pressed into a narrow band');
   ctx.globalAlpha = 1; pop();
+}
+
+// Eigenes Stein-PNG (Stations-Unterteil + Algen, transparenter Rest) einmalig lazy laden. Mehrere
+// moegliche Namen im wildlife-Ordner; null bis geladen/fehlend. Von drawVizWildlife + drawWildStoneRim genutzt.
+function wildStoneImg() {
+  if (wildStoneImg._img === undefined) {
+    wildStoneImg._img = null;
+    const cands = [
+      'assets/images/entities/wildlife/wildlife/solarstationv2.png',
+      'assets/images/entities/wildlife/wildlife/wildlife1.png',
+      'assets/images/entities/wildlife/wildlife/wildlife1.webp'
+    ];
+    (function tryNext(i) {
+      if (i >= cands.length) return;
+      loadImage(cands[i], im => { wildStoneImg._img = im; }, () => tryNext(i + 1));
+    })(0);
+  }
+  return wildStoneImg._img;
+}
+
+// oberer Rand der Wildlife-Nahaufnahme: ein Stueck algenbewachsener Stein. Bevorzugt das eigene PNG
+// (bereits freigestellt: Stein+Algen oben, darunter transparent) — OBEN verankert, volle Breite; die
+// transparente Flaeche darunter gibt das Wasser frei, die Algen-Kante ist die Wasserlinie. Faellt sonst
+// auf einen Streifen aus dem Live-Stationssprite zurueck (mit prozeduralen Algen-Fransen).
+function drawWildStoneRim(ctx, W, H, t, alpha, rimY, mm, userImg, imgDh) {
+  ctx.save();
+
+  if (userImg && userImg.width) {
+    // KEINE dunkle Basis mehr noetig: das Wasser (surface=0) fuellt den ganzen Frame, also scheint durch
+    // transparente Stein-/Algenstellen ueberall echtes Shader-Wasser durch. Bild oben verankert, volle Breite.
+    push(); imageMode(CORNER); tint(255, 255, 255, 255);
+    image(userImg, 0, 0, W, imgDh);   // oben verankert; Transparenz unterhalb -> Wasser scheint durch
+    pop();
+    ctx.restore();
+    return;
+  }
+
+  ctx.fillStyle = '#1c1712'; ctx.fillRect(0, 0, W, rimY);           // dunkle Basis (deckt Luecken/transparente Ecken)
+  // ---- Fallback (kein Nutzer-Bild): unteren, mittigen Streifen des Live-Stationssprites hochziehen ----
+  const st = allEntities.find(e => e.def.id === 'station' && e.def.scene === 'scene2');
+  const img = st && ((st.variants && st.variants[0]) || st.img);
+  if (img && img.width) {
+    const iw = img.width, ih = img.height;
+    const sx = iw * 0.08, sw = iw * 0.84;     // mittiger Querstreifen (Stein am breitesten)
+    const sy = ih * 0.46, sh = ih * 0.30;     // unterer Bereich mit Algen
+    push(); imageMode(CORNER); tint(255, 255, 255, 255);
+    image(img, 0, -rimY * 0.18, W, rimY * 1.18, sx, sy, sw, sh);   // leicht ueber die Kante -> nasse Unterkante
+    pop();
+  }
+  // Stein wird zur Wasserlinie hin dunkler/nass
+  const sg = ctx.createLinearGradient(0, rimY * 0.45, 0, rimY);
+  sg.addColorStop(0, 'rgba(6,16,16,0)'); sg.addColorStop(1, 'rgba(4,18,20,0.6)');
+  ctx.fillStyle = sg; ctx.fillRect(0, rimY * 0.45, W, rimY * 0.55);
+  // Algen-Fransen entlang der Unterkante (gruene Tupfer, deterministisch gecacht, sanft wehend)
+  if (!drawWildStoneRim._alg) {
+    const a = [];
+    for (let i = 0; i < 90; i++) a.push({ x: Math.random(), d: Math.random(), s: 0.5 + Math.random() * 1.4, ph: Math.random() * 6.2831853, hue: Math.random() });
+    drawWildStoneRim._alg = a;
+  }
+  for (const a of drawWildStoneRim._alg) {
+    const x = a.x * W + Math.sin(t * 0.9 + a.ph) * 3, y = rimY - 4 + a.d * 14;
+    ctx.fillStyle = `rgba(${Math.round(58 + a.hue * 44)},${Math.round(150 + a.hue * 60)},${Math.round(70 + a.hue * 34)},0.7)`;
+    ctx.beginPath(); ctx.ellipse(x, y, a.s * mm * 0.004, a.s * mm * 0.010, 0, 0, 6.2831853); ctx.fill();
+  }
+  // Wasserlinie-Schimmer direkt unter dem Stein
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  ctx.fillStyle = 'rgba(150,220,190,0.14)'; ctx.fillRect(0, rimY - 1, W, 2);
+  ctx.restore();
+  ctx.restore();
+}
+
+// Fischschwarm: schwarze Silhouetten (Koerper + Schwanz), steht in der Bandzone und schwankt sanft.
+function drawWildSchool(ctx, W, H, mm, t, alpha, rimY) {
+  if (!drawWildSchool._fish) {
+    const f = [];
+    for (let i = 0; i < 64; i++) {
+      const gx = Math.random() + Math.random() - 1, gy = Math.random() + Math.random() - 1;
+      f.push({ ox: gx * 0.15, oy: gy * 0.055, ph: Math.random() * 6.2831853, s: 0.6 + Math.random() * 0.7 });
+    }
+    drawWildSchool._fish = f;
+  }
+  const cx = 0.38 * W + Math.sin(t * 0.22) * W * 0.05;
+  const cy = rimY + (H - rimY) * 0.32 + Math.sin(t * 0.35) * H * 0.015;
+  ctx.save(); ctx.fillStyle = 'rgba(9,18,22,0.85)';
+  for (const f of drawWildSchool._fish) {
+    const x = cx + f.ox * W + Math.sin(t * 0.9 + f.ph) * mm * 0.012;
+    const y = cy + f.oy * H + Math.cos(t * 0.8 + f.ph) * mm * 0.009;
+    const bl = f.s * mm * 0.011;
+    ctx.beginPath(); ctx.ellipse(x, y, bl, bl * 0.42, 0, 0, 6.2831853); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(x + bl * 0.85, y); ctx.lineTo(x + bl * 1.5, y - bl * 0.4); ctx.lineTo(x + bl * 1.5, y + bl * 0.4); ctx.closePath(); ctx.fill();
+  }
+  ctx.restore();
+}
+
+// Wal: echtes Sprite (whale/…), gross, blass, driftet langsam nach rechts durch die tiefe Zone.
+function drawWildWhale(ctx, W, H, mm, t, alpha, rimY) {
+  const wh = allEntities.find(e => e.def.id === 'whale');
+  const img = wh && ((wh.variants && wh.variants[0]) || wh.img);
+  if (!(img && img.width)) return;
+  const period = 42;                       // s fuer eine Durchquerung
+  const p = (t % period) / period;
+  const x = (-0.25 + p * 1.5) * W;         // von links (-0.25W) nach rechts (1.25W)
+  const y = rimY + (H - rimY) * 0.62 + Math.sin(t * 0.15) * H * 0.012;
+  const w = mm * 0.62, h = w * (img.height / img.width);
+  push(); imageMode(CENTER); translate(x, y); scale(-1, 1);   // Kunst zeigt nach links -> Drift nach rechts spiegeln
+  tint(150, 180, 190, 95);                 // blass + kuehl = tief/fern
+  image(img, 0, 0, w, h);
+  pop();
+}
+
+// Seeteufel: echtes Sprite (sea_devil/…​), bleibt auf der Stelle (leichtes Schweben); Leuchtkoeder als
+// additiver, pulsierender Glow (Position grob am Kopf -> robust ohne Pixel-Lesung im WEBGL-Renderer).
+function drawWildDevil(ctx, W, H, mm, t, alpha, rimY) {
+  const dv = allEntities.find(e => e.def.scene === 'scene2' && e.def.variants && /sea_devil/.test(e.def.variants));
+  const img = dv && ((dv.variants && dv.variants[0]) || dv.img);
+  const x = 0.64 * W + Math.sin(t * 0.5) * W * 0.006;
+  const y = rimY + (H - rimY) * 0.30 + Math.cos(t * 0.4) * H * 0.010;
+  const w = mm * 0.17, h = img && img.width ? w * (img.height / img.width) : w;
+  if (img && img.width) {
+    push(); imageMode(CENTER); translate(x, y); tint(255, 255, 255, 255); image(img, 0, 0, w, h); pop();
+  } else {
+    drawAngler(ctx, x, y, mm * 0.06, t);   // Fallback: prozedurale Silhouette
+  }
+  // Leuchtkoeder (Esca): additiver Glow vorne-oben am Kopf (Sprite zeigt nach links)
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  const lx = x - w * 0.40, ly = y - h * 0.34;
+  const b = Math.max(0.15, Math.min(1, 0.55 + 0.35 * Math.sin(t * 2.1) + 0.10 * Math.sin(t * 9.0)));
+  const r = w * 0.30;
+  const grad = ctx.createRadialGradient(lx, ly, 0, lx, ly, r);
+  grad.addColorStop(0.0, 'rgba(210,255,225,' + (0.85 * b).toFixed(3) + ')');
+  grad.addColorStop(0.4, 'rgba(140,240,180,' + (0.40 * b).toFixed(3) + ')');
+  grad.addColorStop(1.0, 'rgba(110,230,160,0)');
+  ctx.fillStyle = grad; ctx.beginPath(); ctx.arc(lx, ly, r, 0, 6.2831853); ctx.fill();
+  ctx.fillStyle = 'rgba(240,255,240,' + (0.9 * b).toFixed(3) + ')';
+  ctx.beginPath(); ctx.arc(lx, ly, r * 0.16, 0, 6.2831853); ctx.fill();
+  ctx.restore();
 }
 
 // Qualle: durchscheinende Glocke + wehende Tentakel (rohes Canvas, additiv-weich).
@@ -3897,7 +4029,8 @@ function buildAnnoSVG() {
   const scr = [], stn = [];
 
   // ===== Szene-2-Familie: am Bimsstein verankert (Einheit = Stein-Radius, Ursprung = Mitte) =====
-  if (kind === 'station' || kind === 'wildlife' || kind === 'living') {
+  // (wildlife NICHT mehr hier — das ist jetzt eine eigene Nahaufnahme-Unterszene, siehe unten.)
+  if (kind === 'station' || kind === 'living') {
   const st = annoStationEnt(); if (!st) return;
   const bx = st.pos.x, by = st.pos.y, r = st.radius;
   annoBuilt.x = bx; annoBuilt.y = by; annoBuilt.r = r;
@@ -3941,26 +4074,6 @@ function buildAnnoSVG() {
     scr.push(`<path d="M ${W - 110} ${WATERLINE_FRAC * H + 74} l -9 -5 v 10 Z" fill="${ANNO_GOLD}"/>`);
   }
 
-  if (kind === 'wildlife') {
-    // toedliche Oberflaeche + kalte Tiefe (bild-relativ)
-    scr.push(aTxt(W / 2, H * 0.17, ['the surface is lethal —', 'light kills from above'], { anchor: 'middle', size: 16 }));
-    scr.push(aLine(W * 0.38, H * 0.215, W * 0.38, H * 0.27, { stroke: ANNO_GOLD }));
-    scr.push(`<path d="M ${W * 0.38} ${H * 0.27} l -5 -8 h 10 Z" fill="${ANNO_GOLD}"/>`);
-    scr.push(aLine(W * 0.62, H * 0.215, W * 0.62, H * 0.27, { stroke: ANNO_GOLD }));
-    scr.push(`<path d="M ${W * 0.62} ${H * 0.27} l -5 -8 h 10 Z" fill="${ANNO_GOLD}"/>`);
-    scr.push(aTxt(W - 36, H * 0.77, 'the cold deep — near-empty', { anchor: 'end', fill: ANNO_DIM }));
-    // Krill (Basis des Nahrungsnetzes) im freien Wasser links
-    scr.push(aTxt(Math.max(W * 0.10, 320), H * 0.46, ['krill —', 'anchor of the food web'], { anchor: 'end', fill: ANNO_LIGHT }));
-    stn.push(aLine(Math.max(W * 0.10, 320) + 10, H * 0.46, X(-1.35), Y(-0.05)));
-    // Reef-Effekt: Ring um den Stein
-    stn.push(`<ellipse cx="${X(0)}" cy="${Y(0)}" rx="${r * 1.30}" ry="${r * 1.22}" fill="none" stroke="rgba(216,178,90,0.55)" stroke-width="1.2" stroke-dasharray="9 8"/>`);
-    stn.push(aLine(RX(1.55), Y(-0.62), X(1.12), Y(-0.52)));
-    stn.push(aTxt(RX(1.55), Y(-0.68), ['life gathers at the organism —', 'a drifting reef'], { anchor: 'start', fill: ANNO_LIGHT }));
-    // Sea Devils
-    stn.push(aLine(RX(1.45), Y(0.42), X(1.05), Y(0.35)));
-    stn.push(aTxt(RX(1.45), Y(0.36), ['sea devils — their glow', 'becomes the people’s light'], { anchor: 'start' }));
-  }
-
   if (kind === 'living') {
     const sr = st.img ? st.img.height / st.img.width : 1;
     const M2 = P => [(P[0] - 0.5) * 2, (P[1] - 0.5) * 2 * sr];   // Masken-Norm (0..1) -> Stein-relativ (u,v)
@@ -3985,6 +4098,13 @@ function buildAnnoSVG() {
     // (die vier Sinne stehen im Kurztext unten — kein eigenes Label, sonst kollidiert es dort)
   }
   }   // Ende Szene-2-Familie
+
+  // ===== WILDLIFE (Nahaufnahme-Unterszene): Algen-Stein oben, Wasser unten, Seeteufel/Wal/Schwarm.
+  //       Der grosse Kurztext unten (content.body) kommt wie ueberall aus openAnno (#anno-caption).
+  //       Die kleinen Callout-Label sind bewusst noch leer -> Texte/Positionen stimmen wir separat ab. =====
+  if (kind === 'wildlife') {
+    // (Platzhalter: hier kommen die kleinen Label an Stein/Seeteufel/Wal/Schwarm hin.)
+  }
 
   // ===== ATMOSPHERE: beschriftet die ECHTEN Schicht-Boegen (gleiche Geometrie wie drawAtmosphere:
   //       Kugelmittelpunkt weit unter dem Bild; Punkt auf Bogen rf bei horizontalem Offset ox) =====
@@ -4082,7 +4202,7 @@ function updateAnno() {
   const kind = annoEntity.def.anno;
   const g = document.getElementById('anno-stone');
   if (!g) return;
-  if (kind === 'station' || kind === 'wildlife' || kind === 'living') {
+  if (kind === 'station' || kind === 'living') {
     const st = annoStationEnt(); if (!st) return;
     if (Math.abs(st.radius - annoBuilt.r) > 1) { buildAnnoSVG(); return; }
     g.setAttribute('transform', `translate(${(st.pos.x - annoBuilt.x).toFixed(1)},${(st.pos.y - annoBuilt.y).toFixed(1)})`);
