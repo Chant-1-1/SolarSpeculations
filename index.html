@@ -139,12 +139,12 @@
     color: rgba(154, 147, 127, 0.55); font-size: 10px; letter-spacing: 0.42em; text-transform: lowercase;
   }
 
-  /* --- In-Szene-Diagramm (#anno, Szene 2): leichter Dim-Schleier, die ECHTE Station bleibt
-         als Hintergrund sichtbar; Linien/Labels beschriften sie direkt (SVG, von app.js
-         gebaut und live am Stein verankert). Kurztext unten, eigene Bilder als Reihe darueber.
-         DOM statt Canvas -> bleibt im SW-Modus ungefiltert (Diagramm bleibt gold). --- */
+  /* --- In-Szene-Diagramm (#anno): KEIN Dim-Schleier — die echte Szene bleibt voll sichtbar,
+         Linien/Labels beschriften sie direkt (SVG, von app.js gebaut und live verankert).
+         Kurztext unten, eigene Bilder als Reihe darueber. DOM statt Canvas -> bleibt im
+         SW-Modus ungefiltert (Diagramm bleibt gold). Voll klickbar (click to return). --- */
   #anno {
-    position: fixed; inset: 0; z-index: 30; background: rgba(0, 0, 4, 0.55);
+    position: fixed; inset: 0; z-index: 30; background: transparent;
     opacity: 0; pointer-events: none; transition: opacity 0.6s ease; cursor: pointer;
   }
   #anno.open { opacity: 1; pointer-events: all; }

@@ -39,6 +39,9 @@ let zoomPivotIndex = -1;
 let zoomTargetX = ZOOM_TARGET_X;
 let zoomTargetY = ZOOM_TARGET_Y;
 let zoomMaxScale = ZOOM_MAX_SCALE;
+// Beim Rein-Zoomen in eine Viz-Unterszene (Szene 1: atmosphere/water/sun) gemerkte Hotspot-ID.
+// Sobald der Zoom fertig ist, oeffnet sich deren In-Szene-Diagramm automatisch (kein zweiter Klick).
+let pendingVizAnnoId = null;
 
 // ===== ZOOM Weltkugel (Szene 1) <-> ATMOSPHERE / WATER (zwei Zoom-Ansichten) =====
 const SPACE_ID = 'scene1';        // die Weltkugel-/Weltraum-Szene (Pivot beim Zoom)
@@ -2134,6 +2137,13 @@ function draw() {
       if (zoomProgress >= 1) {
         currentScene = nextScene; nextScene = -1; sceneFade = 1;
         zoomTransition = false; zoomProgress = 0;
+        // Rein-Zoom in eine Viz-Unterszene fertig -> deren In-Szene-Diagramm sofort oeffnen
+        // (der Hotspot muss nicht mehr extra angeklickt werden).
+        if (pendingVizAnnoId) {
+          const ah = allEntities.find(e => e.def.id === pendingVizAnnoId && e.def.scene === scenes[currentScene].id);
+          pendingVizAnnoId = null;
+          if (ah) openAnno(ah);
+        }
       }
     } else {
       sceneFade = Math.min(1, sceneFade + dt * SCENE_FADE_SPEED);
@@ -3719,6 +3729,12 @@ let annoBuilt = null;   // Zustand der letzten SVG-Erzeugung {x,y,r,w,h} -> Rebu
 
 function annoStationEnt() { return allEntities.find(e => e.def.id === 'station' && e.def.scene === 'scene2'); }
 
+// Anno-Hotspot einer (Unter-)Szene: der interaktive Hotspot mit In-Szene-Diagramm (def.anno).
+// Genutzt fuers Auto-Oeffnen beim Rein-Zoomen in die Viz-Unterszenen von Szene 1.
+function annoHotspotForScene(sceneId) {
+  return allEntities.find(e => e.def.scene === sceneId && e.def.hotspot && e.def.anno);
+}
+
 function openAnno(ent) {
   openEntity = ent;
   annoEntity = ent;
@@ -3996,8 +4012,10 @@ function goToScene(index) {
     if (vizIn) {
       const p = vizMarkerPos(v);                       // Ziel = Position des angeklickten Markers
       if (p) { zoomTargetX = p.x / width; zoomTargetY = p.y / height; }
-      // Anno-Diagramm oeffnet NICHT automatisch: die Unterszenen (the sun/water/atmosphere) haben
-      // — wie Szene 2 (station/wildlife/living) — einen Hotspot, den man selbst anklickt.
+      // Anno-Diagramm der Unterszene MERKEN -> oeffnet sich automatisch, sobald der Zoom fertig ist
+      // (kein zweiter Klick mehr auf den Hotspot in der Unterszene).
+      const ah = annoHotspotForScene(v.id);
+      pendingVizAnnoId = ah ? ah.def.id : null;
       if (v.id === WATER_ID) { sectionSeaRise = 0; sectionSeaRiseActive = false; }   // Wasser startet trocken
       if (v.id === ATMO_ID) {                          // Atmosphaere: Drehphase vom Globus uebernehmen ->
         const g = allEntities.find(e => e.isGlobe);    // kein Laengen-Sprung + gleiche Richtung -> echter Zoom
