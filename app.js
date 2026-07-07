@@ -3801,7 +3801,7 @@ function updateAnnoHint() {
 
 // blendet ein frisch eingefuegtes Element (DOM oder SVG) langsam ueber 0.75s ein.
 // Trick: Transition kurz aus, opacity 0 setzen, per Reflow festschreiben, dann mit Transition auf 1.
-function fadeInAnno(el, dur = 0.75) {
+function fadeInAnno(el, dur = 1.50) {
   if (!el) return;
   el.style.transition = 'none';
   el.style.opacity = '0';
@@ -3980,7 +3980,7 @@ function buildAnnoSVG() {
     const nodes = [
       { rf: 1.02,  ox: -0.30, txt: ['photochemical smog —', 'never lifts; it makes', 'the light a filtered gold'], fill: ANNO_GOLD },
       { rf: 1.075, ox:  0.00, txt: ['ozone layer —', 'torn open'], fill: ANNO_GOLD },
-      { rf: 1.20,  ox:  0.30, txt: ['magnetic field — weakened,', 'solar storms break through'], fill: ANNO_LIGHT }
+      { rf: 1.20,  ox:  0.30, txt: ['magnetic field — weakened,', 'solar storms break through'], fill: ANNO_LIGHT, noLeader: true }   // noLeader: keine Leiter-Linie + kein Zielkreis (nur Text im Ablauf)
     ];
     const shown = Math.max(0, annoStep - 1);   // Schritt 1 = nur Kurztext; ab Schritt 2 die Stichpunkte
     for (let i = 0; i < nodes.length && i < shown; i++) {
@@ -3992,8 +3992,10 @@ function buildAnnoSVG() {
       // Knotenpunkt + senkrechte, KRAEFTIGE Leiter hinab auf die echte Schicht (dick + praesent),
       // mit deutlichem Zielpunkt am Bogen.
       parts.push(aDot(nx, yRow, 3.5, nd.fill));
-      parts.push(aLine(nx, yRow + 7, ap.x, ap.y - 4, { stroke: 'rgba(216,178,90,0.9)', w: 2.6, dash: '8 5' }));
-      parts.push(aDot(ap.x, ap.y, 4.5, nd.fill));
+      if (!nd.noLeader) {   // Knoten mit noLeader: nur der Abfolge-Punkt oben, KEINE Linie nach unten + KEIN Zielkreis
+        parts.push(aLine(nx, yRow + 7, ap.x, ap.y - 4, { stroke: 'rgba(216,178,90,0.9)', w: 2.6, dash: '8 5' }));
+        parts.push(aDot(ap.x, ap.y, 4.5, nd.fill));
+      }
       // Pfeil vom vorherigen (linken) Knoten nach RECHTS zum neu erschienenen — zeigt die Abfolge.
       if (i > 0) {
         const px = cx + nodes[i - 1].ox * W;   // Zentrum des vorherigen (linken) Knotens
