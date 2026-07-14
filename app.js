@@ -3063,10 +3063,11 @@ let WILD_WATER_WL = 0.12;       // Shader-Wasserlinie der Nahaufnahme: knapp UNT
 // Nahaufnahme-Unterszene (wie water/sun aus Szene 1) -> eigener Marker an der Stations-Unterkante,
 // Klick zoomt hinein und oeffnet das Wildlife-Diagramm automatisch.
 const VIZ_MENU = [
-  { id: 'atmosphere',  parent: 'scene1', label: 'Atmosphere',  anchor: 'globe',  ox: 0.0,  oy: -RIM_MARK_K },
-  { id: 'water',       parent: 'scene1', label: 'Water',       anchor: 'globe',  ox: 0.42, oy: 0.40 },
+  { id: 'atmosphere',  parent: 'scene1', label: 'Atmosphere',  anchor: 'globe',  ox: 0.0,   oy: -RIM_MARK_K },
+  { id: 'water',       parent: 'scene1', label: 'Water',       anchor: 'globe',  ox: 0.42,  oy: 0.40 },
+  { id: 'timeline',    parent: 'scene1', label: 'History',     anchor: 'globe',  ox: -0.42, oy: 0.40 },
   { id: 'sun',         parent: 'scene1', label: 'The sun',     anchor: 'sun' },
-  { id: 'wildlife',    parent: 'scene2', label: 'Wildlife',    anchor: 'station', ox: 0.0, oy: 0.88 }
+  { id: 'wildlife',    parent: 'scene2', label: 'Wildlife',    anchor: 'station', ox: 0.0,  oy: 0.88 }
 ];
 
 function sceneIndexById(id) { return scenes.findIndex(s => s && s.id === id); }
@@ -3898,11 +3899,31 @@ const WATER_ANNO_STEPS = 4;
 // Sun-Diagramm gestuft: Klick 1 = Kurztext unten, dann je Klick ein Callout
 // (lethal source -> the sound -> solar storms). 1 + 3 = 4 Schritte.
 const SUN_ANNO_STEPS = 4;
+// Timeline (Szene 1 -> Unterszene 'timeline'): der Zeitstrang der Weltgeschichte (Booklet 1, Block 3.1),
+// gestuft wie atmosphere/water/sun. Zeit laeuft von OBEN (Vergangenheit/Oberflaeche) nach UNTEN
+// (Gegenwart/Tiefe) — Zeit als Abstieg, das Kernbild dieser Welt. Klick 1 = Kurztext unten,
+// dann je Klick eine Epoche, von oben nach unten. Epochen VOR 2512 sind archivarisch (dim Jahr),
+// ab 2512 (THE UNMOORING) erinnert (gold) — vgl. Caption Block 3.2. 'hinge' = die Archiv/Erinnert-Grenze,
+// 'now' = die Gegenwart (Ring + betont). gloss = eine kurze Zeile (aus den zwei Quellzeilen verdichtet).
+// BEWUSSTE AUSWAHL: nur 7 der 12 Booklet-Epochen -> lesbar. Der Bogen bleibt vollstaendig
+// (Ursache -> Ertrinken -> Abstieg -> Scheitern -> Ueberleben/Wende -> Licht -> Jetzt); weggelassen sind
+// die Zwischenschritte SMOG SETTLES, ICE ENDS, GROWN SEAL, COUNCILS, CONFEDERACY. Bei Bedarf hier ergaenzen.
+const TIMELINE_ERAS = [
+  { year: '2020s–2120s', title: 'THE LONG BURN',    gloss: 'fossil fire past every threshold; the ozone thins' },
+  { year: '2260',        title: 'THE DROWNING',      gloss: 'the coasts go under; the continents cease to be land' },
+  { year: '2300s',       title: 'THE FIRST DESCENT', gloss: 'the surface is abandoned; life withdraws underwater' },
+  { year: '2400s',       title: 'THE ANCHORED AGE',  gloss: 'anchored stations fail; a long population collapse' },
+  { year: '2512',        title: 'THE UNMOORING',     gloss: 'the first raft of pumice is cut; it drifts, and survives', hinge: true },
+  { year: '2800s',       title: 'THE FIRST EYE',     gloss: 'a filter chain fits a crown; light becomes measurable, and holy' },
+  { year: '3126',        title: 'NOW',               gloss: 'a few dozen stations; the count has never come up short', now: true }
+];
+const TIMELINE_ANNO_STEPS = 1 + TIMELINE_ERAS.length;   // 1 (Kurztext unten) + je Epoche ein Klick
 // Gesamt-Schritte eines gestuften Diagramms (0 = nicht gestuft -> Klick schliesst sofort).
 function annoStepsFor(kind) {
   if (kind === 'atmosphere') return ATMO_ANNO_STEPS;
   if (kind === 'water') return WATER_ANNO_STEPS;
   if (kind === 'sun') return SUN_ANNO_STEPS;
+  if (kind === 'timeline') return TIMELINE_ANNO_STEPS;
   return 0;
 }
 
@@ -4188,6 +4209,57 @@ function buildAnnoSVG() {
     ];
     for (let i = 0; i < labels.length && i < shown; i++) {
       scr.push(i === shown - 1 ? `<g id="anno-newnode">${labels[i]}</g>` : labels[i]);   // neuestes Callout -> sanftes Einblenden
+    }
+  }
+
+  // ===== TIMELINE (Szene 1): senkrechter Zeitstrang der Weltgeschichte. REIN bildschirmfest (scr) ueber
+  //       dunklem Grund; keine Verankerung an einem Feature. Zeit laeuft von OBEN (Vergangenheit/Oberflaeche)
+  //       nach UNTEN (Gegenwart/Tiefe). Kopf + volle, schwache Schiene sind ab dem Oeffnen da; ab Klick 2
+  //       leuchtet je Epoche eine Zeile auf (Jahr links, Titel+Gloss rechts), der Gold-Strang waechst mit
+  //       nach unten. Die 2512-Grenze (archival|remembered) erscheint, sobald sie ueberschritten ist. =====
+  if (kind === 'timeline') {
+    const eras = TIMELINE_ERAS, n = eras.length;
+    const strandX = Math.round(Math.max(175, Math.min(W * 0.26, 360)));   // Strang links-of-center, Jahr-Spalte davor
+    // Strang bewusst im oberen ~74% halten -> die unteren ~26% bleiben fuer die zentrierte Bottom-Caption
+    // (Block 3.2, bei schmalem Fenster bis 3 Zeilen) + hint frei; sonst ueberlappt die NOW-Zeile den Kurztext.
+    const yTop = H * 0.16, yBot = H * 0.74, dy = (yBot - yTop) / (n - 1);
+    const yOf = i => Math.round(yTop + i * dy);
+    const rightX = strandX + 22;                       // Titel/Gloss-Spalte rechts des Strangs
+    const hingeIdx = eras.findIndex(e => e.hinge);     // erste ERINNERTE Epoche (2512) -> davor = archivarisch
+    const shown = Math.max(0, annoStep - 1);           // Schritt 1 = nur Kurztext unten; ab Schritt 2 die Epochen
+
+    // Kopfzeile (immer sichtbar, solange das Diagramm offen ist) + Achsen-Wort in die Tiefe.
+    scr.push(aTxt(strandX, H * 0.085, 'HISTORICAL TIMELINE', { anchor: 'start', size: 16, fill: ANNO_GOLD }));
+    scr.push(aTxt(strandX, H * 0.085 + 22, 'world 3324255146 — a descent through time', { anchor: 'start', size: 12, fill: ANNO_DIM }));
+    scr.push(aTxt(strandX, yTop - 14, 'past · the surface', { anchor: 'middle', size: 11, fill: ANNO_DIM }));
+    // linke Rand-Achse (senkrecht, bottom->top gelesen): Zeit als Abstieg in die Tiefe
+    { const ax = Math.max(40, strandX * 0.32), ay = H * 0.55;
+      scr.push(`<text x="${ax}" y="${ay}" transform="rotate(-90 ${ax} ${ay})" fill="${ANNO_DIM}" font-size="11" text-anchor="middle" letter-spacing="4">time  ·  the descent into the deep</text>`); }
+
+    // volle, schwache Schiene yTop->yBot (die Zeit laeuft in die Tiefe weiter), darueber der helle Gold-Abschnitt.
+    // Der Abschnitt AB 2512 (hingeIdx) ist kraeftiger/heller = 'erinnert'; davor blasser = 'archivarisch'
+    // (vgl. Caption Block 3.2 + die dim/gold-Faerbung der Jahreszahlen). Der Wechsel liegt genau am Strang -> kein Quer-Tick,
+    // der die dichten Gloss-Zeilen ueberschreiben wuerde.
+    scr.push(aLine(strandX, yTop, strandX, yBot, { stroke: 'rgba(154,147,127,0.28)', w: 1.4 }));
+    if (shown > 0) {
+      const yShown = yOf(Math.min(shown, n) - 1);
+      const yHinge = yOf(hingeIdx);
+      // archivarischer Abschnitt (bis 2512): blasser; erinnerter Abschnitt (ab 2512): kraeftiger.
+      scr.push(aLine(strandX, yTop, strandX, Math.min(yShown, yHinge), { stroke: 'rgba(216,178,90,0.55)', w: 1.8 }));
+      if (yShown > yHinge) scr.push(aLine(strandX, yHinge, strandX, yShown, { stroke: 'rgba(216,178,90,0.95)', w: 2.4 }));
+    }
+
+    for (let i = 0; i < n && i < shown; i++) {
+      const e = eras[i], y = yOf(i), archival = i < hingeIdx;
+      const yearFill = archival ? ANNO_DIM : ANNO_GOLD;
+      const titleFill = e.now ? ANNO_GOLD : (archival ? ANNO_LIGHT : ANNO_GOLD);
+      const parts = [];
+      parts.push(aTxt(strandX - 16, y + 4, e.year, { anchor: 'end', size: 13, fill: yearFill }));   // Jahr links, an den Strang
+      if (e.now) parts.push(aCircle(strandX, y, 7, { stroke: ANNO_GOLD, w: 1.6 }));                  // NOW: Ring
+      parts.push(aDot(strandX, y, e.now ? 4 : 3, e.now ? ANNO_GOLD : yearFill));                     // Knoten auf dem Strang
+      parts.push(aTxt(rightX, y - 3, e.title, { anchor: 'start', size: 14, fill: titleFill }));      // Titel rechts
+      parts.push(aTxt(rightX, y + 15, e.gloss, { anchor: 'start', size: 12, fill: ANNO_DIM }));      // Gloss darunter
+      scr.push(i === shown - 1 ? `<g id="anno-newnode">${parts.join('')}</g>` : parts.join(''));     // neueste Epoche -> sanftes Einblenden
     }
   }
 

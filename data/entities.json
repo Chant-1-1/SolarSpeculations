@@ -469,6 +469,25 @@
     },
 
     {
+      "_kommentar": "TIMELINE-Hotspot (aus Szene 1): 'anno' -> In-Szene-Zeitstrang (buildAnnoSVG kind:'timeline'). Reines bildschirmfestes Diagramm ueber dunklem Grund; gestuft (Klick fuer Klick eine Epoche, von oben/Vergangenheit nach unten/Gegenwart). body = Caption Block 3.2 (Kurztext unten). Eigene Bilder optional: assets/images/hotspots/hs_timeline1.png etc.",
+      "id": "hs_timeline",
+      "scene": "timeline",
+      "hotspot": true,
+      "interactive": true,
+      "anno": "timeline",
+      "layer": 0.9,
+      "label": "The record",
+      "path": [ { "x": 0.50, "y": 0.50 } ],
+      "loop": "loop", "speed": 0.0, "scale": 0.05, "bob": 0.0, "opacity": 1.0,
+      "content": {
+        "title": "The record",
+        "body": "Eleven hundred years, as the Memory Keepers hold them. Dates before 2512 are archival; everything after is remembered.",
+        "secondaryImage": "",
+        "link": { "url": "", "label": "" }
+      }
+    },
+
+    {
       "_kommentar": "SUN-Hotspot (konsolidiert): ein Hotspot, 'anno' -> In-Szene-Diagramm ueber der grossen Sonnenscheibe (sunLayout).",
       "id": "hs_sun",
       "scene": "sun",

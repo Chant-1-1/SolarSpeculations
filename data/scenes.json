@@ -77,6 +77,14 @@
       "backgroundTint": "#061820",
       "viz": "wildlife",
       "noNav": true
+    },
+    {
+      "_kommentar": "TIMELINE-Ansicht (aus Szene 1): der Zeitstrang der Weltgeschichte (Booklet 1). REINES Diagramm im #anno-Overlay (buildAnnoSVG kind:'timeline') ueber dunklem Grund — keine prozedurale Zeichnung, keine viz. Zeit laeuft von OBEN (Vergangenheit/Oberflaeche) nach UNTEN (Gegenwart/Tiefe): Zeit als Abstieg. NICHT in der Nav -> nur ueber den 'History'-Marker an der Weltkugel; das Diagramm oeffnet beim Rein-Zoomen automatisch (pendingVizAnnoId).",
+      "id": "timeline",
+      "name": "the record",
+      "background": "",
+      "backgroundTint": "#04060c",
+      "noNav": true
     }
   ]
 }
