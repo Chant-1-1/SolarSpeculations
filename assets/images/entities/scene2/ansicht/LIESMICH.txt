@@ -1,0 +1,25 @@
+SZENE 2 – ANSICHT (Aussenansicht der Station)
+=============================================
+
+Hier kommt das Bild der Station als ANSICHT rein (die Startdarstellung von
+Szene 2 "the organism"). Genau wie bei station/, sun/, atmosphere/ usw.:
+
+  Dateiname:  ansicht1.png   ODER   ansicht1.webp
+  (weitere Varianten moeglich: ansicht2.png, ansicht3.png ... -> die Engine
+   waehlt beim Laden zufaellig eine davon.)
+
+  -> .webp wird bevorzugt geladen (kleiner), .png ist der Fallback.
+
+Aktuell liegt hier ansicht1.png als PLATZHALTER (Kopie von
+../station/station1.png). Einfach mit der echten Ansicht ueberschreiben
+bzw. loeschen und die eigene Datei reinziehen.
+
+Leerer Ordner  ->  Szene zeigt nur den backgroundTint (kein Platzhalter).
+
+Position & Groesse der Ansicht: in data/entities.json am Entity
+"organism_view_image" ueber path (x,y in 0..1) und scale einstellen.
+
+Der Gold-Marker "Section" auf der Station oeffnet den Unterwasser-SCHNITT
+(die bisherige Szene 2 mit allen Hotspots). Seine Position sitzt fest im
+Bild und laesst sich in app.js im VIZ_MENU ueber sx/sy des 'scene2'-Eintrags
+verschieben.

@@ -3059,15 +3059,21 @@ let WILD_WATER_WL = 0.12;       // Shader-Wasserlinie der Nahaufnahme: knapp UNT
 //   'globe' rel. zur Weltkugel (ox/oy in Radien) · 'sun' auf der Sonnenposition ·
 //   'station' rel. zur Station in Szene 2 (ox/oy in Stein-Radien) · 'screen' feste Bildkoords (sx/sy in 0..1).
 //   label = Marker-Text. id = Ziel-Szene.
-// Szene 2: Station/Living sind normale Hotspot-Entities (Reader). Wildlife dagegen ist eine eigene
-// Nahaufnahme-Unterszene (wie water/sun aus Szene 1) -> eigener Marker an der Stations-Unterkante,
-// Klick zoomt hinein und oeffnet das Wildlife-Diagramm automatisch.
+// Szene 2 ist zweistufig: ANSICHT ('organism', Nav-Szene, Aussenansicht der Station) -> 'Section'-Marker
+// oeffnet den SCHNITT ('scene2', noNav, Unterwasser). Im Schnitt: Station/Living als normale Hotspot-Entities
+// (Reader), Wildlife als eigene Nahaufnahme-Unterszene, und 'The eye' fuehrt per Kinozoom in scene3.
 const VIZ_MENU = [
-  { id: 'atmosphere',  parent: 'scene1', label: 'Atmosphere',  anchor: 'globe',  ox: 0.0,   oy: -RIM_MARK_K },
-  { id: 'water',       parent: 'scene1', label: 'Water',       anchor: 'globe',  ox: 0.42,  oy: 0.40 },
-  { id: 'timeline',    parent: 'scene1', label: 'History',     anchor: 'globe',  ox: -0.42, oy: 0.40 },
-  { id: 'sun',         parent: 'scene1', label: 'The sun',     anchor: 'sun' },
-  { id: 'wildlife',    parent: 'scene2', label: 'Wildlife',    anchor: 'station', ox: 0.0,  oy: 0.88 }
+  { id: 'atmosphere',  parent: 'scene1',   label: 'Atmosphere', anchor: 'globe',  ox: 0.0,   oy: -RIM_MARK_K },
+  { id: 'water',       parent: 'scene1',   label: 'Water',      anchor: 'globe',  ox: 0.42,  oy: 0.40 },
+  { id: 'timeline',    parent: 'scene1',   label: 'History',    anchor: 'globe',  ox: -0.42, oy: 0.40 },
+  { id: 'sun',         parent: 'scene1',   label: 'The sun',    anchor: 'sun' },
+  // ANSICHT 'organism' -> 'Section'-Marker oeffnet den Unterwasser-Schnitt (scene2). anchor 'screen'
+  //  = feste Bildposition (sx/sy), immer sichtbar, auch bei leerem Ansicht-Ordner. sx/sy auf der Station tunen.
+  { id: 'scene2',      parent: 'organism', label: 'Section',    anchor: 'screen', sx: 0.50, sy: 0.58 },
+  { id: 'wildlife',    parent: 'scene2',   label: 'Wildlife',   anchor: 'station', ox: 0.0,  oy: 0.88 },
+  // SCHNITT 'scene2' -> 'The eye'-Marker: goToScene(scene3) faellt in goToScene auf den KINOZOOM
+  //  (isSeaInterior scene2<->scene3), nicht auf den generischen Viz-Zoom. Rueck-Weg = Zurueck-Marker im eye.
+  { id: 'scene3',      parent: 'scene2',   label: 'The eye',    anchor: 'station', ox: 0.0,  oy: -0.10 }
 ];
 
 function sceneIndexById(id) { return scenes.findIndex(s => s && s.id === id); }
@@ -4346,9 +4352,11 @@ function goToScene(index) {
       const p = vizMarkerPos(v);                       // Ziel = Position des angeklickten Markers
       if (p) { zoomTargetX = p.x / width; zoomTargetY = p.y / height; }
       // Anno-Diagramm der Unterszene MERKEN -> oeffnet sich automatisch, sobald der Zoom fertig ist
-      // (kein zweiter Klick mehr auf den Hotspot in der Unterszene).
+      // (kein zweiter Klick mehr auf den Hotspot in der Unterszene). AUSNAHME: der SCHNITT (scene2) ist
+      // eine volle Szene mit mehreren Hotspots (Station/Living/Wildlife) -> NICHT auto-oeffnen, die
+      // Callouts werden dort selbst angeklickt.
       const ah = annoHotspotForScene(v.id);
-      pendingVizAnnoId = ah ? ah.def.id : null;
+      pendingVizAnnoId = (v.id === ZOOM_SEA_ID) ? null : (ah ? ah.def.id : null);
       if (v.id === WATER_ID) { sectionSeaRise = 0; sectionSeaRiseActive = false; }   // Wasser startet trocken
       if (v.id === ATMO_ID) {                          // Atmosphaere: Drehphase vom Globus uebernehmen ->
         const g = allEntities.find(e => e.isGlobe);    // kein Laengen-Sprung + gleiche Richtung -> echter Zoom

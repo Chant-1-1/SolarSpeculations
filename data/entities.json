@@ -678,6 +678,19 @@
       "label": "",
       "path": [ { "x": 0.50, "y": 0.50 } ],
       "loop": "loop", "speed": 0.0, "scale": 0.35, "bob": 0.0, "opacity": 1.0
+    },
+    {
+      "_kommentar": "SZENE-2-ANSICHT: die Station als Aussenansicht (sceneImage der neuen Szene 'organism'). Bild(er) in assets/images/entities/scene2/ansicht/ ablegen: ansicht1.png ODER ansicht1.webp (weitere ansicht2, ansicht3 ... werden zufaellig gewaehlt). Aktuell liegt station1.png als PLATZHALTER drin -> durch die echte Ansicht ersetzen. Leerer Ordner -> nur der backgroundTint. Position/Groesse ueber path/scale, zoomAnchor haelt sie beim Zoom in den Schnitt ruhig.",
+      "id": "organism_view_image",
+      "scene": "organism",
+      "sceneImage": true,
+      "variants": "assets/images/entities/scene2/ansicht/",
+      "zoomAnchor": true,
+      "interactive": false,
+      "layer": 0.5,
+      "label": "",
+      "path": [ { "x": 0.50, "y": 0.52 } ],
+      "loop": "loop", "speed": 0.0, "scale": 0.26, "bob": 0.006, "opacity": 1.0
     }
   ]
 }
