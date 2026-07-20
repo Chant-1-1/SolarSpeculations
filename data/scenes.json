@@ -12,11 +12,12 @@
       "reverbSend": { "bus": "long", "amount": 0.4 }
     },
     {
-      "_kommentar": "SZENE 2 – ANSICHT (Aussenansicht der Station). Startszene der 'organism'-Ebene: nur backgroundTint + das Ansicht-Bild (entity 'organism_view_image' -> Ordner assets/images/entities/scene2/ansicht/). Der pulsierende Gold-Marker 'Section' auf der Station oeffnet per Zoom den Unterwasser-SCHNITT (scene2). Muster wie Szene 1 -> Water/Atmosphere.",
+      "_kommentar": "SZENE 2 – ANSICHT (Aussenansicht der Station). Startszene der 'organism'-Ebene: GLEICHES Unterwasser + gleiche Fauna wie der Schnitt (underwater + Tiere via 'alsoScene:organism'), darauf die Aussenansicht der Station (entity 'organism_view_image' -> Ordner assets/images/entities/scene2/ansicht/) und der 'Wildlife'-Marker. Der 'Section'-Marker blendet OHNE Zoom in den SCHNITT (scene2). backgroundTint = das Blau, aus dem die Wasserfarbe abgeleitet ist.",
       "id": "organism",
       "name": "the organism",
       "background": "",
-      "backgroundTint": "#0a1a24"
+      "backgroundTint": "#0a1a24",
+      "underwater": true
     },
     {
       "_kommentar": "SZENE 2 – SCHNITT (bisherige Unterwasser-Szene, inhaltlich unveraendert). Jetzt 'noNav' -> nicht mehr im Menue/Pfeil-Nav, sondern nur ueber den 'Section'-Marker der Ansicht erreichbar. Enthaelt weiterhin die Hotspots Station/Living + den Wildlife-Marker. Der 'The eye'-Marker fuehrt per Kinozoom in scene3.",

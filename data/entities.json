@@ -35,6 +35,7 @@
       "_kommentar": "SCENE 2 (die station). 'variants'=Ordner mit Bild-Varianten. Bewegungs-Felder (Locomotion-Recherche): swim ('pulse'=Qualle, 'jet'=Kalmar), ease (Ebben/Hovern), weave (seitl. Pendeln), jitter (Station-Keeping), faceForward/facing (Sprite zeigt nach vorn). TIEFE/3D: 'layer' (0..<1, hoeher=weiter vorn; Station=1 immer ganz vorn) + Groesse (scale) + Deckkraft (opacity) gestaffelt -> atmosphaerische Perspektive (fern=klein/blass, nah=gross/kraeftig). Krill+Fischschwaerme sind PROZEDURAL (drawScene2Fauna).",
       "id": "whale",
       "scene": "scene2",
+      "alsoScene": "organism",
       "variants": "assets/images/entities/scene2/whale/",
       "faceForward": true,
       "facing": "left",
@@ -133,6 +134,7 @@
     {
       "id": "sea_spider",
       "scene": "scene2",
+      "alsoScene": "organism",
       "variants": "assets/images/entities/scene2/sea_spider/",
       "interactive": false,
       "layer": 0.15,
@@ -152,6 +154,7 @@
     {
       "id": "devil_3",
       "scene": "scene2",
+      "alsoScene": "organism",
       "variants": "assets/images/entities/scene2/sea_devil/",
       "glowLure": true,
       "faceForward": true,
@@ -177,6 +180,7 @@
     {
       "id": "jellyfish_1",
       "scene": "scene2",
+      "alsoScene": "organism",
       "variants": "assets/images/entities/scene2/jellyfish/",
       "interactive": false,
       "layer": 0.25,
@@ -197,6 +201,7 @@
     {
       "id": "devil_5",
       "scene": "scene2",
+      "alsoScene": "organism",
       "variants": "assets/images/entities/scene2/sea_devil/",
       "glowLure": true,
       "faceForward": true,
@@ -223,6 +228,7 @@
     {
       "id": "devil_1",
       "scene": "scene2",
+      "alsoScene": "organism",
       "variants": "assets/images/entities/scene2/sea_devil/",
       "glowLure": true,
       "faceForward": true,
@@ -248,6 +254,7 @@
     {
       "id": "devil_4",
       "scene": "scene2",
+      "alsoScene": "organism",
       "variants": "assets/images/entities/scene2/sea_devil/",
       "glowLure": true,
       "faceForward": true,
@@ -273,6 +280,7 @@
     {
       "id": "jellyfish_2",
       "scene": "scene2",
+      "alsoScene": "organism",
       "variants": "assets/images/entities/scene2/jellyfish/",
       "interactive": false,
       "layer": 0.5,
@@ -294,6 +302,7 @@
     {
       "id": "devil_2",
       "scene": "scene2",
+      "alsoScene": "organism",
       "variants": "assets/images/entities/scene2/sea_devil/",
       "glowLure": true,
       "faceForward": true,
@@ -319,6 +328,7 @@
     {
       "id": "squid",
       "scene": "scene2",
+      "alsoScene": "organism",
       "variants": "assets/images/entities/scene2/squid/",
       "faceForward": true,
       "facing": "left",
@@ -685,6 +695,7 @@
       "scene": "organism",
       "sceneImage": true,
       "variants": "assets/images/entities/scene2/ansicht/",
+      "placeholder": "island",
       "zoomAnchor": true,
       "interactive": false,
       "layer": 0.5,

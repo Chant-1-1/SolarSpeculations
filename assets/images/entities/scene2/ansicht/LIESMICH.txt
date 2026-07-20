@@ -14,7 +14,11 @@ Aktuell liegt hier ansicht1.png als PLATZHALTER (Kopie von
 ../station/station1.png). Einfach mit der echten Ansicht ueberschreiben
 bzw. loeschen und die eigene Datei reinziehen.
 
-Leerer Ordner  ->  Szene zeigt nur den backgroundTint (kein Platzhalter).
+Die Ansicht-Szene ist Unterwasser mit DEMSELBEN Wasser und denselben Tieren
+wie der Schnitt (Wasser/Fauna bleiben beim Wechsel stehen). Dieses Bild ist
+die Aussenansicht der Station DARAUF.
+
+Leerer Ordner  ->  Wasser + prozedurale Insel als Platzhalter.
 
 Position & Groesse der Ansicht: in data/entities.json am Entity
 "organism_view_image" ueber path (x,y in 0..1) und scale einstellen.

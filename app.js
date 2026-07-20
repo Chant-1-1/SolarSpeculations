@@ -800,16 +800,29 @@ function sceneIsUnderwater(id) {
   return !!(s && s.underwater);
 }
 
+// Zugehoerigkeit eines Entitys zu einer Szene: Standard 'scene', plus optional 'alsoScene' /
+// 'alsoScenes'[] -> DASSELBE Entity erscheint in MEHREREN Szenen (z.B. die Fauna in Ansicht UND Schnitt).
+// Steht ein Entity in curId UND nxtId, bleibt es beim Crossfade voll sichtbar (alpha=1) -> Wasser/Tiere
+// stehen still, nur Station/Hotspots blenden ueber.
+function entInScene(def, sceneId) {
+  if (!sceneId) return false;
+  if (def.scene === sceneId) return true;
+  if (def.alsoScene === sceneId) return true;
+  return Array.isArray(def.alsoScenes) && def.alsoScenes.indexOf(sceneId) >= 0;
+}
+
 // Sichtbarkeits-Alpha eines Entitys abhaengig vom aktuellen Crossfade
 function currentSceneAlphaFor(ent) {
   const curId = scenes[currentScene]?.id;
   const nxtId = nextScene >= 0 ? scenes[nextScene]?.id : null;
+  const inCur = entInScene(ent.def, curId);
+  const inNxt = entInScene(ent.def, nxtId);
   let alpha;
-  if (ent.def.scene === curId && ent.def.scene === nxtId) alpha = 1;
-  else if (ent.def.scene === curId) alpha = 1 - sceneFadeT();
-  else if (ent.def.scene === nxtId) alpha = sceneFadeT();
+  if (inCur && inNxt) alpha = 1;
+  else if (inCur) alpha = 1 - sceneFadeT();
+  else if (inNxt) alpha = sceneFadeT();
   else return 0;
-  if (zoomTransition && zoomPivotIndex >= 0 && ent.def.scene === scenes[zoomPivotIndex]?.id && !ent.def.zoomAnchor) {
+  if (zoomTransition && zoomPivotIndex >= 0 && entInScene(ent.def, scenes[zoomPivotIndex]?.id) && !ent.def.zoomAnchor) {
     alpha *= 1 - Math.max(0, Math.min(1, (zoomProgress - 0.15) / 0.35));
   }
   return alpha;
@@ -1145,9 +1158,9 @@ function drawWaterColumn(g, w, h) {
   ctx.fillStyle = sky; ctx.fillRect(0, 0, w, wl);
   // 2) Wassersaeule: Petrol (sonnendurchflutet) -> Tiefblau -> nahezu Schwarz in der Tiefe
   let sea = ctx.createLinearGradient(0, wl, 0, h);
-  sea.addColorStop(0.0, '#2f6f7c');            // Petrol direkt unter der Oberflaeche
-  sea.addColorStop(0.16, '#1c4f63');
-  sea.addColorStop(0.46, '#0e2f47');           // Tiefblau
+  sea.addColorStop(0.0, '#17364a');            // hellere Naehe zur Oberflaeche (gleicher Blauton)
+  sea.addColorStop(0.16, '#0f2836');
+  sea.addColorStop(0.46, '#0a1a24');           // Grundton = Ansicht-Blau
   sea.addColorStop(1.0, '#03070d');            // nahezu schwarz
   ctx.fillStyle = sea; ctx.fillRect(0, wl, w, h - wl);
   // 3) heller Lichtsaum direkt unter der Wasserlinie (Sonnenlicht bricht ein)
@@ -1407,10 +1420,12 @@ void main(){
   vec3 skyHi = vec3(0.96, 0.93, 0.83);
   vec3 skyCol = mix(skyLo, skyHi, smoothstep(surfaceY, 1.0, uv.y));
   skyCol += (fbm(vec2(uv.x*3.0, uv.y*2.0) + t*0.015) - 0.5) * 0.04;  // Hauch Smog-Struktur
-  // glaesernes Wasservolumen (Petrol/Teal -> Tiefblau -> fast Schwarz)
-  vec3 teal = vec3(0.16, 0.40, 0.42);
-  vec3 deep = vec3(0.04, 0.14, 0.24);
-  vec3 ink  = vec3(0.01, 0.03, 0.06);
+  // glaesernes Wasservolumen — Grundton = das Ansicht-Blau #0a1a24 (0.039,0.102,0.141).
+  // teal = etwas hellere, gleich-farbige Naehe zur Oberflaeche; deep = exakt #0a1a24 (dominante Mittelzone);
+  // ink = fast schwarz in der Tiefe. (Frueher: teal 0.16/0.40/0.42, deep 0.04/0.14/0.24.)
+  vec3 teal = vec3(0.09, 0.21, 0.28);
+  vec3 deep = vec3(0.039, 0.102, 0.141);
+  vec3 ink  = vec3(0.01, 0.028, 0.05);
   // Teal->Tiefblau oben wie gehabt; das fast-schwarze Ink aber erst WEIT unten (~Wal-Hoehe, depth~0.74)
   // -> die mittlere Tiefblau-Zone (deep) wird deutlich laenger (Nutzerwunsch).
   vec3 waterCol = mix(teal, deep, smoothstep(0.0, 0.28, depth));
@@ -2188,7 +2203,7 @@ function draw() {
   if (hoverEntity && hoverEntity !== prevHover && hoverEntity.def.hotspot) playHoverPing();
   for (const ent of allEntities) {
     if (currentSceneAlphaFor(ent) <= 0.01) continue;
-    const entIsPivot = zoomPivotIndex >= 0 && ent.def.scene === scenes[zoomPivotIndex]?.id;
+    const entIsPivot = zoomPivotIndex >= 0 && entInScene(ent.def, scenes[zoomPivotIndex]?.id);
     if (zoom && entIsPivot) {
       push(); translate(zoom.cx, zoom.cy); scale(zoom.scale); translate(-zoom.cx, -zoom.cy);
       ent.draw();
@@ -3059,18 +3074,20 @@ let WILD_WATER_WL = 0.12;       // Shader-Wasserlinie der Nahaufnahme: knapp UNT
 //   'globe' rel. zur Weltkugel (ox/oy in Radien) · 'sun' auf der Sonnenposition ·
 //   'station' rel. zur Station in Szene 2 (ox/oy in Stein-Radien) · 'screen' feste Bildkoords (sx/sy in 0..1).
 //   label = Marker-Text. id = Ziel-Szene.
-// Szene 2 ist zweistufig: ANSICHT ('organism', Nav-Szene, Aussenansicht der Station) -> 'Section'-Marker
-// oeffnet den SCHNITT ('scene2', noNav, Unterwasser). Im Schnitt: Station/Living als normale Hotspot-Entities
-// (Reader), Wildlife als eigene Nahaufnahme-Unterszene, und 'The eye' fuehrt per Kinozoom in scene3.
+// Szene 2 ist zweistufig: ANSICHT ('organism', Nav-Szene, Aussenansicht der Station, gleiches Unterwasser
+// + Fauna wie der Schnitt) -> 'Section'-Marker blendet OHNE Zoom in den SCHNITT ('scene2', noNav). Wasser +
+// Tiere stehen dabei still (mehrszenige Entities), nur Station/Hotspots blenden ueber. In der Ansicht sitzt
+// auch der 'Wildlife'-Marker; im Schnitt: Station/Living als Hotspot-Entities (Reader) und 'The eye' (Kinozoom).
 const VIZ_MENU = [
   { id: 'atmosphere',  parent: 'scene1',   label: 'Atmosphere', anchor: 'globe',  ox: 0.0,   oy: -RIM_MARK_K },
   { id: 'water',       parent: 'scene1',   label: 'Water',      anchor: 'globe',  ox: 0.42,  oy: 0.40 },
   { id: 'timeline',    parent: 'scene1',   label: 'History',    anchor: 'globe',  ox: -0.42, oy: 0.40 },
   { id: 'sun',         parent: 'scene1',   label: 'The sun',    anchor: 'sun' },
-  // ANSICHT 'organism' -> 'Section'-Marker oeffnet den Unterwasser-Schnitt (scene2). anchor 'screen'
-  //  = feste Bildposition (sx/sy), immer sichtbar, auch bei leerem Ansicht-Ordner. sx/sy auf der Station tunen.
-  { id: 'scene2',      parent: 'organism', label: 'Section',    anchor: 'screen', sx: 0.50, sy: 0.58 },
-  { id: 'wildlife',    parent: 'scene2',   label: 'Wildlife',   anchor: 'station', ox: 0.0,  oy: 0.88 },
+  // ANSICHT 'organism': 'Section' oeffnet den Schnitt (scene2) per reinem Crossfade (noZoom -> die Ansicht
+  //  verschwindet, KEIN Zoom). 'Wildlife' zoomt in die Nahaufnahme-Unterszene. anchor 'screen'/'station':
+  //  Section fest im Bild (sx/sy), Wildlife an der Ansicht-Station (organism_view_image) verankert.
+  { id: 'scene2',      parent: 'organism', label: 'Section',    anchor: 'screen',  sx: 0.50, sy: 0.58, noZoom: true },
+  { id: 'wildlife',    parent: 'organism', label: 'Wildlife',   anchor: 'station', ox: 0.0,  oy: 0.88 },
   // SCHNITT 'scene2' -> 'The eye'-Marker: goToScene(scene3) faellt in goToScene auf den KINOZOOM
   //  (isSeaInterior scene2<->scene3), nicht auf den generischen Viz-Zoom. Rueck-Weg = Zurueck-Marker im eye.
   { id: 'scene3',      parent: 'scene2',   label: 'The eye',    anchor: 'station', ox: 0.0,  oy: -0.10 }
@@ -3090,8 +3107,10 @@ function vizMarkerPos(v) {
     const mm = Math.min(W, H), sa = sunOrbitAngle();
     return { x: W / 2 + Math.cos(sa) * SUN_ORBIT_R * mm, y: H / 2 - Math.sin(sa) * SUN_ORBIT_R * mm };
   }
-  if (v.anchor === 'station') {   // an der echten Station (Szene 2) verankert -> Marker sitzt an ihrer Unterkante
-    const st = annoStationEnt();
+  if (v.anchor === 'station') {   // an der Station verankert: ANSICHT -> organism_view_image, SCHNITT -> scene2-Station
+    const st = (v.parent === 'organism')
+      ? allEntities.find(e => e.def.id === 'organism_view_image')
+      : annoStationEnt();
     if (!st || !(st.radius > 0)) return null;
     return { x: st.pos.x + (v.ox || 0) * st.radius, y: st.pos.y + (v.oy || 0) * st.radius };
   }
@@ -4342,7 +4361,7 @@ function goToScene(index) {
     zoomDirection = (index === zoomInteriorIndex) ? 1 : -1;
     zoomPivotIndex = zoomSeaIndex;
     zoomTargetX = ZOOM_TARGET_X; zoomTargetY = ZOOM_TARGET_Y; zoomMaxScale = ZOOM_MAX_SCALE;
-  } else if (vizIn || vizOut) {
+  } else if ((vizIn || vizOut) && !(vizIn || vizOut).noZoom) {
     const v = vizIn || vizOut;
     zoomTransition = true; zoomProgress = 0;
     zoomDirection = vizIn ? 1 : -1;                    // rein = +1, raus (zur Elternszene) = -1
