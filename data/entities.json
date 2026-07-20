@@ -5,6 +5,7 @@
     {
       "id": "weltkugel",
       "scene": "scene1",
+      "alsoScene": "timeline",
       "image": "",
       "zoomAnchor": true,
       "globe": {
@@ -66,11 +67,11 @@
       "layer": 1,
       "label": "",
       "path": [
-        { "x": 0.5, "y": 0.48 }
+        { "x": 0.5, "y": 0.52 }
       ],
       "loop": "loop",
       "speed": 0.0,
-      "scale": 0.23,
+      "scale": 0.26,
       "bob": 0.006,
       "rock": 0.03,
       "rockSpeed": 0.5,

@@ -2217,6 +2217,7 @@ function draw() {
 
   updateUICursor();   // Glow-Cursor-Zustand (statt nativer cursor()-Styles, die cursor:none ueberschreiben wuerden)
   updateSunTint();    // SW-Modus: Sonnenlicht-Layer auf die sichtbare Sonne legen (sonst aus)
+  updateAnnoAuto();   // Szene-1-Diagramme: Texte zeitgesteuert nacheinander einblenden (ohne Klick)
   updateAnno();       // offenes In-Szene-Diagramm dem Bob des Steins nachfuehren
 
   if (PERF_HUD) drawPerfHud();
@@ -3144,7 +3145,8 @@ function livingLayout() {
 function vizHotspotNorm(id) {
   const W = width, H = height, P = p => ({ x: p.x / W, y: p.y / H });
   switch (id) {
-    // (Sun-Hotspots konsolidiert -> hs_sun mit fester path-Position + anno-Diagramm)
+    // Sun: der Hotspot sass mittig auf der Scheibe (kaum sichtbar) -> an den OBEREN Sonnenrand, gut erkennbar.
+    case 'hs_sun':      { const s = sunLayout(); return P({ x: s.cx, y: s.cy - s.r }); }
     // Station
     case 'st_hull':     { const s = stationLayout(); return P({ x: s.cx - s.hw,        y: s.cy - s.hh * 0.15 }); }
     case 'st_life':     { const s = stationLayout(); return P({ x: s.cx,               y: s.cy - s.hh * 0.42 }); }
@@ -3807,16 +3809,17 @@ function updateSectionMarkers() {
     }
   }
   // In einer Viz-Unterszene: Zurueck-Marker zur Elternszene (oben mittig).
+  // AUSNAHME: Szene-1-Unterszenen (atmosphere/water/sun/timeline, parent = scene1) haben KEINEN Zurueck-Marker
+  // mehr — der Ausstieg ist der Klick, sobald alle Diagramm-Texte da sind (onAnnoClick -> goToScene(Szene 1)).
   const cur = VIZ_MENU.find(v => v.id === curId);
-  const inViz = cur && nextScene < 0 && !zoomTransition && !openEntity;
+  const inViz = cur && cur.parent !== SPACE_ID && nextScene < 0 && !zoomTransition && !openEntity;
   sectionBackMarker.visible = !!inViz;
   if (inViz) {
     sectionBackMarker.x = width * 0.5;
     sectionBackMarker.y = height * 0.06;
     sectionBackMarker.r = Math.max(16, Math.min(width, height) * 0.02);
     sectionBackMarker.parentIdx = sceneIndexById(cur.parent);
-    const backLabel = cur.parent === SPACE_ID ? 'Back to Earth' : 'Back to the organism';
-    drawRimMarker(sectionBackMarker.x, sectionBackMarker.y, sectionBackMarker.r, backLabel);
+    drawRimMarker(sectionBackMarker.x, sectionBackMarker.y, sectionBackMarker.r, 'Back to the organism');
   }
 }
 
@@ -3899,8 +3902,11 @@ function openPanel(ent) {
 function closePanel() {
   openEntity = null;
   annoEntity = null;
+  annoAutoActive = false;
   document.getElementById('reader').classList.remove('open');
-  document.getElementById('anno').classList.remove('open');
+  const anno = document.getElementById('anno');
+  anno.classList.remove('open');
+  anno.classList.remove('bg-dim');
   setDuck(false);
 }
 
@@ -3917,6 +3923,13 @@ let annoBuilt = null;   // Zustand der letzten SVG-Erzeugung {x,y,r,w,h} -> Rebu
 // zuerst der Kurztext unten, dann die drei Stichpunkte von LINKS nach rechts: smog -> ozon -> magnetfeld.
 // 0 = nichts, 1 = Kurztext, 2 = +smog, 3 = +ozon, 4 = +magnetfeld. Erst danach schliesst der Klick.
 let annoStep = 0;
+// Szene-1-Diagramme (atmosphere/water/sun/timeline) laufen AUTOMATISCH ab: nach dem Oeffnen erscheinen
+// die Texte nacheinander OHNE Klick; sind alle da, fuehrt ein Klick zurueck zur Elternszene (Szene 1 / world).
+let annoAutoActive = false;
+let annoAutoNextMs = 0;
+const ANNO_AUTO_FIRST_MS = 1000;   // erster Schritt 1s nach dem Oeffnen (Water: der Meeresspiegel steigt mit diesem Schritt)
+const ANNO_AUTO_STEP_MS  = 1300;   // zeitlicher Abstand der folgenden Schritte
+function annoIsAuto(kind) { return kind === 'atmosphere' || kind === 'water' || kind === 'sun' || kind === 'timeline'; }
 const ATMO_ANNO_STEPS = 4;
 // Water-Diagramm gestuft wie die Atmosphaere: Klick 1 = Kurztext unten + Wasser steigt,
 // dann je Klick ein Label (living band -> old mountains -> cold deep). 1 + 3 = 4 Schritte.
@@ -3977,9 +3990,14 @@ function openAnno(ent) {
   const media = document.getElementById('anno-media');
   media.innerHTML = '';
   loadHotspotMedia(ent, media);   // eigene Bilder (hs_station1.png, ...) erscheinen ueber dem Kurztext
-  updateAnnoHint();               // Hinweis unten: "click to continue" (solange es noch etwas zu enthuellen gibt) / "click to return"
+  updateAnnoHint();               // Hinweis unten: "" (waehrend Auto-Enthuellung) / "click to return"
+  // Szene-1-Diagramme: automatische Enthuellung starten (erster Schritt nach ANNO_AUTO_FIRST_MS).
+  annoAutoActive = annoIsAuto(ent.def.anno);
+  annoAutoNextMs = millis() + ANNO_AUTO_FIRST_MS;
   buildAnnoSVG();
-  document.getElementById('anno').classList.add('open');
+  const annoEl = document.getElementById('anno');
+  annoEl.classList.toggle('bg-dim', ent.def.anno === 'timeline');   // History: die Welt dahinter leicht abdunkeln
+  annoEl.classList.add('open');
   setDuck(true);
 }
 
@@ -3988,8 +4006,11 @@ function openAnno(ent) {
 function updateAnnoHint() {
   const hint = document.querySelector('#anno .hint');
   if (!hint) return;
-  const steps = annoStepsFor(annoEntity && annoEntity.def.anno);
+  const kind = annoEntity && annoEntity.def.anno;
+  const steps = annoStepsFor(kind);
   const more = steps > 0 && annoStep < steps;
+  // Auto-Diagramme (Szene 1): waehrend der Enthuellung kein Hinweis; sind alle da -> "click to return".
+  if (annoIsAuto(kind)) { hint.textContent = more ? '' : 'click to return'; return; }
   hint.textContent = more ? 'click to continue' : 'click to return';
 }
 
@@ -4004,25 +4025,51 @@ function fadeInAnno(el, dur = 1.50) {
   el.style.opacity = '1';
 }
 
-// Klick im Atmosphaeren-Diagramm: enthuellt den naechsten Text (langsam eingeblendet, 0.75s); erst
-// nach dem letzten Schritt schliesst der Klick. Alle anderen Diagramm-Arten schliessen sofort (unveraendert).
+// Einen Enthuellungs-Schritt weiter (gemeinsam fuer den Auto-Ablauf UND — bei den Szene-2-Diagrammen — den Klick).
+function advanceAnnoStep() {
+  const kind = annoEntity && annoEntity.def.anno;
+  const steps = annoStepsFor(kind);
+  if (!annoEntity || annoStep >= steps) return;
+  annoStep++;
+  if (annoStep === 1) {   // Schritt 1: grosser Kurztext unten erscheint (einmalig) -> sanft einblenden
+    const cap = document.getElementById('anno-caption');
+    cap.textContent = (annoEntity.def.content && annoEntity.def.content.body) || '';
+    fadeInAnno(cap);
+    // Water: mit dem ERSTEN Schritt (1s nach Oeffnen) beginnt der Meeresspiegel zu steigen.
+    if (kind === 'water' && annoEntity.def.action === 'seaLevelRise') sectionSeaRiseActive = true;
+  }
+  updateAnnoHint();
+  buildAnnoSVG();
+  if (annoStep >= 2) fadeInAnno(document.getElementById('anno-newnode'));   // neuer Stichpunkt/Label blendet langsam ein
+}
+
+// pro Frame: die automatischen Szene-1-Diagramme Schritt fuer Schritt (zeitgesteuert) enthuellen — ohne Klick.
+function updateAnnoAuto() {
+  if (!annoAutoActive || !annoEntity) return;
+  if (annoStep >= annoStepsFor(annoEntity.def.anno)) { annoAutoActive = false; return; }   // alle da -> Klick fuehrt jetzt zurueck
+  if (millis() >= annoAutoNextMs) {
+    advanceAnnoStep();
+    annoAutoNextMs = millis() + ANNO_AUTO_STEP_MS;
+  }
+}
+
+// Klick im Diagramm:
+//  - Szene-1-Diagramme (auto): waehrend der Enthuellung IGNORIEREN; sind alle Texte da, fuehrt der Klick
+//    zurueck zur Elternszene (Szene 1 / world).
+//  - Szene-2-Diagramme (station/living/wildlife): wie bisher (klick-gestuft bzw. schliessen).
 function onAnnoClick() {
   const kind = annoEntity && annoEntity.def.anno;
   const steps = annoStepsFor(kind);
-  if (annoEntity && steps > 0 && annoStep < steps) {
-    annoStep++;
-    if (annoStep === 1) {   // Schritt 1: grosser Kurztext unten erscheint (einmalig) -> sanft einblenden
-      const cap = document.getElementById('anno-caption');
-      cap.textContent = (annoEntity.def.content && annoEntity.def.content.body) || '';
-      fadeInAnno(cap);
-      // Water: mit dem ersten Klick beginnt der Meeresspiegel zu steigen.
-      if (kind === 'water' && annoEntity.def.action === 'seaLevelRise') sectionSeaRiseActive = true;
+  if (annoIsAuto(kind)) {
+    if (annoStep >= steps) {                                    // alle Texte da -> zurueck zur Welt
+      const v = VIZ_MENU.find(x => x.id === annoEntity.def.scene);
+      const parentIdx = v ? sceneIndexById(v.parent) : sceneIndexById(SPACE_ID);
+      annoAutoActive = false;
+      goToScene(parentIdx);                                     // goToScene schliesst das Panel selbst
     }
-    updateAnnoHint();
-    buildAnnoSVG();
-    if (annoStep >= 2) fadeInAnno(document.getElementById('anno-newnode'));   // neuer Stichpunkt/Label blendet langsam ein
-    return;
+    return;                                                     // waehrend der Enthuellung: Klick tut nichts
   }
+  if (annoEntity && steps > 0 && annoStep < steps) { advanceAnnoStep(); return; }
   closePanel();
 }
 
@@ -4247,8 +4294,12 @@ function buildAnnoSVG() {
     const strandX = Math.round(Math.max(175, Math.min(W * 0.26, 360)));   // Strang links-of-center, Jahr-Spalte davor
     // Strang bewusst im oberen ~74% halten -> die unteren ~26% bleiben fuer die zentrierte Bottom-Caption
     // (Block 3.2, bei schmalem Fenster bis 3 Zeilen) + hint frei; sonst ueberlappt die NOW-Zeile den Kurztext.
-    const yTop = H * 0.16, yBot = H * 0.74, dy = (yBot - yTop) / (n - 1);
-    const yOf = i => Math.round(yTop + i * dy);
+    const yTop = H * 0.16, yBot = H * 0.74;
+    // Abstaende OBEN (Anfang des Strangs / Vergangenheit) groesser, nach unten enger -> Nutzerwunsch
+    // "am Anfang des Strahls mehr auseinander". Verteilung ueber eine Potenzkurve (Exponent < 1 dehnt die
+    // ersten Schritte; groesser = gleichmaessiger). Tunebar.
+    const TL_SPREAD = 0.80;
+    const yOf = i => Math.round(yTop + (yBot - yTop) * Math.pow(i / (n - 1), TL_SPREAD));
     const rightX = strandX + 22;                       // Titel/Gloss-Spalte rechts des Strangs
     const hingeIdx = eras.findIndex(e => e.hinge);     // erste ERINNERTE Epoche (2512) -> davor = archivarisch
     const shown = Math.max(0, annoStep - 1);           // Schritt 1 = nur Kurztext unten; ab Schritt 2 die Epochen
