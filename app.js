@@ -911,7 +911,11 @@ let CAUSTICS_AMOUNT = 1.0;
 // Screenshot-Modus (Toggle: Strg+Ü): blendet ALLE Hotspots (Marker-Punkte + Rand-/Zurueck-Marker) aus,
 // damit man saubere Screenshots der Szene machen kann. Erneut Strg+Ü zeigt sie wieder.
 let screenshotMode = false;
-function toggleScreenshotMode() { screenshotMode = !screenshotMode; }
+function toggleScreenshotMode() {
+  screenshotMode = !screenshotMode;
+  // body-Klasse -> CSS blendet zusaetzlich das Diagramm-Overlay (#anno) und den Glow-Cursor (#cursor) aus.
+  if (document.body) document.body.classList.toggle('screenshot', screenshotMode);
+}
 
 // Schwarz-Weiss-Modus: setzt Klasse 'bw' auf <body> -> CSS-Graustufenfilter (siehe index.html).
 // Toggle per Taste 's' oder Start mit ?bw. Rein visuell, kein Einfluss auf die Render-Pipeline.

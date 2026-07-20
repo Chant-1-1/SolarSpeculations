@@ -150,6 +150,9 @@
   #anno.open { opacity: 1; pointer-events: all; }
   /* History-Diagramm: die Welt (Globus) bleibt dahinter sichtbar, wird aber leicht schwarz abgedunkelt. */
   #anno.bg-dim { background: rgba(0, 0, 4, 0.55); }
+  /* Screenshot-Modus (Strg+Ü): auch das Diagramm-Overlay und der Glow-Cursor weg -> ganz nackte Szene. */
+  body.screenshot #anno { opacity: 0 !important; pointer-events: none !important; }
+  body.screenshot #cursor { display: none !important; }
   #anno svg { position: absolute; inset: 0; }
   #anno-media {
     position: absolute; left: 50%; transform: translateX(-50%); bottom: 17vh;
