@@ -908,6 +908,11 @@ let SNOW_AMOUNT = 1;
 // Kaustik (kleine helle Lichtflecken knapp unter der Oberflaeche): wenige Punkte (nur 1 Worley-Lage,
 // siehe caustics()), dafuer normal hell. 0..1 regelt die HELLIGKEIT (nicht die Anzahl).
 let CAUSTICS_AMOUNT = 1.0;
+// Screenshot-Modus (Toggle: Strg+Ü): blendet ALLE Hotspots (Marker-Punkte + Rand-/Zurueck-Marker) aus,
+// damit man saubere Screenshots der Szene machen kann. Erneut Strg+Ü zeigt sie wieder.
+let screenshotMode = false;
+function toggleScreenshotMode() { screenshotMode = !screenshotMode; }
+
 // Schwarz-Weiss-Modus: setzt Klasse 'bw' auf <body> -> CSS-Graustufenfilter (siehe index.html).
 // Toggle per Taste 's' oder Start mit ?bw. Rein visuell, kein Einfluss auf die Render-Pipeline.
 let bwMode = false;
@@ -2191,8 +2196,8 @@ function draw() {
     if (currentSceneAlphaFor(ent) <= 0.01) continue;
     ent.update(dt);
   }
-  // Hover-Erkennung (oberstes zuerst). Waehrend Zoom-Uebergang deaktiviert.
-  if (!zoomTransition) {
+  // Hover-Erkennung (oberstes zuerst). Waehrend Zoom-Uebergang deaktiviert. Im Screenshot-Modus aus.
+  if (!zoomTransition && !screenshotMode) {
     for (let i = allEntities.length - 1; i >= 0; i--) {
       const ent = allEntities[i];
       if (ent.def.interactive === false) continue;
@@ -2203,6 +2208,7 @@ function draw() {
   if (hoverEntity && hoverEntity !== prevHover && hoverEntity.def.hotspot) playHoverPing();
   for (const ent of allEntities) {
     if (currentSceneAlphaFor(ent) <= 0.01) continue;
+    if (screenshotMode && ent.def.hotspot) continue;   // Screenshot-Modus: Hotspot-Punkte nicht zeichnen
     const entIsPivot = zoomPivotIndex >= 0 && entInScene(ent.def, scenes[zoomPivotIndex]?.id);
     if (zoom && entIsPivot) {
       push(); translate(zoom.cx, zoom.cy); scale(zoom.scale); translate(-zoom.cx, -zoom.cy);
@@ -3796,6 +3802,8 @@ function drawRimMarker(x, y, r, label) {
 function updateSectionMarkers() {
   sectionHover = false;
   sectionMarkers = [];
+  sectionBackMarker.visible = false;
+  if (screenshotMode) return;   // Screenshot-Modus: keine Rand-/Zurueck-Marker
   const curId = scenes[currentScene] && scenes[currentScene].id;
   const active = curId && nextScene < 0 && !zoomTransition && !openEntity;
   if (active) {
@@ -3834,6 +3842,7 @@ function exitSection() {
 // =========================================================================
 function mousePressed() {
   if (!started || openEntity) return;
+  if (screenshotMode) return;   // Screenshot-Modus: keine Klicks auf (ausgeblendete) Hotspots/Marker
   // Rand-Marker (Ein-/Ausstieg) VOR den Entities pruefen -> Klick greift nicht die Kugel
   if (!zoomTransition && nextScene < 0) {
     for (const m of sectionMarkers) {
@@ -4487,6 +4496,8 @@ function updateSceneName(index = currentScene) {
 
 function keyPressed() {
   if (keyCode === ESCAPE && openEntity) closePanel();
+  // Strg + Ü: Screenshot-Modus (alle Hotspots aus/ein). code 'BracketLeft' = physische Ü-Taste (QWERTZ).
+  else if ((key === 'ü' || key === 'Ü') && keyIsDown(CONTROL)) { toggleScreenshotMode(); return false; }
   else if (key === 'p' || key === 'P') PERF_HUD = !PERF_HUD;   // FPS-HUD ein/aus
   else if (key === 's' || key === 'S') toggleBW();             // Schwarz-Weiss ein/aus
   else if (keyCode === LEFT_ARROW) goToScene(navStep(-1));
