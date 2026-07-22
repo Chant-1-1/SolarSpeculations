@@ -142,6 +142,24 @@
         "link": { "url": "", "label": "" }
       }
     },
+    {
+      "_kommentar": "SZENE-2-HOTSPOT 'the mothers' (aus der alten descent-Version uebernommen: drawVizMothers). 'anno' -> REINES In-Szene-Diagramm (wie 'timeline'): der Rat der fuenf Muetter, klick-frei ganz sichtbar, Klick schliesst und bleibt im Schnitt. Grafik in buildAnnoSVG (kind:'mothers'), body = Kurztext unten. Marker rechts neben Station/Living. Eigene Reader-Bilder optional: assets/images/hotspots/hs_mothers1.png ...",
+      "id": "hs_mothers",
+      "scene": "scene2",
+      "hotspot": true,
+      "interactive": true,
+      "anno": "mothers",
+      "layer": 1.2,
+      "label": "The mothers",
+      "path": [ { "x": 0.63, "y": 0.52 } ],
+      "loop": "loop", "speed": 0.0, "scale": 0.05, "bob": 0.0, "opacity": 1.0,
+      "content": {
+        "title": "The mothers",
+        "body": "Five mothers hold the station, one for each thing it cannot do without: food, air, memory, the world outside, and the light. They hold no rank over one another and settle everything in assembly. Power is split five ways by design, so no single hand ever closes over the station.",
+        "secondaryImage": "",
+        "link": { "url": "", "label": "" }
+      }
+    },
 
     {
       "id": "sea_spider",
@@ -475,7 +493,7 @@
       "opacity": 1.0,
       "content": {
         "title": "The solar instrument",
-        "body": "The instrument reads nothing and measures nothing — it is the Mask of Kheir, worn on the body: slit eye-shades of carved bone and a breathing-mask of pressed kelp, fitted in the antechamber just below the Solar Space. It admits no light of its own; it only decides how much of the light and air already in the room is allowed to reach the one who climbs, and when. It does not calibrate the light — it calibrates the body, bringing the eye, the breath and the mind up into open day by stages. What the station's old fixed shaft and filters once did for the radiation, the mask now does for the person: the tempering is no longer built into the stone but carried on the face.",
+        "body": "The instrument is a ritual mask, the Mask of Kheir, worn in three layers that are shed in turn during the ceremony of ascent: the pumice shell of the station itself, left behind by climbing up into the Solar Space; eye-shades of carved bone, slit narrow to spare the long-dark eye; and a breathing-mask of pressed kelp that cools the harsh air. Layer by layer, body and mind are accustomed to the raw light.",
         "secondaryImage": "",
         "link": { "url": "", "label": "" }
       }

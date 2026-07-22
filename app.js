@@ -4478,7 +4478,7 @@ function openAnno(ent) {
   annoAutoNextMs = millis() + ANNO_AUTO_FIRST_MS;
   buildAnnoSVG();
   const annoEl = document.getElementById('anno');
-  annoEl.classList.toggle('bg-dim', ent.def.anno === 'timeline');   // History: die Welt dahinter leicht abdunkeln
+  annoEl.classList.toggle('bg-dim', ent.def.anno === 'timeline' || ent.def.anno === 'mothers');   // reine Diagramme (History / Rat der Muetter): den Grund dahinter leicht abdunkeln
   annoEl.classList.add('open');
   setDuck(true);
 }
@@ -4839,6 +4839,59 @@ function buildAnnoSVG() {
       parts.push(aTxt(rightX, y + 15, e.gloss, { anchor: 'start', size: 12, fill: ANNO_DIM }));      // Gloss darunter
       scr.push(i === shown - 1 ? `<g id="anno-newnode">${parts.join('')}</g>` : parts.join(''));     // neueste Epoche -> sanftes Einblenden
     }
+  }
+
+  // ===== MOTHERS (Szene 2, aus der alten descent-Version 'drawVizMothers' uebernommen): der Rat der fuenf
+  //       Muetter. REIN bildschirmfest (scr) ueber leicht abgedunkeltem Grund (bg-dim), NICHT gestuft ->
+  //       alles zusammen sichtbar (wie station/living), Klick schliesst und bleibt im Schnitt. Fuenf Spalten:
+  //       je Figur + Zeichen im Ring, Titel, Rolle; darunter eine gestrichelte 'Versammlungs'-Linie, die die
+  //       fuenf Knoten verbindet. Die Watcher Mother (huetet das Licht) ist gold + Lichtkegel, die uebrigen light. =====
+  if (kind === 'mothers') {
+    const mothers = [
+      { title: ['Provisioner', 'Mother'], role: ['food and water,', 'shared across every level'], sym: '⊕' },   // ⊕
+      { title: ['Engineer', 'Mother'],    role: ['oxygen, filtration,', 'pressure — the machines'], sym: '⚙' }, // ⚙
+      { title: ['Memory', 'Mother'],      role: ['the station histories;', 'trains the Keepers'], sym: '◎' },    // ◎
+      { title: ['Navigator', 'Mother'],   role: ['contact and trade with', 'the other stations'], sym: '◈' },   // ◈
+      { title: ['Watcher', 'Mother'],     role: ['the Eye of Kheir;', 'chooses who ascends'], sym: '◉', gold: true }   // ◉
+    ];
+    const n = mothers.length;
+    const pad = W * 0.06, colW = (W - pad * 2) / n;
+    const headY  = H * 0.13;                     // Kopfblock oben links (wie 'timeline')
+    const figY   = H * 0.27;                     // Figur (Kopf + Schultern)
+    const symY   = H * 0.34;                     // Zeichen im Ring
+    const titleY = H * 0.44;                     // Titel (zwei Zeilen)
+    const roleY  = H * 0.555;                    // Rolle (zwei Zeilen, dim)
+    const lineY  = H * 0.66;                      // Versammlungs-Linie unter den Spalten
+
+    // Kopf
+    scr.push(aTxt(pad, headY, 'THE COUNCIL OF MOTHERS', { anchor: 'start', size: 16, fill: ANNO_GOLD }));
+    scr.push(aTxt(pad, headY + 24, 'five hold the station · no rank, only need', { anchor: 'start', size: 12, fill: ANNO_DIM }));
+
+    // Versammlungs-Linie (der Rat tagt) quer durch die Spalten-Mitten + Beschriftung
+    scr.push(aLine(pad + colW * 0.5, lineY, pad + colW * (n - 0.5), lineY, { stroke: 'rgba(154,147,127,0.5)', w: 1.1, dash: '2 7' }));
+    scr.push(aTxt(W / 2, lineY + 24, 'they decide in assembly', { anchor: 'middle', size: 12, fill: ANNO_DIM }));
+
+    mothers.forEach((m, i) => {
+      const cx = pad + colW * (i + 0.5);
+      const fill = m.gold ? ANNO_GOLD : ANNO_LIGHT;
+      // Lichtkegel von oben ueber der Watcher-Spalte (ihr Privileg: sie huetet das Licht)
+      if (m.gold) scr.push(`<path d="M ${cx - 9} ${(figY - 44).toFixed(1)} L ${cx + 9} ${(figY - 44).toFixed(1)} L ${cx + 24} ${symY.toFixed(1)} L ${cx - 24} ${symY.toFixed(1)} Z" fill="rgba(216,178,90,0.10)"/>`);
+      // Figur — kleiner Kopf + Schulterbogen
+      scr.push(`<circle cx="${cx}" cy="${(figY - 8).toFixed(1)}" r="6" fill="none" stroke="${fill}" stroke-width="1.3"/>`);
+      scr.push(`<path d="M ${cx - 13} ${(figY + 14).toFixed(1)} q 13 -17 26 0" fill="none" stroke="${fill}" stroke-width="1.3"/>`);
+      // Zeichen im Ring (eigene Symbol-Schrift mit Fallback -> auch das Zahnrad wird gezeichnet)
+      scr.push(aCircle(cx, symY, 15, { stroke: fill, w: 1.1 }));
+      scr.push(`<text x="${cx}" y="${(symY + 6).toFixed(1)}" fill="${fill}" font-size="17" text-anchor="middle" font-family="'Segoe UI Symbol','Apple Symbols','Noto Sans Symbols 2','Courier New',monospace">${m.sym}</text>`);
+      // Titel (zwei Zeilen)
+      scr.push(aTxt(cx, titleY, m.title, { anchor: 'middle', size: 14, fill }));
+      // Trenner zwischen Titel und Rolle
+      scr.push(aLine(cx - colW * 0.30, roleY - 20, cx + colW * 0.30, roleY - 20, { stroke: 'rgba(154,147,127,0.3)', w: 0.5 }));
+      // Rolle (zwei Zeilen, dim)
+      scr.push(aTxt(cx, roleY, m.role, { anchor: 'middle', size: 11.5, fill: ANNO_DIM }));
+      // Faden von der Spalte hinab auf die Versammlungs-Linie + Knoten
+      scr.push(aLine(cx, roleY + 26, cx, lineY, { stroke: 'rgba(154,147,127,0.32)', w: 0.7 }));
+      scr.push(aDot(cx, lineY, m.gold ? 3.6 : 2.6, fill));
+    });
   }
 
   svg.innerHTML = `<g>${scr.join('')}</g><g id="anno-stone">${stn.join('')}</g>`;
