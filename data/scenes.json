@@ -14,19 +14,27 @@
     {
       "_kommentar": "SZENE 2 – ANSICHT (Aussenansicht der Station). Startszene der 'organism'-Ebene: GLEICHES Unterwasser + gleiche Fauna wie der Schnitt (underwater + Tiere via 'alsoScene:organism'), darauf die Aussenansicht der Station (entity 'organism_view_image' -> Ordner assets/images/entities/scene2/ansicht/) und der 'Wildlife'-Marker. Der 'Section'-Marker blendet OHNE Zoom in den SCHNITT (scene2). backgroundTint = das Blau, aus dem die Wasserfarbe abgeleitet ist.",
       "id": "organism",
-      "name": "the organism",
+      "name": "the station",
       "background": "",
       "backgroundTint": "#0a1a24",
-      "underwater": true
+      "underwater": true,
+      "ambientDir": "assets/sounds/ambient/scene2",
+      "ambientVolume": -12,
+      "ambientVolumes": { "humpback-whale.mp3": -18, "metal-clanking.mp3": -20 },
+      "reverbSend": { "bus": "long", "amount": 0.35 }
     },
     {
       "_kommentar": "SZENE 2 – SCHNITT (bisherige Unterwasser-Szene, inhaltlich unveraendert). Jetzt 'noNav' -> nicht mehr im Menue/Pfeil-Nav, sondern nur ueber den 'Section'-Marker der Ansicht erreichbar. Enthaelt weiterhin die Hotspots Station/Living + den Wildlife-Marker. Der 'The eye'-Marker fuehrt per Kinozoom in scene3.",
       "id": "scene2",
-      "name": "the organism",
+      "name": "the station",
       "background": "",
       "backgroundTint": "#081826",
       "underwater": true,
-      "noNav": true
+      "noNav": true,
+      "ambientDir": "assets/sounds/ambient/scene2",
+      "ambientVolume": -12,
+      "ambientVolumes": { "humpback-whale.mp3": -18, "metal-clanking.mp3": -20 },
+      "reverbSend": { "bus": "long", "amount": 0.35 }
     },
     {
       "id": "scene3",
@@ -34,7 +42,10 @@
       "background": "assets/images/entities/scene3/solarspace.png",
       "channelMask": "assets/images/entities/scene3/solarspacewatermask.png",
       "backgroundTint": "#08070a",
-      "interior": true
+      "interior": true,
+      "ambientDir": "assets/sounds/ambient/scene3",
+      "ambientVolume": -10,
+      "reverbSend": { "bus": "long", "amount": 0.4 }
     },
     {
       "_kommentar": "ATMOSPHERE-Ansicht: Zoom auf den Erd-Rand (Limb) der Projekt-Weltkugel, die langsam weiterrotiert; darueber die obersten Schichten (Magnetfeld, Ozon, Smog). KEIN Wasser/Berg. NICHT in der Nav -> nur ueber den 'Atmosphere'-Marker auf der Weltkugel erreichbar. drawAtmosphere().",
@@ -66,7 +77,7 @@
     },
     {
       "id": "station_cut",
-      "name": "the organism",
+      "name": "the station",
       "background": "",
       "backgroundTint": "#07141f",
       "viz": "station",

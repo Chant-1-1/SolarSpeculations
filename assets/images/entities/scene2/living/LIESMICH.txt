@@ -1,0 +1,14 @@
+BILD FUER DEN HOTSPOT "Living" (Szene 2 · Schnitt / Section)
+=============================================================
+
+  living1.png   -> DETAIL-/ZOOM-BILD (ein Zoom in einen Bereich der Station)
+
+Der "Living"-Hotspot ist ein pulsierender Gold-Marker AUF der Station. Beim
+Anklicken faehrt living1.png als VOLLBILD-ZOOM heran (dunkler Backdrop, Titel
+"Living" oben, "click to return" unten). Klick irgendwo oder ESC schliesst.
+
+WICHTIG: Der Marker laesst das Bild NICHT mehr im Wasser schweben. Das Bild
+erscheint NUR als Zoom beim Klick. Referenziert in data/entities.json als
+  "zoom": "assets/images/entities/scene2/living/living1.png"
+Ein neues/anderes Detailbild einfach als living1.png hier ablegen (oder den Pfad
+im Feld 'zoom' aendern). Position des Markers ueber 'path' (0..1) im Entity.

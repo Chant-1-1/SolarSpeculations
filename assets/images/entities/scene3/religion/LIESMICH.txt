@@ -1,0 +1,15 @@
+BILDER FÜR DEN HOTSPOT "The faith" (Religion) — Szene 3
+========================================================
+
+Dateien EINFACH HIER ablegen:
+
+  religion1.png   (oder .webp)   -> Motiv, wie es in der Szene erscheint
+  religion2.png, religion3.png ...  -> weitere Varianten (zufällig gewählt)
+
+Leer = pulsierender Gold-Marker als Klickpunkt. Sobald religion1.png da ist,
+wird das Bild an dieser Stelle gezeichnet (und bleibt anklickbar).
+
+Position/Größe über das Entity 'hs_religion' in data/entities.json (path/scale).
+
+Reader-Detailbilder optional (groß über dem Text beim Anklicken):
+  in assets/images/hotspots/ ablegen: hs_religion1.png, hs_religion2.png ...

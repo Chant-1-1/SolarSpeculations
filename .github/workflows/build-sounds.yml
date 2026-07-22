@@ -1,0 +1,43 @@
+name: Sound-Manifeste bauen
+
+# Laeuft bei jedem Push, der etwas unter assets/sounds/ aendert (z. B. eine neue mp3).
+# Erzeugt/aktualisiert die sounds.json je Ordner und committet sie zurueck, damit die
+# Live-Seite (GitHub Pages) weiss, welche Sounds in jedem Ordner liegen.
+on:
+  push:
+    paths:
+      - 'assets/sounds/**'
+      - 'tools/build-sounds.js'
+  workflow_dispatch: {}   # erlaubt manuelles Ausloesen im GitHub-UI
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-sounds-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Manifeste erzeugen
+        run: node tools/build-sounds.js
+
+      - name: Aenderungen committen (falls vorhanden)
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add assets/sounds
+          if git diff --staged --quiet; then
+            echo "Keine Aenderungen an den Manifesten."
+          else
+            git commit -m "Auto: Sound-Manifeste aktualisieren"
+            git push
+          fi

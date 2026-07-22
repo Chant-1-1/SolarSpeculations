@@ -1,0 +1,38 @@
+AMBIENT-SOUNDS – SO EINFACH GEHT'S JETZT
+========================================
+
+Der ganze Ordner IST die Playlist. Alle *.mp3 in DIESEM Ordner laufen
+gleichzeitig (übereinandergelegt, geloopt) in Szene 2 – in BEIDEN Teilen:
+ - "the station" / Ansicht  (Szenen-ID organism)
+ - "the station" / Schnitt   (Szenen-ID scene2)
+
+NEUEN SOUND HINZUFÜGEN:
+  1. mp3 einfach in diesen Ordner legen.
+  2. Zu GitHub pushen.  -> fertig, spielt automatisch mit.
+Kein Pfad-Eintragen, kein Dateiname-Zwang. (Namen ohne Leerzeichen/Umlaute.)
+
+SOUND ENTFERNEN:
+  Datei aus dem Ordner löschen (oder in einen Unterordner verschieben,
+  Unterordner werden NICHT mitgespielt).
+
+WICHTIG – aktuell liegen 5 mp3s hier, also spielen auch alle 5:
+  below-the-sea, dive-deep, drone-filter, humpback-whale, metal-clanking
+  Wenn du nur 3 willst, die zwei ungewollten hier rausnehmen.
+
+--------------------------------------------------------------------
+WIE ES TECHNISCH LÄUFT (nur zur Info)
+--------------------------------------------------------------------
+data/scenes.json zeigt pro Szene nur noch auf den ORDNER:
+  "ambientDir": "assets/sounds/ambient/scene2"
+  "ambientVolume": -12                     (Grundlautstärke aller Ebenen)
+  "ambientVolumes": { "humpback-whale.mp3": -18, "metal-clanking.mp3": -20 }
+                                           (optional: einzelne Datei leiser/lauter)
+
+Die Datei sounds.json in diesem Ordner wird AUTOMATISCH erzeugt
+(tools/build-sounds.js, aufgerufen von der GitHub Action bei jedem Push).
+Sie ist nötig, damit die Live-Seite (GitHub Pages) den Ordnerinhalt kennt –
+NICHT von Hand bearbeiten. Lokal beim Entwickeln reicht "Datei reinlegen",
+da wird der Ordner direkt gelesen.
+
+Hall pro Szene: "reverbSend": { "bus": "long", "amount": 0.35 }
+Hinweis: Ton startet erst nach dem Klick auf das Start-Gate (Browser-Autoplay).

@@ -346,6 +346,10 @@ async function buildWorld() {
       ent.pickVariant();
     }
     if (def.waterMask) ent.waterMask = await tryLoadImage(def.waterMask);   // Alpha-Maske: Innen-Wasserflaechen (Becken/Kanaele)
+    if (def.floorplan) ent.floorplan = await tryLoadImage(def.floorplan);   // Grundriss (beim Oeffnen des Hotspots als Overlay, links)
+    if (def.floorplanMask) ent.floorplanMask = await tryLoadImage(def.floorplanMask);   // Alpha-Maske: Wasserflaeche (Draufsicht) im Grundriss
+    if (def.floorplanImages) { ent.floorplanImages = []; for (const p of def.floorplanImages) ent.floorplanImages.push(await tryLoadImage(p)); }   // Zusatzbilder rechts (fehlend -> Platzhalter-Box)
+    if (def.zoom) ent.zoom = await tryLoadImage(def.zoom);   // Detail-Bild: beim Klick als Vollbild-Zoom (Kino-Reinfahren in einen Bereich)
     if (def.globe) {
       ent.tex = await tryLoadImage(def.globe.texture);
       if (def.globe.normal) ent.normTex = await tryLoadImage(def.globe.normal);
@@ -624,25 +628,27 @@ class Entity {
       // Esca (Anglerfisch-Leuchtkoeder): additiver, pulsierender Leuchtpunkt am erkannten warmen
       // Fleck im Sprite. Biolumineszenz -> nicht von der Tiefe gedimmt (leuchtet im Dunkeln staerker).
       if (this.def.glowLure) {
+        const lureF = lureSceneFactor();   // 0 in der Ansicht (kein Durchscheinen), 1 im Schnitt
         if (drawImg.__lure === undefined) drawImg.__lure = findLureSpot(drawImg);
         const L = drawImg.__lure;
-        if (L) {
+        if (L && lureF > 0.01) {
           const lx = (L.x - 0.5) * sz, ly = (L.y - 0.5) * sz * ratio;
           const ms = millis() * 0.001;
           const puls = 0.55 + 0.30 * Math.sin(ms * 1.7 + this.swimPhase)   // langsames Glühen
                             + 0.15 * Math.sin(ms * 9.3 + this.bobPhase);    // feines Flackern
           const p = Math.max(0.15, Math.min(1, puls));
+          const ga = p * alpha * lureF;                                    // Glow-Deckkraft (Szene-abhaengig)
           const r = sz * 0.13 * (0.8 + 0.4 * p);
           const ctx = drawingContext;
           ctx.save();
           ctx.globalCompositeOperation = 'lighter';
           const grad = ctx.createRadialGradient(lx, ly, 0, lx, ly, r);
-          grad.addColorStop(0.0, 'rgba(255,252,225,' + (0.85 * p * alpha) + ')');
-          grad.addColorStop(0.35, 'rgba(255,226,150,' + (0.45 * p * alpha) + ')');
+          grad.addColorStop(0.0, 'rgba(255,252,225,' + (0.85 * ga) + ')');
+          grad.addColorStop(0.35, 'rgba(255,226,150,' + (0.45 * ga) + ')');
           grad.addColorStop(1.0, 'rgba(255,210,120,0)');
           ctx.fillStyle = grad;
           ctx.fillRect(lx - r, ly - r, r * 2, r * 2);
-          ctx.fillStyle = 'rgba(255,255,245,' + (0.9 * p * alpha) + ')';   // heller Kern
+          ctx.fillStyle = 'rgba(255,255,245,' + (0.9 * ga) + ')';   // heller Kern
           ctx.beginPath(); ctx.arc(lx, ly, r * 0.16, 0, 6.2831853); ctx.fill();
           ctx.restore();
         }
@@ -655,11 +661,18 @@ class Entity {
       const wlLocalY = WATERLINE_FRAC * height - y;
       drawIslandPlaceholder(sz, wlLocalY, alpha);
     } else if (!handled && this.def.hotspot) {
-      // Section-Hotspot: dezenter pulsierender Gold-Ring (kein Bild) -> ruhige Klickpunkte im Schnitt
-      drawHotspotMarker(this, sz, alpha, hoverEntity === this);
+      // Section-Hotspot: dezenter pulsierender Gold-Ring (kein Bild) -> ruhige Klickpunkte im Schnitt.
+      // Waehrend das eigene In-Szene-Diagramm laeuft (annoEntity === this), NICHT mitzeichnen -> sonst
+      // scheint der Marker noch durch/neben dem Diagramm durch (History/Water/Atmosphere).
+      // WICHTIG: Hotspots bleiben in DIESEM Zweig (nicht ins finale else-if fallen) -> sonst zeichnet der
+      // Platzhalter-Kleks (this.color) den Hotspot als farbigen Glow waehrend der Viz weiter.
+      if (annoEntity !== this) drawMarkerGlyph(alpha, hoverEntity === this);   // einheitlicher Gold-Marker (alle Szenen)
     } else if (!handled && this.def.sceneImage) {
       // Szenen-Bild-Slot ohne geladenes Bild -> NICHTS zeichnen (kein Platzhalter-Kleks);
       // die Unterszene zeigt dann einfach weiter ihr prozedurales Motiv.
+    } else if (!handled && this.def.noPlaceholder) {
+      // Bild-Slot, der OHNE geladenes Bild NICHTS zeichnen soll (kein Platzhalter-Kleks) -> z.B. Szene 3
+      // (figure/cloth): erst wenn ein Bild im variants-Ordner liegt, erscheint das Motiv.
     } else if (!handled) {
       // Platzhalter-Form: weicher Leuchtkleks (treibende Kreaturen-Leuchtpunkte)
       // global ~10% gedimmt + Tiefen-Verdunkelung (Station/Stein + Scene 1 unberuehrt)
@@ -829,6 +842,18 @@ function currentSceneAlphaFor(ent) {
 }
 function sceneFadeT() { return nextScene >= 0 ? sceneFade : 0; }
 
+// Leuchtkoeder-Sichtbarkeit je Szene: In der ANSICHT (organism) wuerde die Biolumineszenz der
+// Sea Devils durch den massiven Aussen-Stein durchscheinen -> dort Glow AUS (Fisch-Koerper bleibt).
+// Im SCHNITT (scene2) und ueberall sonst Glow AN. Beim Crossfade sauber ueberblendet.
+function lureSceneFactor() {
+  const f = (id) => (id === 'organism' ? 0 : 1);   // nur die Ansicht unterdrueckt den Glow
+  const curId = scenes[currentScene] && scenes[currentScene].id;
+  if (nextScene < 0) return f(curId);
+  const nxtId = scenes[nextScene] && scenes[nextScene].id;
+  const t = sceneFadeT();
+  return f(curId) * (1 - t) + f(nxtId) * t;
+}
+
 // =========================================================================
 //  AUDIO (Tone.js) - drei geteilte Reverb-Busse, szenenbezogenes Routing
 // =========================================================================
@@ -845,37 +870,156 @@ function buildAudio() {
 
   audio = { master, buses, players: {}, ducker: master };
 
-  // pro Szene einen Ambient-Player anlegen (lazy: nur wenn Datei existiert)
+  // pro Szene EIN oder MEHRERE Ambient-Player anlegen (lazy: nur wenn Datei existiert).
+  // Jede Szene bekommt eine Liste von "Ebenen", die gleichzeitig laufen und uebereinander-
+  // gemischt werden. audio.players[sc.id] = Array von { player, vol, baseVol }.
+  //
+  // WICHTIG: Szenen mit GLEICHEM Sound (gleiche Dateien + Lautstaerken) teilen sich DIESELBEN
+  // Player. So laeuft z.B. beim Wechsel Ansicht 'organism' -> Schnitt 'scene2' (beide 'the
+  // station', identischer Unterwasser-Ton) der Ton nahtlos durch, statt neu anzuschneiden.
+  const bySig = {};   // Signatur der Ebenen -> geteilte Slot-Gruppe
   for (const sc of scenesData.scenes) {
-    if (!sc.ambient) continue;
-    const vol = new Tone.Volume(-60).connect(master); // startet stumm
+    const layers = sceneLayers(sc);
+    if (!layers.length) continue;
+
+    const sig = layers.map(l => l.url + '@' + l.volume).slice().sort().join('|');
+    if (bySig[sig]) { audio.players[sc.id] = bySig[sig]; continue; }   // gleicher Sound -> gleiche Player
+
+    // ein Reverb-Send pro Sound (von allen Ebenen gemeinsam genutzt)
     const send = sc.reverbSend && buses[sc.reverbSend.bus]
       ? new Tone.Gain(sc.reverbSend.amount || 0.3) : null;
     if (send) send.connect(buses[sc.reverbSend.bus]);
 
-    const player = new Tone.Player({
-      url: sc.ambient,
-      loop: true,
-      fadeIn: 1, fadeOut: 1,
-      onerror: () => { audio.players[sc.id] = null; } // Datei fehlt -> Stille
-    });
-    player.connect(vol);
-    if (send) player.connect(send);
-    audio.players[sc.id] = { player, vol, baseVol: sc.ambientVolume != null ? sc.ambientVolume : -12 };
+    const slots = [];
+    for (const L of layers) {
+      const vol = new Tone.Volume(-60).connect(master); // startet stumm
+      const slot = { player: null, vol, baseVol: L.volume };
+      const player = new Tone.Player({
+        url: L.url,
+        loop: true,
+        fadeIn: 1, fadeOut: 1,
+        // laedt eine Ebene erst NACH dem Szenenwechsel fertig und ist ihre (geteilte) Gruppe
+        // gerade aktiv (audio.current), dann direkt einblenden. Haengt bewusst NICHT an
+        // currentScene (das zieht waehrend der Fade-Phase nach) -> kein Verpassen beim ersten Laden.
+        onload: () => {
+          if (started && audio && audio.current === slots) {
+            try {
+              if (player.state !== 'started') player.start();
+              vol.volume.rampTo(slot.baseVol, 2);
+            } catch (e) { /* noch nicht bereit */ }
+          }
+        },
+        onerror: () => { /* diese Ebene faellt aus -> bleibt stumm, Szene laeuft weiter */ }
+      });
+      slot.player = player;
+      player.connect(vol);
+      if (send) player.connect(send);
+      slots.push(slot);
+    }
+    bySig[sig] = slots;
+    audio.players[sc.id] = slots;
   }
 }
 
-function playSceneAudio(index, fadeSec = 2) {
+// Ambient-Ebenen einer Szene normalisieren. "ambient" darf sein:
+//   - ""  / fehlend      -> keine Ebene (Stille)
+//   - "pfad.mp3"         -> eine Ebene
+//   - ["a.mp3","b.mp3"]  -> mehrere Ebenen, gleiche Lautstaerke (ambientVolume)
+//   - [{ url, volume }]  -> mehrere Ebenen mit eigener Lautstaerke pro Ebene
+// Strings und Objekte duerfen im Array gemischt werden.
+function ambientLayers(sc) {
+  const raw = sc.ambient;
+  if (!raw) return [];
+  const defVol = sc.ambientVolume != null ? sc.ambientVolume : -12;
+  const arr = Array.isArray(raw) ? raw : [raw];
+  return arr
+    .map(item => typeof item === 'string'
+      ? { url: item, volume: defVol }
+      : (item && item.url ? { url: item.url, volume: item.volume != null ? item.volume : defVol } : null))
+    .filter(l => l && l.url);
+}
+
+// Endgueltige Ebenen-Liste einer Szene (synchron, fuer buildAudio):
+//   - "ambient" gesetzt  -> explizite Liste (String/Array), hat Vorrang
+//   - sonst "ambientDir" -> die zuvor per resolveAllAmbientDirs() gescannten Dateien
+function sceneLayers(sc) {
+  if (sc.ambient) return ambientLayers(sc);
+  if (sc._resolvedLayers) return sc._resolvedLayers;
+  return [];
+}
+
+// Alle Szenen mit "ambientDir" aufloesen: Ordner scannen -> Dateiliste -> Ebenen.
+// Muss VOR buildAudio laufen (asynchron, da es den Ordnerinhalt vom Server holt).
+async function resolveAllAmbientDirs() {
+  if (!scenesData || !scenesData.scenes) return;
+  await Promise.all(scenesData.scenes.map(async sc => {
+    if (sc.ambient || !sc.ambientDir) return;   // explizite Liste hat Vorrang
+    try { sc._resolvedLayers = await resolveAmbientDir(sc); }
+    catch (e) { sc._resolvedLayers = []; }
+  }));
+}
+
+// Einen ambientDir zu einer Ebenen-Liste [{url, volume}] aufloesen.
+// Lautstaerke: pro Datei aus "ambientVolumes" (Datei->dB), sonst "ambientVolume".
+async function resolveAmbientDir(sc) {
+  const base = String(sc.ambientDir).replace(/\/+$/, '');
+  const files = await listDirMp3(base);
+  const defVol = sc.ambientVolume != null ? sc.ambientVolume : -12;
+  const ov = sc.ambientVolumes || {};
+  return files.map(f => ({ url: base + '/' + f, volume: ov[f] != null ? ov[f] : defVol }));
+}
+
+// Alle *.mp3 in einem Ordner ermitteln - OHNE dass jede Datei einzeln in scenes.json
+// stehen muss. Zwei Quellen, in dieser Reihenfolge:
+//  1) Verzeichnis-Listing des Dev-Servers (npx http-server) -> IMMER frisch, aber nur lokal.
+//  2) mitgeliefertes Manifest sounds.json (von tools/build-sounds.js bzw. der GitHub Action
+//     erzeugt) -> funktioniert ueberall, auch auf GitHub Pages (dort gibt es kein Listing).
+async function listDirMp3(base) {
+  // 1) Dev-Server-Verzeichnis-Listing (lokal). Auf GitHub Pages -> 404 -> faellt durch.
+  try {
+    const r = await fetch(base + '/', { cache: 'no-store' });
+    if (r.ok) {
+      const html = await r.text();
+      const files = [...html.matchAll(/href="([^"?#]+\.mp3)"/gi)]
+        .map(m => decodeURIComponent(m[1].split('/').pop()));
+      const uniq = files.filter((f, i) => f && files.indexOf(f) === i);
+      if (uniq.length) return uniq;
+    }
+  } catch (e) { /* kein Listing -> Manifest versuchen */ }
+  // 2) Manifest (ueberall). Array von Dateinamen ODER { files: [...] }.
+  try {
+    const r = await fetch(base + '/sounds.json', { cache: 'no-cache' });
+    if (r.ok) {
+      const j = await r.json();
+      const arr = Array.isArray(j) ? j : (j && Array.isArray(j.files) ? j.files : []);
+      return arr.filter(f => typeof f === 'string' && /\.mp3$/i.test(f)).map(f => f.split('/').pop());
+    }
+  } catch (e) { /* kein Manifest -> Stille */ }
+  return [];
+}
+
+// Kurzer Schnitt beim Szenenwechsel: der Ton der neuen Szene kommt und der alte wird in
+// SCENE_AUDIO_CUT Sekunden weggeblendet (kein langes Ueberblenden). Teilen sich zwei Szenen
+// denselben Sound (gleiche Slot-Gruppe), passiert beim Wechsel NICHTS -> nahtlos.
+const SCENE_AUDIO_CUT = 0.4;
+
+function playSceneAudio(index, fadeSec = SCENE_AUDIO_CUT) {
   if (!audio) return;
-  scenes.forEach((sc, i) => {
-    const slot = audio.players[sc.id];
-    if (!slot) return;
-    const target = i === index ? slot.baseVol : -60;
-    try {
-      if (i === index && slot.player.loaded && slot.player.state !== 'started') slot.player.start();
-      slot.vol.volume.rampTo(target, fadeSec);
-    } catch (e) { /* Player evtl. noch nicht geladen */ }
-  });
+  const curId = scenes[index] && scenes[index].id;
+  const curSlots = curId ? audio.players[curId] : null;   // Slot-Gruppe der Zielszene (evtl. geteilt)
+  audio.current = curSlots;                               // aktive Gruppe merken -> onload kann spaet geladene Ebenen nachstarten
+  // eindeutige Slot-Gruppen (geteilte Player nur einmal behandeln)
+  const groups = new Set(Object.values(audio.players).filter(Boolean));
+  for (const slots of groups) {
+    const on = slots === curSlots;                        // gehoert diese Gruppe zur Zielszene?
+    for (const slot of slots) {
+      const target = on ? slot.baseVol : -60;
+      try {
+        if (on && slot.player.loaded && slot.player.state !== 'started') slot.player.start();
+        slot.vol.volume.rampTo(target, fadeSec);
+      } catch (e) { /* Player evtl. noch nicht geladen */ }
+    }
+  }
 }
 
 function setDuck(on) {
@@ -973,6 +1117,7 @@ function setup() {
 
 async function startExperience() {
   await Tone.start();
+  await resolveAllAmbientDirs();   // Szenen-Ordner scannen (fuer "ambientDir"), bevor Player entstehen
   buildAudio();
   started = true;
   document.getElementById('gate').classList.add('hidden');
@@ -2230,6 +2375,9 @@ function draw() {
   updateAnnoAuto();   // Szene-1-Diagramme: Texte zeitgesteuert nacheinander einblenden (ohne Klick)
   updateAnno();       // offenes In-Szene-Diagramm dem Bob des Steins nachfuehren
 
+  drawFloorplanOverlay(dt);   // „solar space"-Grundriss als Vollbild-Overlay (mit Draufsicht-Wasser)
+  drawZoomOverlay(dt);        // „living"-Detailbild als Vollbild-Zoom
+
   if (PERF_HUD) drawPerfHud();
 }
 
@@ -2426,13 +2574,12 @@ function drawSceneBackdrop(index, alpha) {
   }
   if (sc.interior) {
     // Scene 3 „das eye": gemaltes Bild (falls vorhanden) ODER prozeduraler Innenraum.
-    // Das Bild (solarspace.png) hat TRANSPARENTE Raender. Als Hintergrund DERSELBE Himmel wie
-    // Szene 2, aber OHNE sichtbares Wasser: drawWater(alpha, 1.0) -> Wasserlinie ganz unten, also
-    // fuellt der Shader den ganzen Hintergrund mit Himmel (das Hintergrund-Wasser laege eh unter
-    // dem Fels/der blauen Linie und waere nie sichtbar). Das einzige sichtbare Wasser ist der
-    // schmale Kanal (channelMask): live, links->rechts fliessend, ueber das Bild beschnitten.
+    // Das Bild (solarspace.png) hat TRANSPARENTE Raender. GANZ HINTEN liegt jetzt das SZENE-2-WASSER
+    // (Nutzerwunsch): drawWater(alpha) mit normaler Wasserlinie -> der Fels sitzt IM Wasser, durch die
+    // transparenten Bildraender (oben/Seiten) sieht man das Wasser dahinter. Darueber der Fels, darueber
+    // die stehende (Motion aus) Kanal-Oberflaeche aus der Maske.
     if (sc.bg) {
-      drawWater(alpha, 1.0);
+      drawWater(alpha, solarBgWaterlineFrac(sc.bg));   // Wasserflaeche auf Maskenhoehe (statt oben am Szene-2-Meeresspiegel)
       drawCoverImage(sc.bg, alpha);
       if (sc.channelMask) drawSolarChannelWater(sc.bg, sc.channelMask, alpha);
     } else {
@@ -2936,8 +3083,21 @@ let solarChannelBuf = null;        // Offscreen-2D-Buffer in Bildschirmgroesse
 let solarMaskBuf = null;           // Offscreen fuer die spaltenweise verwellte Maske (schwappende Kante)
 let solarChannelFailed = false;    // harter Fehler -> dauerhaft aus
 let SOLAR_CHANNEL_OPACITY = 0.9;   // Deckkraft des Kanal-Wassers (kleiner = mehr vom gemalten Kanal sichtbar)
-let SOLAR_CHANNEL_FLOW = 0.06;     // Fliessgeschwindigkeit (Anteil Breite/s); >0 = links->rechts, <0 = umgekehrt
-let SOLAR_CHANNEL_WAVE = 0.006;    // Schwapp-Amplitude der Oberflaeche (Anteil der Hoehe); 0 = statische Kante
+let SOLAR_CHANNEL_FLOW = 0.0;      // Fliessgeschwindigkeit (Anteil Breite/s); 0 = stehendes Wasser (Nutzerwunsch)
+let SOLAR_CHANNEL_WAVE = 0.0;      // Schwapp-Amplitude der Oberflaeche (Anteil der Hoehe); 0 = statische, unbewegte Kante
+// Bild-normierte y der Wasserlinie (Oberkante des gemalten Masken-Kanals, offline aus solarspacewatermask.png
+// gemessen ~0.58-0.63). Das HINTERGRUND-Wasser (Szene-2-Wasser) wird per Cover-Fit genau auf diese Bildhoehe
+// gelegt -> die Wasserflaeche sitzt auf der Maske, nicht mehr am oberen Szene-2-Meeresspiegel. Bei geaenderter
+// Maske hier nachziehen (kleiner = hoeher, groesser = tiefer).
+let SOLAR_BG_WATERLINE_IMG_Y = 0.60;
+// rechnet die bild-normierte Wasserlinie (SOLAR_BG_WATERLINE_IMG_Y) in eine BILDSCHIRM-Fraktion um — abhaengig
+// vom aktuellen Cover-Fit des Bildes (gleiche Mathematik wie drawCoverImage) -> aufloesungs-/seitenverhaeltnis-fest.
+function solarBgWaterlineFrac(img) {
+  if (!img || !img.width) return WATERLINE_FRAC;
+  const ir = img.width / img.height, cr = width / height;
+  let h; if (ir > cr) h = height; else h = width / ir;   // Cover-Hoehe des Bildes auf dem Schirm
+  return ((height - h) / 2 + SOLAR_BG_WATERLINE_IMG_Y * h) / height;
+}
 function drawSolarChannelWater(img, mask, alpha) {
   if (solarChannelFailed || !img || !mask) return;
   try {
@@ -3030,43 +3190,337 @@ function drawSolarChannelWater(img, mask, alpha) {
   }
 }
 
-// Dezenter, pulsierender Gold-Ring als Section-Hotspot (im lokalen Entity-Frame gezeichnet).
-function drawHotspotMarker(ent, sz, alpha, hover) {
-  // DESCENT-Orb: pulsierender, additiv gestufter Glow + heller Kern + kreisende Satelliten-
-  // Partikel. Hotspots werden IMMER voll gezeichnet — auch nach dem Anklicken (kein Dimmen des
-  // besuchten Zustands mehr; ein geklickter Hotspot sieht aus wie ein ungeklickter).
-  if (!ent.sats) {   // Satelliten einmalig pro Hotspot wuerfeln (Radius relativ zum Orb)
-    ent.sats = [];
-    for (let i = 0; i < 10; i++) ent.sats.push({
-      a: Math.random() * TWO_PI,           // Startwinkel
-      r: 0.9 + Math.random() * 1.2,        // Bahnradius (in Orb-Radien)
-      s: (0.2 + Math.random() * 0.7) * (Math.random() < 0.5 ? -1 : 1),   // Winkeltempo
-      sz: 0.8 + Math.random() * 1.6        // Punktgroesse (px)
-    });
+// ===== SOLAR-SPACE-GRUNDRISS (Szene-3-Hotspot „The solar space") =========
+// Beim Anklicken des Hotspots erscheint ein Vollbild-Grundriss (floorplan.png). Die vom
+// Wasser bedeckten Flaechen (See rund um die Insel + der Kanal durch die Mitte) werden per
+// Alpha-Maske (wassermaske.png: WEISS = Wasser, transparent = Insel) mit demselben Live-Wasser
+// wie die anderen Szenen gefuellt — hier aber als DRAUFSICHT auf die Wasser-OBERFLAECHE (kein
+// Schnitt). Das Wasser liegt halbtransparent UEBER dem Grundriss, damit Korallen/Hoehenlinien
+// durchscheinen. Klick irgendwo / ESC schliesst.
+let floorplanOpen = false;      // Overlay sichtbar?
+let floorplanEnt = null;        // zugehoeriges Entity (Titel/Bilder)
+let floorplanFade = 0;          // weiche Ein-/Ausblendung 0..1
+function openFloorplan(ent) {
+  openEntity = ent;             // gleiche Sperre wie Reader/Anno (kein Greifen der Szene dahinter)
+  floorplanEnt = ent;
+  floorplanOpen = true;
+  ent.visited = true;
+  setDuck(true);
+}
+function closeFloorplan() {
+  floorplanOpen = false;
+  floorplanEnt = null;
+  openEntity = null;
+  setDuck(false);
+}
+
+// ===== Zoom-Overlay: ein Detailbild fuellt (fast) den Schirm, faehrt sanft heran =====
+// Fuer Hotspots mit `def.zoom` (z.B. „Living\": Zoom in einen Bereich der Station). Wie der
+// Reader/Grundriss eine Vollbild-Praesentation: Backdrop -> Bild contain, groesser werdend ->
+// Titel oben / „click to return\" unten. Klick irgendwo oder ESC schliesst.
+let zoomOpen = false;      // Overlay sichtbar?
+let zoomEnt = null;        // zugehoeriges Entity (Bild/Titel)
+let zoomFade = 0;          // weiche Ein-/Ausblendung 0..1 (treibt auch das Heranfahren)
+function openZoom(ent) {
+  openEntity = ent;        // gleiche Sperre wie Reader/Grundriss (Szene dahinter nicht greifen)
+  zoomEnt = ent;
+  zoomOpen = true;
+  zoomFade = 0;            // von 0 starten -> Bild faehrt beim Oeffnen heran
+  ent.visited = true;
+  setDuck(true);
+}
+function closeZoom() {
+  zoomOpen = false;
+  zoomEnt = null;
+  openEntity = null;
+  setDuck(false);
+}
+
+function drawZoomOverlay(dt) {
+  const target = zoomOpen ? 1 : 0;
+  zoomFade += (target - zoomFade) * Math.min(1, dt * 4.5);
+  if (!zoomOpen && zoomFade < 0.004) { zoomFade = 0; return; }
+  const a = Math.min(1, zoomFade), zEnt = zoomEnt;
+  // 1) Backdrop
+  push(); noStroke(); fill(6, 12, 18, 242 * a); rect(0, 0, width, height); pop();
+  // 2) Detailbild contain (mit Rand), von leicht kleiner sanft heranfahrend -> „Zoom\"-Gefuehl
+  if (zEnt && zEnt.zoom && zEnt.zoom.width) {
+    const mm = Math.min(width, height);
+    const topPad = Math.max(44, height * 0.09), botPad = Math.max(40, height * 0.085), marginX = width * 0.05;
+    const box = { x: marginX, y: topPad, w: width - marginX * 2, h: height - topPad - botPad };
+    const r = containRect(zEnt.zoom.width, zEnt.zoom.height, box);
+    const s = 0.9 + 0.1 * zoomFade;   // 0.9 -> 1.0: heranfahren
+    const cx = r.x + r.w / 2, cy = r.y + r.h / 2, w = r.w * s, h = r.h * s;
+    push(); imageMode(CENTER); tint(255, 255 * a); image(zEnt.zoom, cx, cy, w, h); noTint(); pop();
+    // 3) Etiketten (Callouts) auf den Figuren im Bild — erst einblenden, wenn der Zoom fast steht
+    const labels = zEnt.def && zEnt.def.zoomLabels;
+    if (labels && labels.length) {
+      const la = a * Math.max(0, Math.min(1, (zoomFade - 0.5) / 0.4));
+      if (la > 0.01) drawZoomLabels(labels, cx - w / 2, cy - h / 2, w, h, mm, la);
+    }
+    // 4) Titel oben, Hinweis unten
+    push(); noStroke(); textFont('Courier New'); textAlign(CENTER, TOP);
+    const title = (zEnt.def.content && zEnt.def.content.title) || zEnt.def.label || '';
+    fill(216, 178, 90, 240 * a); textSize(Math.max(16, mm * 0.026));
+    text(title, width / 2, Math.max(20, height * 0.042));
+    textAlign(CENTER, BOTTOM); fill(224, 218, 200, 150 * a); textSize(Math.max(11, mm * 0.014));
+    text('click to return', width / 2, height - Math.max(20, height * 0.042));
+    pop();
   }
-  const col = [216, 178, 90];       // Gold (unabhaengig davon, ob der Hotspot schon geoeffnet wurde)
-  const p = 0.7 + 0.3 * Math.sin(millis() * 0.0025 + ent.bobPhase);
-  const R = sz * 0.30;
+}
+
+// Zeichnet die Etiketten fuer das Zoom-Bild im ANNO-Stil (wie die anderen Hotspots, buildAnnoSVG):
+// KEIN Kasten — nur eine duenne Leiter-Linie + kleiner Zielpunkt AUF der Figur (tx/ty) und
+// gesperrter Courier-Text im freien Raum (lx/ly). Farben = anno-Palette. imgX/Y/W/H = angezeigtes Bild.
+const ZOOM_ANNO_COL = { gold: [216, 178, 90], light: [224, 218, 200], dim: [154, 147, 127] };
+function drawZoomLabels(labels, imgX, imgY, imgW, imgH, mm, la) {
+  const size = Math.max(12, mm * 0.018);
+  const lineH = size + 7;                 // wie aTxt (dy = size + 7)
+  const margin = 12;
   push();
-  noStroke();
-  // gestufter Glow (mehrere weiche Scheiben addieren sich zum Leuchten)
-  for (let i = 6; i > 0; i--) {
-    fill(col[0], col[1], col[2], alpha * 9 * p * (hover ? 1.4 : 1));
-    ellipse(0, 0, R * 0.55 * i);
+  textFont("'Courier New',monospace");
+  textSize(size);
+  drawingContext.letterSpacing = '2px';   // wie #anno-svg (letter-spacing:2)
+  for (const L of labels) {
+    const c = ZOOM_ANNO_COL[L.fill] || ZOOM_ANNO_COL.gold;
+    const lines = Array.isArray(L.lines) ? L.lines : [String(L.lines || '')];
+    const anchor = L.anchor || 'start';
+    const TX = imgX + (L.tx || 0) * imgW, TY = imgY + (L.ty || 0) * imgH;   // Zielpunkt auf der Figur
+    // Textblock-Geometrie
+    let blockW = 0; for (const ln of lines) blockW = Math.max(blockW, textWidth(ln));
+    const blockH = lines.length * lineH;
+    let LX = imgX + (L.lx || 0) * imgW, LY = imgY + (L.ly || 0) * imgH;     // Textposition (frei)
+    let left = anchor === 'end' ? LX - blockW : anchor === 'middle' ? LX - blockW / 2 : LX;
+    const nl = Math.max(margin, Math.min(width - margin - blockW, left));   // in den Schirm klemmen
+    LX += (nl - left); left = nl;
+    LY = Math.max(margin, Math.min(height - margin - blockH, LY));
+    const right = left + blockW, top = LY, bottom = top + blockH;
+    // Leader: naechster Punkt des Textblocks -> Zielpunkt (duenne dim-Linie wie die anno-Leiter)
+    const ax = Math.max(left, Math.min(right, TX)), ay = Math.max(top, Math.min(bottom, TY));
+    push();
+    stroke(154, 147, 127, 150 * la); strokeWeight(1); noFill();
+    line(ax, ay, TX, TY);
+    noStroke(); fill(c[0], c[1], c[2], 235 * la); circle(TX, TY, mm * 0.007);   // Zielpunkt (aDot)
+    pop();
+    // Text (kein Kasten): dunkles Halo (dicke Kontur + weicher Schatten, wie #anno-svg paint-order:stroke)
+    // haelt den Text auch auf dem hellen, gesprenkelten Bimsstein-Detailbild lesbar; danach die farbige
+    // Fuellung ohne Schatten/Kontur darueber.
+    push();
+    textAlign(anchor === 'end' ? RIGHT : anchor === 'middle' ? CENTER : LEFT, TOP);
+    drawingContext.lineJoin = 'round';
+    drawingContext.shadowColor = 'rgba(0,0,6,0.9)'; drawingContext.shadowBlur = 7; drawingContext.shadowOffsetY = 1;
+    stroke(3, 5, 11, 240 * la); strokeWeight(Math.max(3, size * 0.26)); fill(3, 5, 11, 240 * la);
+    for (let i = 0; i < lines.length; i++) text(lines[i], LX, LY + i * lineH);   // 1) Halo-Pass
+    drawingContext.shadowColor = 'rgba(0,0,0,0)'; drawingContext.shadowBlur = 0;
+    noStroke(); fill(c[0], c[1], c[2], 252 * la);
+    for (let i = 0; i < lines.length; i++) text(lines[i], LX, LY + i * lineH);   // 2) Fuell-Pass (farbige Schrift oben)
+    pop();
   }
-  // heller Kern
-  fill(Math.min(255, col[0] + 30), Math.min(255, col[1] + 40), col[2] + 30, alpha * 235 * p);
-  ellipse(0, 0, R * 0.34 * (hover ? 1.25 : 1));
-  // Satelliten
-  for (const s of ent.sats) {
-    s.a += s.s * 0.016;
-    fill(col[0], col[1], col[2], alpha * 110 * p);
-    ellipse(Math.cos(s.a) * s.r * R, Math.sin(s.a) * s.r * R, s.sz);
-  }
-  // Hover: heller Hof (wie DESCENT)
-  if (hover) { fill(255, 240, 200, alpha * 55); ellipse(0, 0, R * 1.5); }
+  drawingContext.letterSpacing = '0px';    // zuruecksetzen (Titel/Hinweis nicht sperren)
   pop();
 }
+
+let floorplanWaterBuf = null;   // Offscreen-2D-Buffer in Bildschirmgroesse (Wasser-Inhalt)
+let floorplanMaskBuf = null;    // Offscreen fuer die auf das Grundriss-Cover-Rect skalierte Maske
+let floorplanWaterFailed = false;
+const FLOORPLAN_WATER_OPACITY = 0.85;   // Gesamt-Deckkraft des (bereits hellen/transparenten) Draufsicht-Wassers
+const FLOORPLAN_WATER_BASE = 0.30;      // Grundton-Deckkraft der Wasserflaeche im Buffer (kleiner = Plan scheint mehr durch)
+
+// contain-Fit: groesstmoegliches Rechteck des Bild-Seitenverhaeltnisses INNERHALB der Box (zentriert).
+function containRect(iw, ih, box) {
+  const ir = iw / ih, br = box.w / box.h;
+  let w, h;
+  if (ir > br) { w = box.w; h = box.w / ir; } else { h = box.h; w = box.h * ir; }
+  return { x: box.x + (box.w - w) / 2, y: box.y + (box.h - h) / 2, w, h };
+}
+
+// Layout des Overlays: Grundriss LINKS (contain, fuellt NICHT den ganzen Schirm), zwei Zusatzbilder
+// gestapelt RECHTS. Gemeinsame Geometrie fuer Zeichnung + (spaeter) Klicks.
+function floorplanLayout(fpImg, nRight) {
+  const n = Math.max(1, nRight || 1);   // Anzahl der Bild-Felder rechts (min. 1)
+  const W = width, H = height;
+  const topPad = Math.max(52, H * 0.11), botPad = Math.max(40, H * 0.085), marginX = W * 0.035;
+  const contentY = topPad, contentH = H - topPad - botPad;
+  const leftW = W * 0.56, gap = W * 0.02;
+  const fpBox = { x: marginX, y: contentY, w: leftW - marginX, h: contentH };
+  const fpRect = fpImg ? containRect(fpImg.width, fpImg.height, fpBox) : fpBox;
+  const rightX = leftW + gap, rightW = W - marginX - rightX, imgGap = H * 0.03;
+  const boxH = (contentH - imgGap * (n - 1)) / n;   // gleichmaessig gestapelt (1 -> volle Hoehe)
+  const rBoxes = [];
+  for (let i = 0; i < n; i++) rBoxes.push({ x: rightX, y: contentY + i * (boxH + imgGap), w: rightW, h: boxH });
+  return { fpRect, rBoxes };
+}
+
+// zeichnet das Grundriss-Overlay (Backdrop -> Grundriss links -> Draufsicht-Wasser -> Bilder rechts -> Titel/Hinweis).
+function drawFloorplanOverlay(dt) {
+  const target = floorplanOpen ? 1 : 0;
+  floorplanFade += (target - floorplanFade) * Math.min(1, dt * 5);
+  if (!floorplanOpen && floorplanFade < 0.004) { floorplanFade = 0; return; }
+  const a = floorplanFade, fp = floorplanEnt;
+  // 1) Backdrop: Szene dahinter mit Tiefwasserton abdecken -> sauberer Plan
+  push(); noStroke(); fill(6, 13, 20, 242 * a); rect(0, 0, width, height); pop();
+  if (fp && fp.floorplan) {
+    const nRight = (fp.floorplanImages && fp.floorplanImages.length) || 1;
+    const lay = floorplanLayout(fp.floorplan, nRight), r = lay.fpRect;
+    // 2) Grundriss LINKS (contain, nicht bildschirmfuellend)
+    push(); imageMode(CORNER); tint(255, 255 * a); image(fp.floorplan, r.x, r.y, r.w, r.h); noTint(); pop();
+    // 3) prozedurales Draufsicht-Wasser (hell/transparent) in die Maskenflaechen des Grundrisses
+    if (fp.floorplanMask) drawFloorplanWater(fp.floorplan, fp.floorplanMask, r, a);
+    // 4) rechte Zusatzfelder: geladenes Bild -> Bild; sonst bekommt das LETZTE (leere) Feld einen Info-TEXT
+    //    (content.body wie die anderen Hotspots) statt der gestrichelten "Bild"-Box (Nutzerwunsch: statt bild2 ein Text).
+    for (let i = 0; i < lay.rBoxes.length; i++) {
+      const img = fp.floorplanImages && fp.floorplanImages[i];
+      if (!img && i === lay.rBoxes.length - 1) drawFloorplanTextBox(fp, lay.rBoxes[i], a);
+      else drawFloorplanSideBox(img, lay.rBoxes[i], a);
+    }
+  }
+  // 5) Titel oben, Hinweis unten (Courier wie ueberall auf dem Canvas)
+  const mm = Math.min(width, height);
+  push(); noStroke(); textFont('Courier New'); textAlign(CENTER, TOP);
+  const title = (fp && ((fp.def.content && fp.def.content.title) || fp.def.label)) || '';
+  fill(216, 178, 90, 240 * a); textSize(Math.max(16, mm * 0.026));
+  text(title, width / 2, Math.max(22, height * 0.05));
+  textAlign(CENTER, BOTTOM); fill(224, 218, 200, 150 * a); textSize(Math.max(11, mm * 0.014));
+  text('click to return', width / 2, height - Math.max(22, height * 0.05));
+  pop();
+}
+
+// ein Zusatzbild-Feld rechts: Bild contain in die Box, oder — solange keins geladen ist — eine
+// gestrichelte Platzhalter-Box mit "Bild".
+function drawFloorplanSideBox(img, box, a) {
+  if (img && img.width) {
+    const r = containRect(img.width, img.height, box);
+    push(); imageMode(CORNER); tint(255, 255 * a); image(img, r.x, r.y, r.w, r.h); noTint(); pop();
+  } else {
+    push();
+    noFill(); stroke(150, 140, 110, 95 * a); strokeWeight(1.5);
+    drawingContext.setLineDash([9, 9]);
+    rect(box.x, box.y, box.w, box.h);
+    drawingContext.setLineDash([]);
+    noStroke(); fill(185, 172, 140, 130 * a); textAlign(CENTER, CENTER); textFont('Courier New');
+    textSize(Math.max(13, Math.min(width, height) * 0.02));
+    text('Bild', box.x + box.w / 2, box.y + box.h / 2);
+    pop();
+  }
+}
+
+// ein rechtes Zusatzfeld als TEXT (statt Bild/Platzhalter): Titel + content.body des Hotspots, umbrochen,
+// im Reader-/Anno-Textstil (kein Kasten, dezente Gold-Ueberschrift, dunkler Schatten fuer Lesbarkeit).
+function drawFloorplanTextBox(fp, box, a) {
+  const c = (fp && fp.def.content) || {};
+  const body = c.body || '';
+  if (!body) return;
+  const mm = Math.min(width, height), pad = Math.max(12, box.w * 0.06);
+  push();
+  textFont('Courier New'); textAlign(LEFT, TOP); noStroke();
+  drawingContext.shadowColor = 'rgba(0,0,6,0.85)'; drawingContext.shadowBlur = 5; drawingContext.shadowOffsetY = 1;
+  let ty = box.y + pad;
+  if (c.title) {
+    fill(216, 178, 90, 235 * a); textSize(Math.max(13, mm * 0.017)); textLeading(Math.max(20, mm * 0.026));
+    text(String(c.title).toLowerCase(), box.x + pad, ty, box.w - pad * 2, box.h - pad * 2);
+    ty += Math.max(26, mm * 0.034);
+  }
+  fill(224, 218, 200, 225 * a); textSize(Math.max(12, mm * 0.0145)); textLeading(Math.max(20, mm * 0.027));
+  text(body, box.x + pad, ty, box.w - pad * 2, box.y + box.h - pad - ty);
+  pop();
+}
+
+// PROZEDURALES Draufsicht-Wasser: fuellt die Maskenflaechen des Grundrisses mit einer hellen,
+// halbtransparenten Wasseroberflaeche (Blick von oben auf ein Meer) — heller/transparenter als der
+// Szenen-Shader, damit der Plan darunter gut sichtbar bleibt. Zwei bewegte Kaustik-Linien-Scharen
+// (horizontal + vertikal) additiv -> lebendiges Flimmern. rect = Grundriss-Zeichenrechteck (links).
+function drawFloorplanWater(fpImg, mask, rect, screenAlpha) {
+  if (floorplanWaterFailed || !fpImg || !mask) return;
+  try {
+    const dw = Math.max(2, Math.round(width)), dh = Math.max(2, Math.round(height));
+    if (!floorplanWaterBuf || floorplanWaterBuf.width !== dw || floorplanWaterBuf.height !== dh) {
+      if (floorplanWaterBuf) floorplanWaterBuf.remove();
+      floorplanWaterBuf = createGraphics(dw, dh); floorplanWaterBuf.pixelDensity(1);
+    }
+    const g = floorplanWaterBuf, bctx = g.drawingContext; g.clear();
+
+    const rx = rect.x, ry = rect.y, rw = rect.w, rh = rect.h, t = millis() / 1000;
+    // heller Grundton (Meer von oben)
+    bctx.fillStyle = 'rgba(120,178,212,' + FLOORPLAN_WATER_BASE + ')';
+    bctx.fillRect(rx, ry, rw, rh);
+    // Kaustik-Netz (zwei wandernde Sinus-Linien-Scharen), additiv -> helles Flimmern
+    bctx.save();
+    bctx.globalCompositeOperation = 'lighter';
+    bctx.lineWidth = 2;
+    const amp = Math.max(4, rh * 0.017);
+    const NH = 16;
+    for (let i = 0; i < NH; i++) {
+      const yy = ry + rh * (i + 0.5) / NH;
+      bctx.strokeStyle = 'rgba(205,236,250,0.10)';
+      bctx.beginPath();
+      for (let x = rx; x <= rx + rw; x += 8) {
+        const off = Math.sin(x * 0.018 + t * 0.55 + i * 0.7) * amp + Math.sin(x * 0.043 - t * 0.4 + i * 1.7) * amp * 0.55;
+        if (x === rx) bctx.moveTo(x, yy + off); else bctx.lineTo(x, yy + off);
+      }
+      bctx.stroke();
+    }
+    const NV = 12;
+    for (let i = 0; i < NV; i++) {
+      const xx = rx + rw * (i + 0.5) / NV;
+      bctx.strokeStyle = 'rgba(205,236,250,0.07)';
+      bctx.beginPath();
+      for (let y = ry; y <= ry + rh; y += 8) {
+        const off = Math.sin(y * 0.02 - t * 0.5 + i * 1.3) * amp + Math.sin(y * 0.05 + t * 0.32 + i) * amp * 0.55;
+        if (y === ry) bctx.moveTo(xx + off, y); else bctx.lineTo(xx + off, y);
+      }
+      bctx.stroke();
+    }
+    bctx.restore();
+
+    // auf die Maskenflaechen beschneiden — Maske aufs Grundriss-ZEICHENrechteck (links) skaliert
+    if (!floorplanMaskBuf || floorplanMaskBuf.width !== dw || floorplanMaskBuf.height !== dh) {
+      if (floorplanMaskBuf) floorplanMaskBuf.remove();
+      floorplanMaskBuf = createGraphics(dw, dh); floorplanMaskBuf.pixelDensity(1);
+    }
+    const mg = floorplanMaskBuf, mctx = mg.drawingContext; mg.clear();
+    mctx.drawImage(mask.canvas, 0, 0, mask.width, mask.height, rx, ry, rw, rh);
+    bctx.globalCompositeOperation = 'destination-in';
+    bctx.drawImage(mg.canvas, 0, 0, dw, dh);
+    bctx.globalCompositeOperation = 'source-over';
+
+    push(); imageMode(CORNER);
+    tint(255, 255 * screenAlpha * FLOORPLAN_WATER_OPACITY);
+    image(g, 0, 0, dw, dh);
+    noTint(); pop();
+  } catch (e) {
+    console.warn('Floorplan-Wasser -> deaktiviert', e);
+    floorplanWaterFailed = true;
+    if (floorplanWaterBuf) { try { floorplanWaterBuf.remove(); } catch (_) { /* egal */ } floorplanWaterBuf = null; }
+    if (floorplanMaskBuf) { try { floorplanMaskBuf.remove(); } catch (_) { /* egal */ } floorplanMaskBuf = null; }
+  }
+}
+
+// EINHEITLICHER HOTSPOT-MARKER (alle Szenen) — im bereits translatierten Frame gezeichnet.
+// Pulsierender Gold-Ring + Kern, mit dunkler Kontur/Backing, damit der Marker auf HELLEM
+// (Grundriss, Sonne) wie auf DUNKLEM (Weltraum/Wasser) Hintergrund gut sichtbar ist.
+// Dieselbe Glyphe nutzen Entity-Hotspots (drawDotMarker/drawHotspotMarker) UND die Rand-/Viz-
+// Marker (drawRimMarker, zusaetzlich mit Label). So sehen ALLE Hotspots gleich aus.
+function drawMarkerGlyph(alpha, hover) {
+  const t = millis() * 0.001, pulse = 0.5 + 0.5 * Math.sin(t * 2.0);
+  const ro = 24 + 16 * pulse, ri = 15 * (hover ? 1.12 : 1);
+  push();
+  noFill();
+  // 1) dunkle Kontur hinter den Ringen -> Kontrast auf hellem Grund
+  stroke(6, 12, 18, 150 * alpha); strokeWeight(4.5);
+  ellipse(0, 0, ro); ellipse(0, 0, ri);
+  // 2) Gold-Ringe
+  stroke(216, 178, 90, (95 + 90 * pulse) * alpha); strokeWeight(1.7); ellipse(0, 0, ro);
+  stroke(240, 212, 150, 245 * alpha); strokeWeight(1.7); ellipse(0, 0, ri);
+  // 3) Kern mit dunklem Rand
+  noStroke();
+  fill(6, 12, 18, 150 * alpha); ellipse(0, 0, 9.5);
+  fill(245, 222, 150, 250 * alpha); ellipse(0, 0, 6);
+  pop();
+}
+// Entity-Hotspots (im translatierten Entity-Frame). sz/ent werden nicht mehr gebraucht — feste
+// Glyphen-Groesse, damit die Marker ueber alle Szenen gleich gross sind.
+function drawDotMarker(alpha, hover) { drawMarkerGlyph(alpha, hover); }
+function drawHotspotMarker(ent, sz, alpha, hover) { drawMarkerGlyph(alpha, hover); }
 
 // =========================================================================
 //  VIZ-UNTERSZENEN (noNav): prozedurale Erklaer-Ansichten wie atmosphere/water.
@@ -3093,15 +3547,18 @@ const VIZ_MENU = [
   { id: 'atmosphere',  parent: 'scene1',   label: 'Atmosphere', anchor: 'globe',  ox: 0.0,   oy: -RIM_MARK_K },
   { id: 'water',       parent: 'scene1',   label: 'Water',      anchor: 'globe',  ox: 0.42,  oy: 0.40 },
   { id: 'timeline',    parent: 'scene1',   label: 'History',    anchor: 'globe',  ox: -0.42, oy: 0.40 },
-  { id: 'sun',         parent: 'scene1',   label: 'The sun',    anchor: 'sun' },
+  { id: 'sun',         parent: 'scene1',   label: 'The sun',    anchor: 'sun', off: 0.14 },   // NEBEN der Sonne (radial nach aussen)
   // ANSICHT 'organism': 'Section' oeffnet den Schnitt (scene2) per reinem Crossfade (noZoom -> die Ansicht
   //  verschwindet, KEIN Zoom). 'Wildlife' zoomt in die Nahaufnahme-Unterszene. anchor 'screen'/'station':
   //  Section fest im Bild (sx/sy), Wildlife an der Ansicht-Station (organism_view_image) verankert.
-  { id: 'scene2',      parent: 'organism', label: 'Section',    anchor: 'screen',  sx: 0.50, sy: 0.58, noZoom: true },
+  // 'Section' faehrt jetzt per ZOOM auf die Station (statt reinem Crossfade): Pivot = Ansicht, Ziel-Zentrum =
+  //  Stationsmitte (zoomTX/zoomTY), sanfte Endvergroesserung (zoomScale ~ Verhaeltnis Schnitt/Ansicht-Scale
+  //  0.40/0.26 ≈ 1.55) -> der Zoom endet exakt in der grossen Schnitt-Station (fuellt die Bildhoehe).
+  { id: 'scene2',      parent: 'organism', label: 'Section',    anchor: 'station', ox: 1.2,  oy: 0.0, zoomScale: 1.55, zoomTX: 0.5, zoomTY: 0.52 },   // RECHTS neben der Station
   { id: 'wildlife',    parent: 'organism', label: 'Wildlife',   anchor: 'station', ox: 0.0,  oy: 0.88 },
   // SCHNITT 'scene2' -> 'The eye'-Marker: goToScene(scene3) faellt in goToScene auf den KINOZOOM
   //  (isSeaInterior scene2<->scene3), nicht auf den generischen Viz-Zoom. Rueck-Weg = Zurueck-Marker im eye.
-  { id: 'scene3',      parent: 'scene2',   label: 'The eye',    anchor: 'station', ox: 0.0,  oy: -0.10 }
+  { id: 'scene3',      parent: 'scene2',   label: 'The eye',    anchor: 'station', ox: 0.0,  oy: -0.85 }
 ];
 
 function sceneIndexById(id) { return scenes.findIndex(s => s && s.id === id); }
@@ -3115,8 +3572,12 @@ function vizMarkerPos(v) {
     return { x: g.pos.x + (v.ox || 0) * g.radius, y: g.pos.y + (v.oy || 0) * g.radius };
   }
   if (v.anchor === 'sun') {
-    const mm = Math.min(W, H), sa = sunOrbitAngle();
-    return { x: W / 2 + Math.cos(sa) * SUN_ORBIT_R * mm, y: H / 2 - Math.sin(sa) * SUN_ORBIT_R * mm };
+    // Marker NEBEN die Sonne setzen (auf ihr war er im hellen Glow kaum erkennbar). v.off versetzt
+    // TANGENTIAL zur Umlaufbahn (nicht radial nach aussen) -> bleibt bei jeder Sonnenposition auf
+    // dem Schirm, radial-aussen wuerde ihn unten aus dem Bild schieben.
+    const mm = Math.min(W, H), sa = sunOrbitAngle(), off = (v.off || 0) * mm;
+    const sx = W / 2 + Math.cos(sa) * SUN_ORBIT_R * mm, sy = H / 2 - Math.sin(sa) * SUN_ORBIT_R * mm;
+    return { x: sx + Math.sin(sa) * off, y: sy + Math.cos(sa) * off };
   }
   if (v.anchor === 'station') {   // an der Station verankert: ANSICHT -> organism_view_image, SCHNITT -> scene2-Station
     const st = (v.parent === 'organism')
@@ -3138,7 +3599,7 @@ function vizMarkerR(v) {
 // ---- Layouts: gemeinsame Geometrie fuer Zeichnung UND Hotspot-Position (vizHotspotNorm). ----
 function sunLayout() {
   const W = width, H = height, mm = Math.min(W, H);
-  return { cx: W * 0.40, cy: H * 0.52, r: mm * 0.24 };
+  return { cx: W * 0.40, cy: H * 0.52, r: mm * 0.228 };   // ~5% kleiner als frueher (0.24) -> Scheibe schneidet den Kurztext unten nicht mehr an
 }
 function stationLayout() {
   const W = width, H = height, mm = Math.min(W, H);
@@ -3178,8 +3639,9 @@ function drawVizCaption(title, sub) {
   if (VIZ_CAPTION <= 0) return;
   const mm = Math.min(width, height), x = width * 0.945, y = height * 0.085, a = VIZ_CAPTION;
   push(); noStroke(); textAlign(RIGHT, TOP); textFont('Courier New');
-  textSize(Math.max(13, mm * 0.021)); fill(232, 226, 210, 210 * a); text(title, x, y);
-  if (sub) { textSize(Math.max(11, mm * 0.0135)); fill(200, 194, 178, 150 * a); text(sub, x, y + Math.max(20, mm * 0.031)); }
+  drawingContext.shadowColor = 'rgba(0,0,6,0.85)'; drawingContext.shadowBlur = 6; drawingContext.shadowOffsetY = 1;   // auf hellem Grund lesbar (push/pop stellt den Schatten wieder her)
+  textSize(Math.max(13, mm * 0.021)); fill(240, 234, 216, 230 * a); text(title, x, y);
+  if (sub) { textSize(Math.max(11, mm * 0.0135)); fill(214, 208, 190, 175 * a); text(sub, x, y + Math.max(20, mm * 0.031)); }
   pop();
 }
 
@@ -3459,7 +3921,7 @@ function drawVizSun(alpha, hasImg = false) {
   pop();
   }   // Ende 2D-Fallback
 
-  drawVizCaption('THE SUN', 'the engine — and the threat');
+  drawVizCaption('THE SUN', 'the engine and the threat');
   ctx.globalAlpha = 1; pop();
 }
 
@@ -3618,6 +4080,7 @@ function wildStoneImg() {
   if (wildStoneImg._img === undefined) {
     wildStoneImg._img = null;
     const cands = [
+      'assets/images/entities/wildlife/wildlife/solarstationv2_web.png',   // web-optimiert (1920px) -> laedt zuverlaessig; das grosse 4000px-PNG dekodiert im Browser nicht
       'assets/images/entities/wildlife/wildlife/solarstationv2.png',
       'assets/images/entities/wildlife/wildlife/wildlife1.png',
       'assets/images/entities/wildlife/wildlife/wildlife1.webp'
@@ -3785,18 +4248,16 @@ function drawAngler(ctx, x, y, s, t) {
 
 // Einstiegs-/Ausstiegs-Marker am Rand (absolute Koords). Setzt sectionHover fuer den Cursor.
 function drawRimMarker(x, y, r, label) {
-  const t = millis() * 0.001, pulse = 0.5 + 0.5 * Math.sin(t * 2.0);
   const hover = dist(mouseX, mouseY, x, y) < r;
   if (hover) sectionHover = true;
   push();
   translate(x, y);
-  noFill();
-  stroke(216, 178, 90, 65 + 80 * pulse); strokeWeight(1.5); ellipse(0, 0, 24 + 16 * pulse);
-  stroke(216, 178, 90, 225); strokeWeight(1.5); ellipse(0, 0, 15);
-  noStroke(); fill(235, 205, 130, 235); ellipse(0, 0, 6);
+  drawMarkerGlyph(1, hover);   // gleiche Glyphe wie die Entity-Hotspots
+  // Label mit dunklem Backing -> auf hellem Grund lesbar
   textAlign(LEFT, CENTER); textSize(11); textFont('Courier New');
-  fill(205, 178, 122, hover ? 230 : 165);
-  text(label.toLowerCase(), 18, 1);   // DESCENT: lowercase Mono-Labels
+  const lbl = label.toLowerCase();
+  fill(6, 12, 18, hover ? 150 : 110); text(lbl, 24 + 1, 1 + 1);
+  fill(220, 200, 150, hover ? 240 : 185); text(lbl, 24, 1);
   pop();
 }
 
@@ -3831,7 +4292,7 @@ function updateSectionMarkers() {
     sectionBackMarker.y = height * 0.06;
     sectionBackMarker.r = Math.max(16, Math.min(width, height) * 0.02);
     sectionBackMarker.parentIdx = sceneIndexById(cur.parent);
-    drawRimMarker(sectionBackMarker.x, sectionBackMarker.y, sectionBackMarker.r, 'Back to the organism');
+    drawRimMarker(sectionBackMarker.x, sectionBackMarker.y, sectionBackMarker.r, 'Back to the station');
   }
 }
 
@@ -3845,6 +4306,8 @@ function exitSection() {
 //  INTERAKTION
 // =========================================================================
 function mousePressed() {
+  if (floorplanOpen) { closeFloorplan(); return; }   // offener Grundriss: Klick irgendwo schliesst
+  if (zoomOpen) { closeZoom(); return; }             // offener Zoom: Klick irgendwo schliesst
   if (!started || openEntity) return;
   if (screenshotMode) return;   // Screenshot-Modus: keine Klicks auf (ausgeblendete) Hotspots/Marker
   // Rand-Marker (Ein-/Ausstieg) VOR den Entities pruefen -> Klick greift nicht die Kugel
@@ -3864,6 +4327,10 @@ function mousePressed() {
       else if (ent.frames && ent.frames.length) heldEntity = ent;
       // anno-Hotspot (Szene 2): In-Szene-Diagramm ueber der echten Station
       else if (ent.def.anno) openAnno(ent);
+      // Zoom-Hotspot (Szene 2 „living"): Detailbild als Vollbild-Zoom
+      else if (ent.zoom) openZoom(ent);
+      // Grundriss-Hotspot (Szene 3 „solar space"): Vollbild-Grundriss mit Draufsicht-Wasser
+      else if (ent.floorplan) openFloorplan(ent);
       // Hotspot + normales Entity: Reader-Overlay (DESCENT-Textpanel)
       else openPanel(ent);
       return;
@@ -3916,6 +4383,8 @@ function closePanel() {
   openEntity = null;
   annoEntity = null;
   annoAutoActive = false;
+  floorplanOpen = false; floorplanEnt = null;   // evtl. offenen Grundriss mit schliessen (z.B. Szenenwechsel)
+  zoomOpen = false; zoomEnt = null;             // evtl. offenen Zoom mit schliessen
   document.getElementById('reader').classList.remove('open');
   const anno = document.getElementById('anno');
   anno.classList.remove('open');
@@ -3965,8 +4434,8 @@ const TIMELINE_ERAS = [
   { year: '2300s',       title: 'THE FIRST DESCENT', gloss: 'the surface is abandoned; life withdraws underwater' },
   { year: '2400s',       title: 'THE ANCHORED AGE',  gloss: 'anchored stations fail; a long population collapse' },
   { year: '2512',        title: 'THE UNMOORING',     gloss: 'the first raft of pumice is cut; it drifts, and survives', hinge: true },
-  { year: '2800s',       title: 'THE FIRST EYE',     gloss: 'a filter chain fits a crown; light becomes measurable, and holy' },
-  { year: '3126',        title: 'NOW',               gloss: 'a few dozen stations; the count has never come up short', now: true }
+  { year: '2800s',       title: 'THE FIRST EYE',     gloss: 'the sun is never seen, only read; her light is kept holy' },
+  { year: '3126',        title: 'NOW',               gloss: 'a few dozen stations, scattered across the ocean', now: true }
 ];
 const TIMELINE_ANNO_STEPS = 1 + TIMELINE_ERAS.length;   // 1 (Kurztext unten) + je Epoche ein Klick
 // Gesamt-Schritte eines gestuften Diagramms (0 = nicht gestuft -> Klick schliesst sofort).
@@ -4022,8 +4491,9 @@ function updateAnnoHint() {
   const kind = annoEntity && annoEntity.def.anno;
   const steps = annoStepsFor(kind);
   const more = steps > 0 && annoStep < steps;
-  // Auto-Diagramme (Szene 1): waehrend der Enthuellung kein Hinweis; sind alle da -> "click to return".
-  if (annoIsAuto(kind)) { hint.textContent = more ? '' : 'click to return'; return; }
+  // Auto-Diagramme (Szene 1: atmosphere/water/timeline/sun): waehrend der Enthuellung kein Hinweis;
+  // sind alle Texte da -> kleiner "click to continue" unten (Klick fuehrt zurueck zur Welt).
+  if (annoIsAuto(kind)) { hint.textContent = more ? '' : 'click to continue'; return; }
   hint.textContent = more ? 'click to continue' : 'click to return';
 }
 
@@ -4067,22 +4537,34 @@ function updateAnnoAuto() {
 }
 
 // Klick im Diagramm:
-//  - Szene-1-Diagramme (auto): waehrend der Enthuellung IGNORIEREN; sind alle Texte da, fuehrt der Klick
-//    zurueck zur Elternszene (Szene 1 / world).
+//  - Szene-1-Diagramme (auto): laufen von selbst ab; ein Klick waehrend der Enthuellung blendet den
+//    naechsten Text SOFORT ein (durchklicken statt warten), der Auto-Timer setzt danach neu an.
+//    Sind alle Texte da, fuehrt der Klick zurueck zur Elternszene (Szene 1 / world).
 //  - Szene-2-Diagramme (station/living/wildlife): wie bisher (klick-gestuft bzw. schliessen).
 function onAnnoClick() {
   const kind = annoEntity && annoEntity.def.anno;
   const steps = annoStepsFor(kind);
   if (annoIsAuto(kind)) {
-    if (annoStep >= steps) {                                    // alle Texte da -> zurueck zur Welt
-      const v = VIZ_MENU.find(x => x.id === annoEntity.def.scene);
-      const parentIdx = v ? sceneIndexById(v.parent) : sceneIndexById(SPACE_ID);
-      annoAutoActive = false;
-      goToScene(parentIdx);                                     // goToScene schliesst das Panel selbst
+    if (annoStep < steps) {                                     // noch Texte offen -> Klick zeigt den naechsten sofort
+      advanceAnnoStep();
+      annoAutoNextMs = millis() + ANNO_AUTO_STEP_MS;            // Auto-Ablauf ab hier neu takten
+      return;
     }
-    return;                                                     // waehrend der Enthuellung: Klick tut nichts
+    // alle Texte da -> zurueck zur Welt
+    const v = VIZ_MENU.find(x => x.id === annoEntity.def.scene);
+    const parentIdx = v ? sceneIndexById(v.parent) : sceneIndexById(SPACE_ID);
+    annoAutoActive = false;
+    goToScene(parentIdx);                                       // goToScene schliesst das Panel selbst
+    return;
   }
   if (annoEntity && steps > 0 && annoStep < steps) { advanceAnnoStep(); return; }
+  // Viz-Unterszene mit EINZELNEM, beim Rein-Zoomen automatisch geoeffnetem Diagramm (z.B. 'wildlife'):
+  // der letzte Klick fuehrt — wie bei den Szene-1-Diagrammen — automatisch per Zoom-out zur Elternszene
+  // zurueck (statt nur das Panel zu schliessen). AUSNAHME: der SCHNITT (scene2 = ZOOM_SEA_ID) ist eine volle
+  // Szene mit mehreren Hotspots -> dort schliesst der Klick nur das Panel, man bleibt in der Szene.
+  const sc = annoEntity && scenes[currentScene];
+  const vizChild = sc && VIZ_MENU.find(v => v.id === sc.id && v.id !== ZOOM_SEA_ID);
+  if (vizChild) { goToScene(sceneIndexById(vizChild.parent)); return; }   // goToScene schliesst das Panel selbst
   closePanel();
 }
 
@@ -4115,8 +4597,8 @@ const SOLAR_OUTLINE = [[0.4188,0.0437],[0.5875,0.05],[0.625,0.0688],[0.6563,0.06
 
 // Ziel-PUNKTE fuer Leader-Striche (aus Masken getract: tools/trace_maskblobs.js). Normiert 0..1
 // aufs Stationsbild. KEINE Umrandung -> der Strich zeigt nur auf EINE Region (+ kleiner Zielpunkt).
-const LIVINGLIGHT_PT = [0.7950, 0.4686];  // masklivinglight.png — eine der Licht-Stellen (rechts)
-const WEIGHT_PT      = [0.8060, 0.7517];  // maskweight.png — groesste Region RECHTS (Ballast)
+const LIVINGLIGHT_PT = [0.5850, 0.3096];  // masklivinglight.png — groesste Licht-Stelle (rechts) — 2026-07-21 neu getract
+const WEIGHT_PT      = [0.5902, 0.7332];  // maskweight.png — groesste Region RECHTS (Ballast) — 2026-07-21 neu getract
 const LIVING_PT      = [0.3144, 0.3794];  // maskilving.png  — eine der Wohn-Poren (links)
 
 // baut das Beschriftungs-SVG fuer das offene anno-Diagramm. Koordinaten werden relativ zum
@@ -4151,33 +4633,30 @@ function buildAnnoSVG() {
     // Solar Space: exakter Umriss aus der Maske (SOLAR_OUTLINE), auf Stein-Position/-Radius abgebildet.
     // Ersetzt den frueheren symbolischen Kreis -> die Beschriftung sitzt jetzt an der echten Oeffnung.
     const sr = st.img ? st.img.height / st.img.width : 1;
-    const solarPath = SOLAR_OUTLINE.map(([mu, mv], i) =>
-      `${i ? 'L' : 'M'} ${X((mu - 0.5) * 2)} ${Y((mv - 0.5) * 2 * sr)}`).join(' ') + ' Z';
-    stn.push(`<path d="${solarPath}" fill="none" stroke="${ANNO_GOLD}" stroke-width="1.6" stroke-linejoin="round"/>`);
-    stn.push(aLine(X(0), Y(-1.22), X(-0.06), Y(-1.0)));
-    stn.push(aTxt(X(0), Y(-1.34), ['solar space —', 'the only daylight room'], { anchor: 'middle', size: 16 }));
+    // Solar Space: KEINE Masken-Umrandung mehr (Nutzerwunsch) — nur EIN Etikett + Leiter/Zielpunkt auf die Oeffnung.
+    stn.push(aLine(X(0), Y(-1.22), X(-0.06), Y(-0.95)));
+    stn.push(aDot(X(-0.06), Y(-0.95), 3, ANNO_GOLD));
+    stn.push(aTxt(X(0), Y(-1.34), ['solar space', 'the only room open to daylight'], { anchor: 'middle', size: 16 }));
     // Masken-Norm (0..1) -> Stein-relativ (u,v): u=(mu-0.5)*2, v=(mv-0.5)*2*sr
     const M2 = P => [(P[0] - 0.5) * 2, (P[1] - 0.5) * 2 * sr];
     const [livU, livV] = M2(LIVING_PT), [lgtU, lgtV] = M2(LIVINGLIGHT_PT), [wgtU, wgtV] = M2(WEIGHT_PT);
+    // Jeder Punkt kurz in einem Satz erklaert (Nutzerwunsch).
     // gefundene Raeume -> Strich zeigt auf eine Wohn-Pore aus maskilving.png (keine Umrandung)
     stn.push(aLine(LX(-1.32), Y(-0.18), X(livU), Y(livV)));
     stn.push(aDot(X(livU), Y(livV), 2.6, ANNO_LIGHT));
-    stn.push(aTxt(LX(-1.32), Y(-0.24), ['rooms are found', 'in the stone’s cavities'], { anchor: 'end', fill: ANNO_LIGHT }));
+    stn.push(aTxt(LX(-1.32), Y(-0.24), ['rooms are hollows in the stone,', 'found, not built'], { anchor: 'end', fill: ANNO_LIGHT }));
     // lebendes Licht -> Strich zeigt auf eine Licht-Stelle aus masklivinglight.png (keine Umrandung)
     stn.push(aLine(RX(1.32), Y(-0.34), X(lgtU), Y(lgtV)));
     stn.push(aDot(X(lgtU), Y(lgtV), 3, ANNO_GOLD));
-    stn.push(aTxt(RX(1.32), Y(-0.40), ['living light —', 'grown in the passages'], { anchor: 'start' }));
+    stn.push(aTxt(RX(1.32), Y(-0.40), ['living light is a cold glow', 'grown on the walls for light'], { anchor: 'start' }));
     // Ballast / Schwerpunkt tief -> Strich zeigt auf die groesste Region RECHTS aus maskweight.png (keine Umrandung)
     stn.push(aLine(RX(1.32), Y(0.52), X(wgtU), Y(wgtV)));
     stn.push(aDot(X(wgtU), Y(wgtV), 2.6, ANNO_LIGHT));
-    stn.push(aTxt(RX(1.32), Y(0.46), ['ballast — the weight', 'sits deep'], { anchor: 'start', fill: ANNO_LIGHT }));
+    stn.push(aTxt(RX(1.32), Y(0.46), ['ballast is heavy mass, kept', 'low so the block stays upright'], { anchor: 'start', fill: ANNO_LIGHT }));
     // Atmen der Welt (Wellenlinie unten links)
     stn.push(`<path d="M ${LX(-1.32) - 220} ${Y(0.82)} q 14 -10 28 0 t 28 0 t 28 0" fill="none" stroke="rgba(154,147,127,0.7)" stroke-width="1.1"/>`);
-    stn.push(aTxt(LX(-1.32), Y(0.62), ['currents groan through the hull —', '“the breathing of the world”'], { anchor: 'end', fill: ANNO_DIM }));
-    // Drift (bild-relativ oben rechts an der Wasserlinie -> kollidiert nie mit dem Kurztext)
-    scr.push(aTxt(W - 36, WATERLINE_FRAC * H + 54, 'slow drift — steered by sunlight', { anchor: 'end', size: 14 }));
-    scr.push(aLine(W - 260, WATERLINE_FRAC * H + 74, W - 110, WATERLINE_FRAC * H + 74, { stroke: ANNO_GOLD, w: 1.2 }));
-    scr.push(`<path d="M ${W - 110} ${WATERLINE_FRAC * H + 74} l -9 -5 v 10 Z" fill="${ANNO_GOLD}"/>`);
+    stn.push(aTxt(LX(-1.32), Y(0.62), ['currents groan through the hull,', '“the breathing of the world”'], { anchor: 'end', fill: ANNO_DIM }));
+    // (Der fruehere „slow drift"-Hinweis oben rechts wurde auf Nutzerwunsch entfernt.)
   }
 
   if (kind === 'living') {
@@ -4189,7 +4668,7 @@ function buildAnnoSVG() {
     stn.push(aDot(X(livU), Y(livV), 2.6, ANNO_LIGHT));
     stn.push(aTxt(LX(-1.30), Y(-0.34), 'rooms are found, not built', { anchor: 'end', fill: ANNO_LIGHT }));
     stn.push(aLine(LX(-1.30), Y(0.28), X(-0.55), Y(0.32)));
-    stn.push(aTxt(LX(-1.30), Y(0.22), ['everything is tied down —', 'or it belongs to the sea'], { anchor: 'end', fill: ANNO_DIM }));
+    stn.push(aTxt(LX(-1.30), Y(0.22), ['everything is tied down,', 'or it belongs to the sea'], { anchor: 'end', fill: ANNO_DIM }));
     // gewachsenes Licht (rechts) -> Strich zeigt auf eine Licht-Stelle aus masklivinglight.png (keine Umrandung)
     stn.push(aLine(RX(1.30), Y(-0.16), X(lgtU), Y(lgtV)));
     stn.push(aDot(X(lgtU), Y(lgtV), 3, ANNO_GOLD));
@@ -4200,7 +4679,7 @@ function buildAnnoSVG() {
     // Ballast -> Strich zeigt auf die groesste Region RECHTS aus maskweight.png (keine Umrandung)
     stn.push(aLine(RX(1.30), Y(0.56), X(wgtU), Y(wgtV)));
     stn.push(aDot(X(wgtU), Y(wgtV), 2.6, ANNO_LIGHT));
-    stn.push(aTxt(RX(1.30), Y(0.50), ['ballast low — the roll', 'stays slow and shallow'], { anchor: 'start', fill: ANNO_LIGHT }));
+    stn.push(aTxt(RX(1.30), Y(0.50), ['ballast low, the roll', 'stays slow and shallow'], { anchor: 'start', fill: ANNO_LIGHT }));
     // (die vier Sinne stehen im Kurztext unten — kein eigenes Label, sonst kollidiert es dort)
   }
   }   // Ende Szene-2-Familie
@@ -4224,9 +4703,9 @@ function buildAnnoSVG() {
     // Reihenfolge LINKS -> RECHTS: smog · ozon · magnetfeld. Enthuellt wird klickweise in DIESER Folge;
     // die Pfeile verbinden sie von LINKS nach RECHTS (in Enthuellungsrichtung) und zeigen so die Abfolge.
     const nodes = [
-      { rf: 1.02,  ox: -0.30, txt: ['photochemical smog —', 'never lifts; it makes', 'the light a filtered gold'], fill: ANNO_GOLD },
-      { rf: 1.075, ox:  0.00, txt: ['ozone layer —', 'torn open'], fill: ANNO_GOLD },
-      { rf: 1.20,  ox:  0.30, txt: ['magnetic field — weakened,', 'solar storms break through'], fill: ANNO_LIGHT, noLeader: true }   // noLeader: keine Leiter-Linie + kein Zielkreis (nur Text im Ablauf)
+      { rf: 1.02,  ox: -0.30, txt: ['photochemical smog', 'never lifts; it makes', 'the light a filtered gold'], fill: ANNO_GOLD },
+      { rf: 1.075, ox:  0.00, txt: ['ozone layer,', 'torn open'], fill: ANNO_GOLD },
+      { rf: 1.20,  ox:  0.30, txt: ['magnetic field weakened,', 'solar storms break through'], fill: ANNO_LIGHT, noLeader: true }   // noLeader: keine Leiter-Linie + kein Zielkreis (nur Text im Ablauf)
     ];
     const shown = Math.max(0, annoStep - 1);   // Schritt 1 = nur Kurztext; ab Schritt 2 die Stichpunkte
     for (let i = 0; i < nodes.length && i < shown; i++) {
@@ -4264,10 +4743,10 @@ function buildAnnoSVG() {
     if (annoStep >= 1) stn.push(aLine(24, wy, W - 24, wy, { dash: '10 8', stroke: 'rgba(216,178,90,0.45)' }));
     // Label in Enthuellungs-Reihenfolge; 'stn' folgt der steigenden Wasserlinie, 'scr' ist bildfest.
     const labels = [
-      { group: 'stn', svg: aTxt(W - 36, wy + 66, ['the living band —', 'warmed above, shielded from the light'], { anchor: 'end', fill: ANNO_GOLD }) },
-      { group: 'scr', svg: aTxt(Math.max(W * 0.10, 340), H * 0.36, ['the old mountains —', 'bearly reaches the surface'], { anchor: 'end', fill: ANNO_LIGHT })
+      { group: 'stn', svg: aTxt(W - 36, wy + 66, ['the living band,', 'warmed above, shielded from the light'], { anchor: 'end', fill: ANNO_GOLD }) },
+      { group: 'scr', svg: aTxt(Math.max(W * 0.10, 340), H * 0.36, ['the old mountains,', 'bearly reaches the surface'], { anchor: 'end', fill: ANNO_LIGHT })
                           + aLine(Math.max(W * 0.10, 340) - 60, H * 0.36 + 34, W * 0.31, H * 0.66) },   // -> Berggipfel
-      { group: 'scr', svg: aTxt(W - 36, H * 0.80, 'the cold deep — dark and dangerous', { anchor: 'end', fill: ANNO_DIM }) }
+      { group: 'scr', svg: aTxt(W - 36, H * 0.80, 'the cold deep, dark and dangerous', { anchor: 'end', fill: ANNO_DIM }) }
     ];
     for (let i = 0; i < labels.length && i < shown; i++) {
       const html = (i === shown - 1) ? `<g id="anno-newnode">${labels[i].svg}</g>` : labels[i].svg;   // neuestes Label -> sanftes Einblenden
@@ -4284,13 +4763,15 @@ function buildAnnoSVG() {
     const labels = [
       // die toedliche Quelle (Scheibe, oben links)
       aLine(Math.max(cx - r * 1.5, 40) + 130, cy - r * 1.42 + 30, cx - r * 0.60, cy - r * 0.74)
-        + aTxt(Math.max(cx - r * 1.5, 40), cy - r * 1.46, ['the lethal source —', 'once live giving now poisonous and deadly'], { fill: ANNO_LIGHT }),
+        + aTxt(Math.max(cx - r * 1.5, 40), cy - r * 1.46, ['the lethal source,', 'once live giving now poisonous and deadly'], { fill: ANNO_LIGHT }),
       // der Motor / "the sound" (Korona/Hitze, rechts oben)
       aLine(Math.min(cx + r * 1.35, W - 340), cy - r * 0.66, cx + r * 0.98, cy - r * 0.50)
-        + aTxt(Math.min(cx + r * 1.35, W - 340), cy - r * 0.76, ['the sound — without the oznon-shild', 'now the sun speaks to us'], { fill: ANNO_GOLD }),
-      // Sonnenstuerme (CME-Bogen, rechts unter dem Motor-Label — NICHT tiefer, sonst Kurztext-Kollision)
-      aLine(Math.min(cx + r * 1.35, W - 340), cy + r * 0.70, cx + r * 0.72, cy + r * 0.95)
-        + aTxt(Math.min(cx + r * 1.35, W - 340), cy + r * 0.60, ['solar storms — each burst', 'reaches the surface unshielded'], { fill: ANNO_LIGHT })
+        + aTxt(Math.min(cx + r * 1.35, W - 340), cy - r * 0.76, ['the sound, without the oznon-shild', 'now the sun speaks to us'], { fill: ANNO_GOLD }),
+      // Sonnenstuerme (Eruptionen am rechten Rand): Text HOEHER gesetzt (cy+0.24r statt +0.60r) und die
+      // Leiter-Linie beginnt DEUTLICH unter dem Text (cy+0.46r) -> der Strich schneidet weder das Label
+      // noch den Kurztext unten; Ziel ist ein Rand-Punkt auf der rechten Flanke (cx+0.85r, cy+0.52r).
+      aLine(Math.min(cx + r * 1.35, W - 340), cy + r * 0.46, cx + r * 0.85, cy + r * 0.52)
+        + aTxt(Math.min(cx + r * 1.35, W - 340), cy + r * 0.24, ['solar storms, each burst', 'reaches the surface unshielded'], { fill: ANNO_LIGHT })
     ];
     for (let i = 0; i < labels.length && i < shown; i++) {
       scr.push(i === shown - 1 ? `<g id="anno-newnode">${labels[i]}</g>` : labels[i]);   // neuestes Callout -> sanftes Einblenden
@@ -4305,9 +4786,16 @@ function buildAnnoSVG() {
   if (kind === 'timeline') {
     const eras = TIMELINE_ERAS, n = eras.length;
     const strandX = Math.round(Math.max(175, Math.min(W * 0.26, 360)));   // Strang links-of-center, Jahr-Spalte davor
-    // Strang bewusst im oberen ~74% halten -> die unteren ~26% bleiben fuer die zentrierte Bottom-Caption
-    // (Block 3.2, bei schmalem Fenster bis 3 Zeilen) + hint frei; sonst ueberlappt die NOW-Zeile den Kurztext.
-    const yTop = H * 0.16, yBot = H * 0.74;
+    // Kopfblock (Titel · Untertitel · 'past the surface') zuerst berechnen -> gleichmaessige, lockere
+    // Zeilenabstaende. Der Strang-Anfang (yTop) sitzt IMMER sicher unter diesem Block (auch bei kleiner
+    // Fensterhoehe), damit sich Kopf und erste Epoche nie draengen.
+    const headY = H * 0.055;                       // 1. Zeile: HISTORICAL TIMELINE
+    const headGap = Math.max(34, H * 0.045);       // gleichmaessiger Abstand der drei Kopfzeilen
+    const subY = headY + headGap;                  // 2. Zeile: world … a descent through time
+    const pastY = subY + headGap;                  // 3. Zeile: past · the surface (am Strang-Anfang)
+    // Strang bewusst im oberen Bereich halten -> unten bleibt Platz fuer die zentrierte Bottom-Caption
+    // (Block 3.2, bei schmalem Fenster bis 3 Zeilen) + hint; sonst ueberlappt die NOW-Zeile den Kurztext.
+    const yTop = Math.max(H * 0.16, pastY + Math.max(22, H * 0.028)), yBot = H * 0.74;
     // Abstaende OBEN (Anfang des Strangs / Vergangenheit) groesser, nach unten enger -> Nutzerwunsch
     // "am Anfang des Strahls mehr auseinander". Verteilung ueber eine Potenzkurve (Exponent < 1 dehnt die
     // ersten Schritte; groesser = gleichmaessiger). Tunebar.
@@ -4318,9 +4806,10 @@ function buildAnnoSVG() {
     const shown = Math.max(0, annoStep - 1);           // Schritt 1 = nur Kurztext unten; ab Schritt 2 die Epochen
 
     // Kopfzeile (immer sichtbar, solange das Diagramm offen ist) + Achsen-Wort in die Tiefe.
-    scr.push(aTxt(strandX, H * 0.085, 'HISTORICAL TIMELINE', { anchor: 'start', size: 16, fill: ANNO_GOLD }));
-    scr.push(aTxt(strandX, H * 0.085 + 22, 'world 3324255146 — a descent through time', { anchor: 'start', size: 12, fill: ANNO_DIM }));
-    scr.push(aTxt(strandX, yTop - 14, 'past · the surface', { anchor: 'middle', size: 11, fill: ANNO_DIM }));
+    // Die drei Kopfzeilen sind gleichmaessig (headGap) auseinandergezogen -> lockerer Kopf.
+    scr.push(aTxt(strandX, headY, 'HISTORICAL TIMELINE', { anchor: 'start', size: 16, fill: ANNO_GOLD }));
+    scr.push(aTxt(strandX, subY, 'world 3324255146, a descent through time', { anchor: 'start', size: 12, fill: ANNO_DIM }));
+    scr.push(aTxt(strandX, pastY, 'past · the surface', { anchor: 'middle', size: 11, fill: ANNO_DIM }));
     // linke Rand-Achse (senkrecht, bottom->top gelesen): Zeit als Abstieg in die Tiefe
     { const ax = Math.max(40, strandX * 0.32), ay = H * 0.55;
       scr.push(`<text x="${ax}" y="${ay}" transform="rotate(-90 ${ax} ${ay})" fill="${ANNO_DIM}" font-size="11" text-anchor="middle" letter-spacing="4">time  ·  the descent into the deep</text>`); }
@@ -4430,10 +4919,12 @@ function goToScene(index) {
     zoomTransition = true; zoomProgress = 0;
     zoomDirection = vizIn ? 1 : -1;                    // rein = +1, raus (zur Elternszene) = -1
     zoomPivotIndex = sceneIndexById(v.parent);
-    zoomMaxScale = SECTION_ZOOM_SCALE;
+    zoomMaxScale = v.zoomScale || SECTION_ZOOM_SCALE;  // Marker darf eine eigene (sanftere) Endvergroesserung setzen (z.B. 'Section')
     if (vizIn) {
-      const p = vizMarkerPos(v);                       // Ziel = Position des angeklickten Markers
-      if (p) { zoomTargetX = p.x / width; zoomTargetY = p.y / height; }
+      // Ziel-Zentrum: entweder ein fester Punkt am Marker (v.zoomTX/TY, z.B. 'Section' -> Stationsmitte)
+      // oder die Marker-Position selbst.
+      if (v.zoomTX != null) { zoomTargetX = v.zoomTX; zoomTargetY = (v.zoomTY != null ? v.zoomTY : 0.5); }
+      else { const p = vizMarkerPos(v); if (p) { zoomTargetX = p.x / width; zoomTargetY = p.y / height; } }
       // Anno-Diagramm der Unterszene MERKEN -> oeffnet sich automatisch, sobald der Zoom fertig ist
       // (kein zweiter Klick mehr auf den Hotspot in der Unterszene). AUSNAHME: der SCHNITT (scene2) ist
       // eine volle Szene mit mehreren Hotspots (Station/Living/Wildlife) -> NICHT auto-oeffnen, die
@@ -4445,14 +4936,17 @@ function goToScene(index) {
         const g = allEntities.find(e => e.isGlobe);    // kein Laengen-Sprung + gleiche Richtung -> echter Zoom
         if (g) atmoSpin = g.spinAngle;
       }
+    } else if (v.zoomTX != null) {
+      // Zoom-out mit festem Ziel-Zentrum (z.B. 'Section'): auf die Stationsmitte zurueckziehen -> symmetrisch zum Rein-Zoom.
+      zoomTargetX = v.zoomTX; zoomTargetY = (v.zoomTY != null ? v.zoomTY : 0.5);
     }
-    // Zoom-out: zoomTargetX/Y bleiben, wo der Punkt war
+    // (sonst Zoom-out: zoomTargetX/Y bleiben, wo der Punkt war)
   }
   nextScene = index;
   sceneFade = 0;
   updateDots(index);
   updateSceneName(index);
-  if (started) playSceneAudio(index, 3);
+  if (started) playSceneAudio(index);   // kurzer Schnitt (SCENE_AUDIO_CUT); geteilter Sound laeuft nahtlos durch
 }
 
 // sichtbare (nav-bare) Szenen-Indizes; noNav-Szenen (z.B. der Schnitt) sind ausgenommen
@@ -4499,7 +4993,9 @@ function updateSceneName(index = currentScene) {
 }
 
 function keyPressed() {
-  if (keyCode === ESCAPE && openEntity) closePanel();
+  if (keyCode === ESCAPE && floorplanOpen) { closeFloorplan(); return false; }
+  if (keyCode === ESCAPE && zoomOpen) { closeZoom(); return false; }
+  else if (keyCode === ESCAPE && openEntity) closePanel();
   // Strg + Ü: Screenshot-Modus (alle Hotspots aus/ein). code 'BracketLeft' = physische Ü-Taste (QWERTZ).
   else if ((key === 'ü' || key === 'Ü') && keyIsDown(CONTROL)) { toggleScreenshotMode(); return false; }
   else if (key === 'p' || key === 'P') PERF_HUD = !PERF_HUD;   // FPS-HUD ein/aus

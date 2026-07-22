@@ -1,0 +1,24 @@
+BILDER FÜR DEN HOTSPOT "The solar space" — Szene 3
+==================================================
+
+(Eigener Ordner NUR für den Hotspot — nicht verwechseln mit dem
+Szenen-Hintergrund solarspace.png eine Ebene höher.)
+
+Dateien EINFACH HIER ablegen:
+
+  solarspace_hs1.png   (oder .webp)   -> Motiv, wie es in der Szene erscheint
+  solarspace_hs2.png ...              -> weitere Varianten (zufällig gewählt)
+
+Leer = pulsierender Gold-Marker als Klickpunkt. Sobald ein Bild da ist,
+wird es an dieser Stelle gezeichnet (und bleibt anklickbar).
+
+Position/Größe über das Entity 'hs_solarspace' in data/entities.json (path/scale).
+
+Reader-Detailbilder optional (groß über dem Text beim Anklicken):
+  in assets/images/hotspots/ ablegen: hs_solarspace1.png, hs_solarspace2.png ...
+
+ZWEI ZUSATZBILDER IM GRUNDRISS-OVERLAY (rechts neben dem Plan):
+  bild1.png  -> erscheint oben rechts
+  bild2.png  -> erscheint unten rechts
+  (Der Grundriss floorplan.png liegt links. Solange bild1/bild2 fehlen, zeigt
+   die rechte Seite gestrichelte Platzhalter-Boxen mit "Bild".)

@@ -1,0 +1,20 @@
+BILDER DES SOLAR-INSTRUMENTS (Szene 3 · Religion / "das Auge")
+=============================================================
+
+Dateien EINFACH HIER in diesen Ordner legen:
+
+  instrument1.png   (oder .webp)   -> das Instrument, wie es in der Szene erscheint
+  instrument2.png, instrument3.png ...  -> weitere Varianten (zufaellig gewaehlt)
+
+.webp wird vor .png bevorzugt (kleiner). Die Reihe endet bei der ersten Luecke.
+
+Solange der Ordner LEER ist, zeigt der Hotspot nur einen pulsierenden Gold-Marker
+als Klickpunkt. Sobald instrument1.png vorhanden ist, wird das Instrument-Bild
+selbst an dieser Stelle gezeichnet (und bleibt anklickbar).
+
+Position/Groesse des Instruments werden ueber das Entity 'hs_instrument' in
+data/entities.json getunt (path = Bildschirm-Position 0..1, scale = Groesse).
+
+READER-DETAILBILDER (optional, erscheinen GROSS ueber dem Text beim Anklicken):
+  in den Ordner assets/images/hotspots/ legen:
+  hs_instrument1.png, hs_instrument2.png ...
