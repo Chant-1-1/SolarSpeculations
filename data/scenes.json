@@ -7,7 +7,7 @@
       "background": "",
       "backgroundTint": "#05060b",
       "space": true,
-      "ambient": "",
+      "ambientDir": "assets/sounds/ambient/scene1",
       "ambientVolume": -12,
       "reverbSend": { "bus": "long", "amount": 0.4 }
     },

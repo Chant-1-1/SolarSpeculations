@@ -467,7 +467,7 @@
       "variants": "assets/images/entities/scene3/instrument/",
       "layer": 0.6,
       "label": "The solar instrument",
-      "path": [ { "x": 0.50, "y": 0.42 } ],
+      "path": [ { "x": 0.50, "y": 0.65 } ],
       "loop": "loop",
       "speed": 0.0,
       "scale": 0.045,
@@ -600,7 +600,7 @@
       "loop": "loop", "speed": 0.0, "scale": 0.05, "bob": 0.0, "opacity": 1.0,
       "content": {
         "title": "The sun",
-        "body": "No one sees the sun directly; her light arrives filtered to a faint gold, yet raw it kills within hours. Her uneven heat turns the whole water column — and when her field snaps, the burst reaches the surface unshielded.",
+        "body": "Her light reaches no one unbroken; it arrives filtered to a faint gold, yet raw it kills within hours. Her uneven heat turns the whole water column — and when her field snaps, the burst reaches the surface unshielded.",
         "secondaryImage": "",
         "link": { "url": "", "label": "" }
       }
