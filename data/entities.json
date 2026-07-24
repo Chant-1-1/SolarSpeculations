@@ -66,8 +66,9 @@
       "zoomAnchor": true,
       "layer": 1,
       "label": "",
+      "_kommentar_y": "path.y so gesetzt, dass die INNEN-Wasseroberkante (top of white in station1maskewasser.png, frac 0.124 der Bildhoehe) auf der Szenen-Wasserlinie WATERLINE_FRAC (0.30) sitzt. Herleitung (Landscape): y = 0.30 + spriteHeightFrac*(0.5 - 0.124), spriteHeightFrac = scale*2*ratio = 0.40*2*1.1945 = 0.9556 -> y = 0.66. Bei neuem Bild/Maske (anderer maskTopFrac/ratio) neu rechnen; die drei Standalone-Marker hs_station/hs_living/hs_mothers um dasselbe Δy mitziehen.",
       "path": [
-        { "x": 0.5, "y": 0.52 }
+        { "x": 0.5, "y": 0.66 }
       ],
       "loop": "loop",
       "speed": 0.0,
@@ -88,7 +89,7 @@
       "anno": "station",
       "layer": 1.2,
       "label": "The station",
-      "path": [ { "x": 0.50, "y": 0.505 } ],
+      "path": [ { "x": 0.50, "y": 0.645 } ],
       "loop": "loop", "speed": 0.0, "scale": 0.05, "bob": 0.0, "opacity": 1.0,
       "content": {
         "title": "The station",
@@ -133,7 +134,7 @@
       ],
       "layer": 1.2,
       "label": "Living",
-      "path": [ { "x": 0.485, "y": 0.351 } ],
+      "path": [ { "x": 0.485, "y": 0.491 } ],
       "loop": "loop", "speed": 0.0, "scale": 0.05, "bob": 0.0, "opacity": 1.0,
       "content": {
         "title": "Living",
@@ -151,7 +152,7 @@
       "anno": "mothers",
       "layer": 1.2,
       "label": "The mothers",
-      "path": [ { "x": 0.63, "y": 0.52 } ],
+      "path": [ { "x": 0.63, "y": 0.66 } ],
       "loop": "loop", "speed": 0.0, "scale": 0.05, "bob": 0.0, "opacity": 1.0,
       "content": {
         "title": "The mothers",
